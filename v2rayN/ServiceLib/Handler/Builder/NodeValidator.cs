@@ -82,6 +82,12 @@ public class NodeValidator
         var protocolExtra = item.GetProtocolExtra();
         switch (item.ConfigType)
         {
+            case EConfigType.SSH:
+                if (SshProfileService.Validate(item) is { } sshError)
+                {
+                    v.Error(sshError);
+                }
+                break;
             case EConfigType.VMess:
                 v.Assert(!item.Password.IsNullOrEmpty() && Utils.IsGuidByParse(item.Password),
                     string.Format(ResUI.MsgInvalidProperty, ResUI.TbId));

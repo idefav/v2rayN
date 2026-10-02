@@ -1,0 +1,50 @@
+<Window x:Class="v2rayN.Desktop.Views.AddSshServerWindow"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:base="clr-namespace:v2rayN.Desktop.Base"
+    xmlns:resx="clr-namespace:ServiceLib.Resx;assembly=ServiceLib"
+    xmlns:vms="clr-namespace:ServiceLib.ViewModels;assembly=ServiceLib"
+    x:DataType="vms:AddSshServerViewModel"
+    Title="{x:Static resx:SshStrings.Title}" Width="660" Height="740"
+    ShowInTaskbar="False" WindowStartupLocation="CenterOwner">
+    <DockPanel Margin="20">
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button x:Name="btnSave" Content="{x:Static resx:ResUI.TbConfirm}" MinWidth="90" Margin="4" />
+            <Button x:Name="btnCancel" Content="{x:Static resx:ResUI.TbCancel}" MinWidth="90" Margin="4" />
+        </StackPanel>
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <StackPanel x:Name="form">
+                <TextBlock Text="{x:Static resx:SshStrings.TcpOnly}" TextWrapping="Wrap" Margin="0,0,0,12" />
+                <TextBlock Text="{x:Static resx:ResUI.TbRemarks}" Margin="0,6,0,2" />
+                <TextBox x:Name="txtRemarks" />
+                <TextBlock Text="{x:Static resx:ResUI.TbAddress}" Margin="0,6,0,2" />
+                <TextBox x:Name="txtAddress" />
+                <TextBlock Text="{x:Static resx:ResUI.TbPort}" Margin="0,6,0,2" />
+                <TextBox x:Name="txtPort" />
+                <TextBlock Text="{x:Static resx:ResUI.TbUsername}" Margin="0,6,0,2" />
+                <TextBox x:Name="txtUsername" />
+                <CheckBox x:Name="chkPrivateKey" Content="{x:Static resx:SshStrings.PrivateKeyAuth}" Margin="0,12,0,6" />
+                <StackPanel x:Name="passwordPanel">
+                    <TextBlock Text="{x:Static resx:SshStrings.LoginPassword}" />
+                    <TextBox x:Name="txtPassword" PasswordChar="●" />
+                </StackPanel>
+                <StackPanel x:Name="keyPanel">
+                    <TextBlock Text="{x:Static resx:SshStrings.PrivateKeyPath}" />
+                    <DockPanel>
+                        <Button x:Name="btnBrowse" DockPanel.Dock="Right" Content="{x:Static resx:ResUI.TbBrowse}" Margin="6,0,0,0" />
+                        <TextBox x:Name="txtPrivateKeyPath" />
+                    </DockPanel>
+                    <TextBlock Text="{x:Static resx:SshStrings.Passphrase}" Margin="0,6,0,2" />
+                    <TextBox x:Name="txtPassphrase" PasswordChar="●" />
+                </StackPanel>
+                <TextBlock Text="{x:Static resx:SshStrings.HostKey}" Margin="0,12,0,2" />
+                <TextBox x:Name="txtHostKey" TextWrapping="Wrap" MinHeight="64" AcceptsReturn="True" />
+                <WrapPanel Margin="0,6,0,6">
+                    <Button x:Name="btnFetch" Content="{x:Static resx:SshStrings.Fetch}" Margin="0,0,6,0" />
+                    <Button x:Name="btnTrust" Content="{x:Static resx:SshStrings.Trust}" />
+                </WrapPanel>
+                <TextBlock x:Name="txtStatus" TextWrapping="Wrap" Margin="0,6,0,12" />
+            </StackPanel>
+        </ScrollViewer>
+    </DockPanel>
+</Window>

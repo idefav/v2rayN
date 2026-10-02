@@ -1894,4 +1894,24 @@
   <data name="menuAddMasqueServer" xml:space="preserve">
     <value>添加 [MASQUE]</value>
   </data>
+  <data name="SshTitle" xml:space="preserve"><value>添加 SSH 服务器</value></data>
+  <data name="SshPrivateKeyAuth" xml:space="preserve"><value>使用私钥认证</value></data>
+  <data name="SshPrivateKeyPath" xml:space="preserve"><value>私钥文件</value></data>
+  <data name="SshPassphrase" xml:space="preserve"><value>私钥口令（可选）</value></data>
+  <data name="SshHostKey" xml:space="preserve"><value>服务器公钥</value></data>
+  <data name="SshFetch" xml:space="preserve"><value>获取／重新获取公钥</value></data>
+  <data name="SshTrust" xml:space="preserve"><value>确认粘贴的公钥</value></data>
+  <data name="SshConfirmKey" xml:space="preserve"><value>请通过可信渠道核对以下指纹。是否信任并固定此服务器公钥？</value></data>
+  <data name="SshPinned" xml:space="preserve"><value>已固定</value></data>
+  <data name="SshUnconfirmed" xml:space="preserve"><value>服务器公钥未确认</value></data>
+  <data name="SshInvalidEndpoint" xml:space="preserve"><value>请填写服务器地址、端口（1–65535）和用户名。</value></data>
+  <data name="SshInvalidKeyFile" xml:space="preserve"><value>请选择可读取的私钥文件。</value></data>
+  <data name="SshPasswordRequired" xml:space="preserve"><value>请输入 SSH 登录密码。</value></data>
+  <data name="SshInvalidHostKey" xml:space="preserve"><value>SSH 公钥格式或算法无效或不受支持。</value></data>
+  <data name="SshFetchFailed" xml:space="preserve"><value>无法获取 SSH 公钥，请检查地址、端口与网络后重试。</value></data>
+  <data name="SshFetching" xml:space="preserve"><value>正在获取服务器公钥…</value></data>
+  <data name="SshCancelled" xml:space="preserve"><value>操作已取消。</value></data>
+  <data name="SshDnsUnsupported" xml:space="preserve"><value>SSH 需要 TCP DNS 传输，请将经代理的自定义 DNS 服务器改为 TCP、TLS 或 HTTPS。</value></data>
+  <data name="SshTcpOnly" xml:space="preserve"><value>仅支持 TCP 代理。本地端口、DNS 和路由由 v2rayN 自动配置。</value></data>
+  <data name="SshLoginPassword" xml:space="preserve"><value>SSH 登录密码</value></data>
 </root>

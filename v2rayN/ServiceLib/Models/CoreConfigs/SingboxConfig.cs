@@ -128,6 +128,11 @@ public class User4Sbox
 
 public class Outbound4Sbox : BaseServer4Sbox
 {
+    public string? user { get; set; }
+    public string? private_key_path { get; set; }
+    public string? private_key_passphrase { get; set; }
+    public List<string>? host_key { get; set; }
+    public List<string>? host_key_algorithms { get; set; }
     public List<string>? server_ports { get; set; }
     public string? uuid { get; set; }
     public string? security { get; set; }

@@ -60,6 +60,8 @@ public partial class CoreConfigSingboxService
 
     private BaseServer4Sbox BuildProxyServer()
     {
+        if (_node.ConfigType == EConfigType.SSH && SshProfileService.Validate(_node) is { } sshError)
+            throw new SshConfigurationException(sshError);
         try
         {
             var txtOutbound = EmbedUtils.GetEmbedText(Global.SingboxSampleOutbound);
@@ -110,6 +112,20 @@ public partial class CoreConfigSingboxService
 
             switch (_node.ConfigType)
             {
+                case EConfigType.SSH:
+                    outbound.user = _node.Username;
+                    if (protocolExtra.SshPrivateKeyAuth == true)
+                    {
+                        outbound.private_key_path = protocolExtra.SshPrivateKeyPath;
+                        outbound.private_key_passphrase = protocolExtra.SshPrivateKeyPassphrase.NullIfEmpty();
+                    }
+                    else
+                    {
+                        outbound.password = _node.Password;
+                    }
+                    outbound.host_key = [protocolExtra.SshHostKey!];
+                    outbound.host_key_algorithms = [protocolExtra.SshHostKeyAlgorithm!];
+                    break;
                 case EConfigType.VMess:
                     {
                         outbound.uuid = _node.Password;
@@ -336,7 +352,7 @@ public partial class CoreConfigSingboxService
                     }
             }
 
-            FillOutboundTls(outbound);
+            if (_node.ConfigType != EConfigType.SSH) FillOutboundTls(outbound);
         }
         catch (Exception ex)
         {

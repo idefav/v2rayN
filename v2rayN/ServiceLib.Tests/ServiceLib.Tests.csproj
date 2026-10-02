@@ -13,6 +13,7 @@
 
     <ItemGroup>
         <ProjectReference Include="..\ServiceLib\ServiceLib.csproj" />
+        <None Update="Fixtures/ssh_server.py" CopyToOutputDirectory="PreserveNewest" />
     </ItemGroup>
 
     <ItemGroup>

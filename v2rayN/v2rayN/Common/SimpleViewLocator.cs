@@ -12,6 +12,7 @@ public class SimpleViewLocator : IViewLocator
     {
         Register<AddGroupServerViewModel, AddGroupServerWindow>();
         Register<AddServer2ViewModel, AddServer2Window>();
+        Register<AddSshServerViewModel, AddSshServerWindow>();
         Register<AddServerViewModel, AddServerWindow>();
         Register<BackupAndRestoreViewModel, BackupAndRestoreView>();
         Register<CheckUpdateViewModel, CheckUpdateView>();

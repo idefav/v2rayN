@@ -78,6 +78,8 @@ public class ProfileItem
 
         switch (ConfigType)
         {
+            case EConfigType.SSH:
+                return SshProfileService.Validate(this, checkFile: false) == null;
             case EConfigType.VMess:
                 if (Password.IsNullOrEmpty() || !Utils.IsGuidByParse(Password))
                 {

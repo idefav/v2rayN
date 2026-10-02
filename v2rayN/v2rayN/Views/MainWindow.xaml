@@ -137,6 +137,7 @@
                                     x:Name="menuAddNaiveServer"
                                     Height="{StaticResource MenuItemHeight}"
                                     Header="{x:Static resx:ResUI.menuAddNaiveServer}" />
+                        <MenuItem x:Name="menuAddSshServer" Header="{x:Static resx:SshStrings.Title}" />
                             </MenuItem>
                         </Menu>
                         <Separator />

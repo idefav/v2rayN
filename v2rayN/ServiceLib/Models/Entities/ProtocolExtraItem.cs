@@ -2,6 +2,15 @@ namespace ServiceLib.Models.Entities;
 
 public record ProtocolExtraItem
 {
+    // SSH: trust belongs to the exact endpoint, not to the login user.
+    public bool? SshPrivateKeyAuth { get; init; }
+    public string? SshPrivateKeyPath { get; init; }
+    public string? SshPrivateKeyPassphrase { get; init; }
+    public string? SshHostKey { get; init; }
+    public string? SshHostKeyAlgorithm { get; init; }
+    public string? SshTrustedAddress { get; init; }
+    public int? SshTrustedPort { get; init; }
+
     public bool? Uot { get; init; }
     public string? CongestionControl { get; init; }
 

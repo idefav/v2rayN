@@ -263,6 +263,7 @@ public class Global
         { EConfigType.Anytls, "anytls" },
         { EConfigType.Naive, "naive" },
         { EConfigType.MASQUE, "masque" },
+        { EConfigType.SSH, "ssh" },
     };
 
     public static readonly List<string> VmessSecurities =
@@ -379,6 +380,7 @@ public class Global
 
     public static readonly HashSet<EConfigType> SingboxSupportConfigType =
     [
+        EConfigType.SSH,
         EConfigType.VMess,
         EConfigType.VLESS,
         EConfigType.Shadowsocks,

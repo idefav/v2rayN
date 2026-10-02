@@ -58,9 +58,14 @@ public partial class CoreConfigSingboxService(CoreConfigContext context)
             ConvertGeo2Ruleset();
 
             ret.Msg = string.Format(ResUI.SuccessfulConfiguration, "");
-            ret.Success = true;
-
             ret.Data = ApplyFinalConfigModifiers();
+            ret.Success = true;
+            return ret;
+        }
+        catch (SshConfigurationException ex)
+        {
+            ret.Success = false;
+            ret.Msg = ex.Message;
             return ret;
         }
         catch (Exception ex)

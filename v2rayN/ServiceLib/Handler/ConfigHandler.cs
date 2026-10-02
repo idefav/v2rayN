@@ -293,6 +293,7 @@ public static class ConfigHandler
             EConfigType.Anytls => await AddAnytlsServer(config, item),
             EConfigType.Naive => await AddNaiveServer(config, item),
             EConfigType.MASQUE => await AddMasqueServer(config, item),
+            EConfigType.SSH => await AddSshServer(config, item),
             _ => -1,
         };
         return ret;
@@ -941,6 +942,22 @@ public static class ConfigHandler
     /// <param name="profileItem">Anytls profile to add</param>
     /// <param name="toFile">Whether to save to file</param>
     /// <returns>0 if successful, -1 if failed</returns>
+    public static async Task<int> AddSshServer(Config config, ProfileItem profileItem, bool toFile = true)
+    {
+        profileItem.ConfigType = EConfigType.SSH;
+        profileItem.CoreType = ECoreType.sing_box;
+        profileItem.Address = profileItem.Address.TrimEx();
+        profileItem.Username = profileItem.Username.TrimEx();
+        if (SshProfileService.Validate(profileItem) != null) return -1;
+        profileItem.Network = string.Empty;
+        profileItem.StreamSecurity = string.Empty;
+        profileItem.MuxEnabled = false;
+        profileItem.PreSocksPort = null;
+        profileItem.TransportExtra = string.Empty;
+        await AddServerCommon(config, profileItem, toFile);
+        return 0;
+    }
+
     public static async Task<int> AddAnytlsServer(Config config, ProfileItem profileItem, bool toFile = true)
     {
         profileItem.ConfigType = EConfigType.Anytls;
@@ -1705,6 +1722,7 @@ public static class ConfigHandler
                 EConfigType.VLESS => await AddVlessServer(config, profileItem, false),
                 EConfigType.Hysteria2 => await AddHysteria2Server(config, profileItem, false),
                 EConfigType.TUIC => await AddTuicServer(config, profileItem, false),
+                EConfigType.SSH => await AddSshServer(config, profileItem, false),
                 EConfigType.WireGuard => await AddWireguardServer(config, profileItem, false),
                 EConfigType.Anytls => await AddAnytlsServer(config, profileItem, false),
                 EConfigType.Naive => await AddNaiveServer(config, profileItem, false),
@@ -2026,6 +2044,7 @@ public static class ConfigHandler
                     EConfigType.VLESS => await AddVlessServer(config, profileItem, false),
                     EConfigType.Hysteria2 => await AddHysteria2Server(config, profileItem, false),
                     EConfigType.TUIC => await AddTuicServer(config, profileItem, false),
+                    EConfigType.SSH => await AddSshServer(config, profileItem, false),
                     EConfigType.WireGuard => await AddWireguardServer(config, profileItem, false),
                     EConfigType.Anytls => await AddAnytlsServer(config, profileItem, false),
                     EConfigType.Naive => await AddNaiveServer(config, profileItem, false),

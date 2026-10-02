@@ -9,7 +9,8 @@ public partial class CoreConfigSingboxService
 
         var coreConfigContent = ApplyCustomOutboundReplace();
 
-        return ApplyFullConfigTemplate(coreConfigContent);
+        return SshDnsPolicy.Apply(ApplyFullConfigTemplate(coreConfigContent),
+            context.RawDnsItem?.Enabled == true || context.FullConfigTemplate?.Enabled == true);
     }
 
     private string ApplyCustomOutboundReplace()

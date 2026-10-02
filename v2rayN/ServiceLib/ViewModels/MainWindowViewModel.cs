@@ -32,6 +32,7 @@ public partial class MainWindowViewModel : MyReactiveObject
     public ReactiveCommand<RxVoid, RxVoid> AddWireguardServerCmd { get; }
     public ReactiveCommand<RxVoid, RxVoid> AddAnytlsServerCmd { get; }
     public ReactiveCommand<RxVoid, RxVoid> AddNaiveServerCmd { get; }
+    public ReactiveCommand<RxVoid, RxVoid> AddSshServerCmd { get; }
     public ReactiveCommand<RxVoid, RxVoid> AddMasqueServerCmd { get; }
     public ReactiveCommand<RxVoid, RxVoid> AddCustomServerCmd { get; }
     public ReactiveCommand<RxVoid, RxVoid> AddCustomOutboundServerCmd { get; }
@@ -141,6 +142,7 @@ public partial class MainWindowViewModel : MyReactiveObject
         {
             await AddServerAsync(EConfigType.Naive);
         });
+        AddSshServerCmd = ReactiveCommand.CreateFromTask(() => AddServerAsync(EConfigType.SSH));
         AddMasqueServerCmd = ReactiveCommand.CreateFromTask(async () =>
         {
             await AddServerAsync(EConfigType.MASQUE);
@@ -461,7 +463,11 @@ public partial class MainWindowViewModel : MyReactiveObject
         };
 
         bool? ret = false;
-        if (eConfigType is EConfigType.Custom or EConfigType.Outbound)
+        if (eConfigType == EConfigType.SSH)
+        {
+            ret = await AppManager.Instance.WindowDialog.ShowDialogAsync(new AddSshServerViewModel(item));
+        }
+        else if (eConfigType is EConfigType.Custom or EConfigType.Outbound)
         {
             var addServer2ViewModel = new AddServer2ViewModel(item);
             ret = await AppManager.Instance.WindowDialog.ShowDialogAsync(addServer2ViewModel);

@@ -1902,4 +1902,24 @@ The "Get Certificate" action may fail if a self-signed certificate is used or if
   <data name="menuAddMasqueServer" xml:space="preserve">
     <value>Add [MASQUE]</value>
   </data>
+  <data name="SshTitle" xml:space="preserve"><value>Add SSH server</value></data>
+  <data name="SshPrivateKeyAuth" xml:space="preserve"><value>Use private key authentication</value></data>
+  <data name="SshPrivateKeyPath" xml:space="preserve"><value>Private key file</value></data>
+  <data name="SshPassphrase" xml:space="preserve"><value>Private key passphrase (optional)</value></data>
+  <data name="SshHostKey" xml:space="preserve"><value>Server public key</value></data>
+  <data name="SshFetch" xml:space="preserve"><value>Fetch / refresh public key</value></data>
+  <data name="SshTrust" xml:space="preserve"><value>Confirm pasted public key</value></data>
+  <data name="SshConfirmKey" xml:space="preserve"><value>Verify this fingerprint through a trusted channel. Trust and pin this server key?</value></data>
+  <data name="SshPinned" xml:space="preserve"><value>Pinned</value></data>
+  <data name="SshUnconfirmed" xml:space="preserve"><value>Server public key not confirmed</value></data>
+  <data name="SshInvalidEndpoint" xml:space="preserve"><value>Enter a server address, port (1–65535) and username.</value></data>
+  <data name="SshInvalidKeyFile" xml:space="preserve"><value>Select a readable private key file.</value></data>
+  <data name="SshPasswordRequired" xml:space="preserve"><value>Enter the SSH login password.</value></data>
+  <data name="SshInvalidHostKey" xml:space="preserve"><value>Invalid or unsupported SSH public key / algorithm.</value></data>
+  <data name="SshFetchFailed" xml:space="preserve"><value>Could not obtain the SSH public key. Check the address, port and network, then retry.</value></data>
+  <data name="SshFetching" xml:space="preserve"><value>Fetching server public key…</value></data>
+  <data name="SshCancelled" xml:space="preserve"><value>Operation cancelled.</value></data>
+  <data name="SshDnsUnsupported" xml:space="preserve"><value>SSH requires TCP DNS transport. Change the proxied custom DNS server to TCP, TLS or HTTPS.</value></data>
+  <data name="SshTcpOnly" xml:space="preserve"><value>TCP proxy only. Local port, DNS and routing follow v2rayN settings.</value></data>
+  <data name="SshLoginPassword" xml:space="preserve"><value>SSH login password</value></data>
 </root>

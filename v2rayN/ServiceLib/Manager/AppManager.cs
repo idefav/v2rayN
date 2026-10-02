@@ -665,6 +665,10 @@ public sealed class AppManager
 
     public ECoreType GetCoreType(ProfileItem? profileItem, EConfigType eConfigType)
     {
+        if (eConfigType == EConfigType.SSH)
+        {
+            return ECoreType.sing_box;
+        }
         if (profileItem?.CoreType != null)
         {
             return (ECoreType)profileItem.CoreType;
