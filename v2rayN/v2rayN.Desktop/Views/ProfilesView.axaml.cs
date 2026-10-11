@@ -16,6 +16,7 @@ public partial class ProfilesView : ReactiveUserControl<ProfilesViewModel>
     private static readonly string _tag = "ProfilesView";
     private DataGridCollectionView? _filteredProfiles;
     private bool _refreshing;
+    private readonly Dictionary<DataGridRow, IDisposable> _activeRows = new();
     private bool _syncingGroup;
     private Button? _detailsEntry;
     private RightPinnedColumn _pinnedActions = null!;
@@ -144,6 +145,11 @@ public partial class ProfilesView : ReactiveUserControl<ProfilesViewModel>
         lstProfiles.SelectionChanged += lstProfiles_SelectionChanged;
         lstProfiles.DoubleTapped += LstProfiles_DoubleTapped;
         lstProfiles.LoadingRow += LstProfiles_LoadingRow;
+        lstProfiles.UnloadingRow += (_, e) =>
+        {
+            if (_activeRows.Remove(e.Row, out var binding)) binding.Dispose();
+            e.Row.Classes.Set("activeServer", false);
+        };
         lstProfiles.Sorting += LstProfiles_Sorting;
         lstProfiles.AddHandler(PointerPressedEvent, LstProfiles_PointerPressed, RoutingStrategies.Bubble, true);
         if (_config.UiItem.EnableDragDropSort)
@@ -471,6 +477,17 @@ public partial class ProfilesView : ReactiveUserControl<ProfilesViewModel>
     private void LstProfiles_LoadingRow(object? sender, DataGridRowEventArgs e)
     {
         e.Row.Header = $" {e.Row.Index + 1}";
+        if (_activeRows.Remove(e.Row, out var previous)) previous.Dispose();
+        IDisposable? activeBinding = null;
+        var contextBinding = e.Row.GetObservable(DataContextProperty).Subscribe(item =>
+        {
+            activeBinding?.Dispose();
+            e.Row.Classes.Set("activeServer", false);
+            activeBinding = (item as ProfileItemModel)?.WhenAnyValue(n => n.IsActive)
+                .ObserveOn(RxSchedulers.MainThreadScheduler)
+                .Subscribe(active => e.Row.Classes.Set("activeServer", active));
+        });
+        _activeRows[e.Row] = new ActionDisposable(() => { contextBinding.Dispose(); activeBinding?.Dispose(); });
     }
 
     //private void LstProfiles_ColumnHeader_Click(object? sender, RoutedEventArgs e)

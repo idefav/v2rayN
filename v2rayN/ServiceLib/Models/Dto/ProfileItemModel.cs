@@ -3,7 +3,8 @@ namespace ServiceLib.Models.Dto;
 [Serializable]
 public partial class ProfileItemModel : ReactiveObject
 {
-    public bool IsActive { get; set; }
+    [Reactive]
+    public partial bool IsActive { get; set; }
     public string IndexId { get; set; }
     public EConfigType ConfigType { get; set; }
     public string Remarks { get; set; }

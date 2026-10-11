@@ -1,6 +1,7 @@
 using DialogHostAvalonia;
 using Avalonia.VisualTree;
 using v2rayN.Desktop.Common;
+using ServiceLib.Services;
 
 namespace v2rayN.Desktop.Views;
 
@@ -11,6 +12,9 @@ public partial class StatusBarView : ReactiveUserControl<StatusBarViewModel>
     private bool _reloading;
     private bool? _lastCoreState;
     private IDisposable? _coreBrush;
+    private string? _exitNode;
+    private ExitInfoItem? _exitResult;
+    private bool _exitStale;
     private Flyout connectionFlyout => (Flyout)btnConnectionControls.Flyout!;
 
     public StatusBarView()
@@ -35,6 +39,9 @@ public partial class StatusBarView : ReactiveUserControl<StatusBarViewModel>
 
         this.WhenActivated(disposables =>
         {
+            void ExitChanged(string id) { if (id == _config.IndexId) Dispatcher.UIThread.Post(UpdateExitSummary); }
+            ExitInfoService.Instance.Changed += ExitChanged;
+            new ActionDisposable(() => ExitInfoService.Instance.Changed -= ExitChanged).DisposeWith(disposables);
             UpdateCoreState();
             _coreTimer.Start();
             new ActionDisposable(_coreTimer.Stop).DisposeWith(disposables);
@@ -117,6 +124,7 @@ public partial class StatusBarView : ReactiveUserControl<StatusBarViewModel>
 
     private void UpdateCoreState()
     {
+        UpdateExitSummary();
         var running = CoreManager.Instance.IsCoreRunning;
         txtCoreState.Text = running ? WorkspaceText.Running : WorkspaceText.Stopped;
         if (_lastCoreState != running)
@@ -126,6 +134,21 @@ public partial class StatusBarView : ReactiveUserControl<StatusBarViewModel>
             _coreBrush = txtCoreState.Bind(TextBlock.ForegroundProperty, new Avalonia.Markup.Xaml.MarkupExtensions.DynamicResourceExtension(running ? "WorkspaceSuccess" : "WorkspaceMuted"));
         }
         if (!running || !_config.GuiItem.DisplayRealTimeSpeed) { txtDownload.Text = "↓ —"; txtUpload.Text = "↑ —"; }
+    }
+
+    private void UpdateExitSummary()
+    {
+        var id = _config.IndexId;
+        var result = ExitInfoService.Instance.Get(id ?? "");
+        var stale = result?.Ip != null && (result.State != "success" || DateTime.UtcNow - result.CheckedAt > TimeSpan.FromHours(24));
+        if (_exitNode == id && ReferenceEquals(_exitResult, result) && _exitStale == stale && exitSummary.Content != null) return;
+        _exitNode = id; _exitResult = result; _exitStale = stale;
+        var panel = new StackPanel { Spacing = 2 };
+        panel.Children.Add(ExitPresentation.Cell(result));
+        if (stale && result?.State == "success")
+            panel.Children.Add(new TextBlock { Text = WorkspaceText.T("旧结果", "Previous result"), Classes = { "muted" } });
+        exitSummary.Content = panel;
+        ToolTip.SetTip(exitSummary, ExitPresentation.Details(result));
     }
 
     public void SetCompact(bool compact)

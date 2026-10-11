@@ -10,6 +10,8 @@
                     <SolidColorBrush x:Key="WorkspaceText">#18202D</SolidColorBrush>
                     <SolidColorBrush x:Key="WorkspaceMuted">#667386</SolidColorBrush>
                     <SolidColorBrush x:Key="WorkspaceSelection">#E0EDFF</SolidColorBrush>
+                    <SolidColorBrush x:Key="WorkspaceActiveRow">#EDF5FF</SolidColorBrush>
+                    <SolidColorBrush x:Key="WorkspaceActiveSelectedRow">#C5DFFF</SolidColorBrush>
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="Dark">
                     <SolidColorBrush x:Key="WorkspaceBackground">#171C25</SolidColorBrush>
@@ -19,6 +21,8 @@
                     <SolidColorBrush x:Key="WorkspaceText">#EEF3FB</SolidColorBrush>
                     <SolidColorBrush x:Key="WorkspaceMuted">#A5B2C6</SolidColorBrush>
                     <SolidColorBrush x:Key="WorkspaceSelection">#243F65</SolidColorBrush>
+                    <SolidColorBrush x:Key="WorkspaceActiveRow">#22344D</SolidColorBrush>
+                    <SolidColorBrush x:Key="WorkspaceActiveSelectedRow">#2D527B</SolidColorBrush>
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
             <SolidColorBrush x:Key="WorkspaceAccent">#1677FF</SolidColorBrush>
@@ -169,6 +173,20 @@
     </Style>
     <Style Selector="DataGridRow:selected">
         <Setter Property="Background" Value="{DynamicResource WorkspaceSelection}" />
+    </Style>
+    <Style Selector="DataGridRow.activeServer">
+        <Setter Property="Background" Value="{DynamicResource WorkspaceActiveRow}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource WorkspaceAccent}" />
+        <Setter Property="BorderThickness" Value="3,0,0,0" />
+    </Style>
+    <Style Selector="DataGridRow.activeServer:selected">
+        <Setter Property="Background" Value="{DynamicResource WorkspaceActiveSelectedRow}" />
+    </Style>
+    <Style Selector="DataGridRow.activeServer /template/ Border#BackgroundBorder">
+        <Setter Property="Background" Value="{DynamicResource WorkspaceActiveRow}" />
+    </Style>
+    <Style Selector="DataGridRow.activeServer:selected /template/ Border#BackgroundBorder">
+        <Setter Property="Background" Value="{DynamicResource WorkspaceActiveSelectedRow}" />
     </Style>
     <Style Selector="TabItem">
         <Setter Property="MinHeight" Value="40" />

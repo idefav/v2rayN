@@ -46,10 +46,11 @@
                 </Button.Flyout>
             </Button>
             <WrapPanel x:Name="overview" VerticalAlignment="Center">
-                <TextBlock x:Name="txtCoreState" FontWeight="SemiBold" Margin="0,4,16,4" />
-                <TextBlock x:Name="txtRunningServerDisplay" TextTrimming="CharacterEllipsis" MaxWidth="360" Margin="0,4,16,4" />
-                <TextBlock x:Name="txtRunningInfoDisplay" Classes="muted" Margin="0,4,16,4" />
-                <StackPanel x:Name="transferSummary" Orientation="Horizontal" Spacing="16" Margin="0,4">
+                <TextBlock x:Name="txtCoreState" VerticalAlignment="Center" FontWeight="SemiBold" Margin="0,4,16,4" />
+                <TextBlock x:Name="txtRunningServerDisplay" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="360" Margin="0,4,16,4" />
+                <ContentControl x:Name="exitSummary" MaxWidth="280" VerticalAlignment="Center" Margin="0,4,16,4" />
+                <TextBlock x:Name="txtRunningInfoDisplay" VerticalAlignment="Center" Classes="muted" Margin="0,4,16,4" />
+                <StackPanel x:Name="transferSummary" VerticalAlignment="Center" Orientation="Horizontal" Spacing="16" Margin="0,4">
                     <TextBlock x:Name="txtDownload" Text="↓ —" Classes="muted" />
                     <TextBlock x:Name="txtUpload" Text="↑ —" Classes="muted" />
                 </StackPanel>
