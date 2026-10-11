@@ -1,0 +1,184 @@
+<Styles xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Styles.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Light">
+                    <SolidColorBrush x:Key="WorkspaceBackground">#FFFFFF</SolidColorBrush>
+                    <SolidColorBrush x:Key="WorkspaceSurface">#FFFFFF</SolidColorBrush>
+                    <SolidColorBrush x:Key="WorkspaceSidebar">#F3F5F8</SolidColorBrush>
+                    <SolidColorBrush x:Key="WorkspaceBorder">#E8EBEF</SolidColorBrush>
+                    <SolidColorBrush x:Key="WorkspaceText">#18202D</SolidColorBrush>
+                    <SolidColorBrush x:Key="WorkspaceMuted">#667386</SolidColorBrush>
+                    <SolidColorBrush x:Key="WorkspaceSelection">#E0EDFF</SolidColorBrush>
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Dark">
+                    <SolidColorBrush x:Key="WorkspaceBackground">#171C25</SolidColorBrush>
+                    <SolidColorBrush x:Key="WorkspaceSurface">#202733</SolidColorBrush>
+                    <SolidColorBrush x:Key="WorkspaceSidebar">#1B222D</SolidColorBrush>
+                    <SolidColorBrush x:Key="WorkspaceBorder">#364152</SolidColorBrush>
+                    <SolidColorBrush x:Key="WorkspaceText">#EEF3FB</SolidColorBrush>
+                    <SolidColorBrush x:Key="WorkspaceMuted">#A5B2C6</SolidColorBrush>
+                    <SolidColorBrush x:Key="WorkspaceSelection">#243F65</SolidColorBrush>
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+            <SolidColorBrush x:Key="WorkspaceAccent">#1677FF</SolidColorBrush>
+            <SolidColorBrush x:Key="ToggleSwitchContainerCheckedDefaultBackground">#1677FF</SolidColorBrush>
+            <SolidColorBrush x:Key="ToggleSwitchContainerCheckedPointeroverBackground">#0865DF</SolidColorBrush>
+            <SolidColorBrush x:Key="ToggleSwitchContainerCheckedPressedBackground">#0756BD</SolidColorBrush>
+            <SolidColorBrush x:Key="ToggleSwitchContainerCheckedDisabledBackground">#661677FF</SolidColorBrush>
+            <SolidColorBrush x:Key="WorkspaceSuccess">#149447</SolidColorBrush>
+            <x:Double x:Key="WorkspaceFontSize">14</x:Double>
+            <x:Double x:Key="WorkspaceTitleSize">20</x:Double>
+            <x:Double x:Key="WorkspaceSectionSize">16</x:Double>
+            <x:Double x:Key="WorkspaceCaptionSize">12</x:Double>
+            <x:Double x:Key="WorkspaceMetricSize">22</x:Double>
+            <x:Double x:Key="WorkspaceRowHeight">48</x:Double>
+        </ResourceDictionary>
+    </Styles.Resources>
+    <Style Selector="Window">
+        <Setter Property="Background" Value="{DynamicResource WorkspaceBackground}" />
+        <Setter Property="Foreground" Value="{DynamicResource WorkspaceText}" />
+        <Setter Property="FontSize" Value="{DynamicResource WorkspaceFontSize}" />
+    </Style>
+    <Style Selector="Button, TextBox, ComboBox, ToggleSwitch, CheckBox, TabItem, ListBox, MenuItem">
+        <Setter Property="FontSize" Value="{DynamicResource WorkspaceFontSize}" />
+    </Style>
+    <Style Selector="SelectableTextBlock">
+        <Setter Property="FontSize" Value="{DynamicResource WorkspaceFontSize}" />
+    </Style>
+    <Style Selector="TextBlock.title">
+        <Setter Property="FontSize" Value="{DynamicResource WorkspaceTitleSize}" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="ContentControl">
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="VerticalContentAlignment" Value="Stretch" />
+    </Style>
+    <Style Selector="Button.primary:disabled">
+        <Setter Property="Opacity" Value="0.45" />
+    </Style>
+    <Style Selector="Button.primary:pointerover">
+        <Setter Property="Background" Value="#0865DF" />
+    </Style>
+    <Style Selector="Button.primary:pressed">
+        <Setter Property="Background" Value="#0756BD" />
+    </Style>
+    <Style Selector="Border.formGroup">
+        <Setter Property="Background" Value="{DynamicResource WorkspaceSurface}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource WorkspaceBorder}" />
+        <Setter Property="BorderThickness" Value="0,0,0,1" />
+        <Setter Property="CornerRadius" Value="0" />
+        <Setter Property="Padding" Value="0,8,0,12" />
+        <Setter Property="Margin" Value="0,0,0,8" />
+    </Style>
+    <Style Selector="Border.settingsGroup">
+        <Setter Property="Background" Value="{DynamicResource WorkspaceSurface}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource WorkspaceBorder}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="Padding" Value="16" />
+    </Style>
+    <Style Selector="ListBoxItem:selected">
+        <Setter Property="Background" Value="{DynamicResource WorkspaceSelection}" />
+    </Style>
+    <Style Selector="TextBlock.sectionTitle">
+        <Setter Property="FontSize" Value="{DynamicResource WorkspaceSectionSize}" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="TextBlock.muted, SelectableTextBlock.muted">
+        <Setter Property="Foreground" Value="{DynamicResource WorkspaceMuted}" />
+    </Style>
+    <Style Selector="TextBlock.caption">
+        <Setter Property="FontSize" Value="{DynamicResource WorkspaceCaptionSize}" />
+    </Style>
+    <Style Selector="TextBlock.error">
+        <Setter Property="Foreground" Value="#E5484D" />
+    </Style>
+    <Style Selector="Border.surface">
+        <Setter Property="Background" Value="{DynamicResource WorkspaceSurface}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource WorkspaceBorder}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="Padding" Value="16" />
+    </Style>
+    <Style Selector="FlyoutPresenter, MenuFlyoutPresenter">
+        <Setter Property="Background" Value="{DynamicResource WorkspaceSurface}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource WorkspaceBorder}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="10" />
+    </Style>
+    <Style Selector="Button">
+        <Setter Property="Foreground" Value="{DynamicResource WorkspaceText}" />
+        <Setter Property="Background" Value="{DynamicResource WorkspaceSurface}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource WorkspaceBorder}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="MinHeight" Value="36" />
+        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="Padding" Value="12,6" />
+    </Style>
+    <Style Selector="Button.primary">
+        <Setter Property="Background" Value="{DynamicResource WorkspaceAccent}" />
+        <Setter Property="Foreground" Value="White" />
+        <Setter Property="BorderBrush" Value="{DynamicResource WorkspaceAccent}" />
+    </Style>
+    <Style Selector="Button.rowAction">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Foreground" Value="{DynamicResource WorkspaceAccent}" />
+    </Style>
+    <Style Selector="Button.rowAction:pointerover">
+        <Setter Property="Background" Value="{DynamicResource WorkspaceSelection}" />
+    </Style>
+    <Style Selector="Label.nodeStatus">
+        <Setter Property="CornerRadius" Value="12" />
+        <Setter Property="Padding" Value="10,2" />
+        <Setter Property="MinWidth" Value="56" />
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="FontSize" Value="{DynamicResource WorkspaceFontSize}" />
+    </Style>
+    <Style Selector="Button.danger">
+        <Setter Property="Foreground" Value="#E5484D" />
+        <Setter Property="BorderBrush" Value="#E5484D" />
+    </Style>
+    <Style Selector="Button.nav">
+        <Setter Property="HorizontalContentAlignment" Value="Left" />
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Padding" Value="12,10" />
+        <Setter Property="MinHeight" Value="44" />
+    </Style>
+    <Style Selector="Button.nav.selected">
+        <Setter Property="Background" Value="{DynamicResource WorkspaceSelection}" />
+        <Setter Property="Foreground" Value="{DynamicResource WorkspaceAccent}" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="TextBox, ComboBox">
+        <Setter Property="Background" Value="{DynamicResource WorkspaceSurface}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource WorkspaceBorder}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="MinHeight" Value="36" />
+        <Setter Property="CornerRadius" Value="8" />
+    </Style>
+    <Style Selector="DataGrid">
+        <Setter Property="RowHeight" Value="{DynamicResource WorkspaceRowHeight}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource WorkspaceBorder}" />
+        <Setter Property="Background" Value="{DynamicResource WorkspaceSurface}" />
+        <Setter Property="GridLinesVisibility" Value="Horizontal" />
+    </Style>
+    <Style Selector="DataGridRow:selected">
+        <Setter Property="Background" Value="{DynamicResource WorkspaceSelection}" />
+    </Style>
+    <Style Selector="TabItem">
+        <Setter Property="MinHeight" Value="40" />
+        <Setter Property="Padding" Value="12,8" />
+    </Style>
+    <Style Selector="PathIcon">
+        <Setter Property="Width" Value="18" />
+        <Setter Property="Height" Value="18" />
+    </Style>
+    <Style Selector="TabControl.workspaceTabs /template/ ItemsPresenter#PART_ItemsPresenter">
+        <Setter Property="IsVisible" Value="False" />
+    </Style>
+</Styles>

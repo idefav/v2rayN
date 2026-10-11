@@ -3,11 +3,19 @@ using v2rayN.Desktop.Common;
 
 namespace v2rayN.Desktop.Views;
 
-public partial class RoutingSettingWindow : WindowBase<RoutingSettingViewModel>
+public partial class RoutingSettingWindow : PageBase<RoutingSettingViewModel>
 {
     public RoutingSettingWindow()
     {
         InitializeComponent();
+        var edit = new Button { Content = WorkspaceText.T("编辑规则集", "Edit rule set") };
+        var activate = new Button { Content = ResUI.menuRoutingAdvancedSetDefault };
+        activate.Classes.Add("primary");
+        var remove = new Button { Content = ResUI.menuRoutingAdvancedRemove };
+        remove.Classes.Add("danger");
+        TablePresentation.AddDetails(this, lstRoutings, WorkspaceText.T("规则集详情", "Rule set details"),
+            [(ResUI.LvRemarks, "Remarks"), (ResUI.LvCount, "RuleNum"), (ResUI.LvUrl, "Url"), (WorkspaceText.Status, "IsActive")], edit, activate, remove);
+        edit.Click += async (_, _) => { if (ViewModel != null) await ViewModel.RoutingAdvancedEditAsync(false); };
 
         Loaded += Window_Loaded;
         Closing += RoutingSettingWindow_Closing;
@@ -21,6 +29,8 @@ public partial class RoutingSettingWindow : WindowBase<RoutingSettingViewModel>
 
         this.WhenActivated(disposables =>
         {
+            activate.Command = ViewModel.RoutingAdvancedSetDefaultCmd;
+            remove.Command = ViewModel.RoutingAdvancedRemoveCmd;
             this.OneWayBind(ViewModel, vm => vm.RoutingItems, v => v.lstRoutings.ItemsSource).DisposeWith(disposables);
             this.Bind(ViewModel, vm => vm.SelectedSource, v => v.lstRoutings.SelectedItem).DisposeWith(disposables);
 
@@ -45,7 +55,7 @@ public partial class RoutingSettingWindow : WindowBase<RoutingSettingViewModel>
 
     private bool _closed = false;
 
-    private void RoutingSettingWindow_Closing(object? sender, WindowClosingEventArgs e)
+    private void RoutingSettingWindow_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
         if (_closed)
         {

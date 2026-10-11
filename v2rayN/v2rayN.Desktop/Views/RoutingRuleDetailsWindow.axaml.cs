@@ -1,4 +1,5 @@
 using v2rayN.Desktop.Base;
+using Avalonia.LogicalTree;
 
 namespace v2rayN.Desktop.Views;
 
@@ -7,6 +8,18 @@ public partial class RoutingRuleDetailsWindow : WindowBase<RoutingRuleDetailsVie
     public RoutingRuleDetailsWindow()
     {
         InitializeComponent();
+        cmbRuleType.PlaceholderText = Common.WorkspaceText.T("全部条件", "All conditions");
+        cmbNetwork.PlaceholderText = Common.WorkspaceText.T("不限", "Any");
+        var labels = new Dictionary<string, string>
+        {
+            ["outboundTag"] = Common.WorkspaceText.T("出站", "Outbound"),
+            ["port"] = Common.WorkspaceText.T("端口", "Port"),
+            ["protocol"] = Common.WorkspaceText.T("协议", "Protocol"),
+            ["inboundTag"] = Common.WorkspaceText.T("入站", "Inbound"),
+            ["network"] = Common.WorkspaceText.T("网络", "Network")
+        };
+        foreach (var text in this.GetLogicalDescendants().OfType<TextBlock>())
+            if (text.Text != null && labels.TryGetValue(text.Text, out var label)) text.Text = label;
 
         Loaded += Window_Loaded;
         btnCancel.Click += (s, e) => Close();

@@ -161,6 +161,7 @@ public class SpeedTestItem
     public string SpeedPingTestUrl { get; set; }
     public int MixedConcurrencyCount { get; set; }
     public string IPAPIUrl { get; set; }
+    public bool AutoDetectExit { get; set; } = true;
     public string UdpTestTarget { get; set; }
     public int? SpeedTestPageSize { get; set; }
     public int? SpeedTestDelayInterval { get; set; }

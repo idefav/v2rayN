@@ -11,16 +11,17 @@
     d:DesignWidth="800"
     Design.DataContext="{x:Static dd:DesignData.Msg}"
     mc:Ignorable="d">
-    <DockPanel Margin="2">
+    <DockPanel Margin="0">
         <WrapPanel
-            Margin="{StaticResource Margin4}"
+            x:Name="toolbar"
+            Margin="0,0,0,12"
             VerticalAlignment="Center"
             DockPanel.Dock="Top"
             Orientation="Horizontal">
 
             <TextBox
                 x:Name="cmbMsgFilter"
-                Width="200"
+                Width="280"
                 Margin="{StaticResource MarginLr8}"
                 VerticalContentAlignment="Center"
                 PlaceholderText="{x:Static resx:ResUI.MsgFilterTitle}"
@@ -29,23 +30,15 @@
             <Button
                 x:Name="btnCopy"
                 Margin="{StaticResource MarginLr8}"
-                Classes="IconButton Success"
+                Content="{x:Static resx:ResUI.menuMsgViewCopyAll}"
                 Click="menuMsgViewCopyAll_Click"
-                ToolTip.Tip="{x:Static resx:ResUI.menuMsgViewCopyAll}">
-                <Button.Content>
-                    <PathIcon Data="{StaticResource SemiIconCopy}" />
-                </Button.Content>
-            </Button>
+                ToolTip.Tip="{x:Static resx:ResUI.menuMsgViewCopyAll}" />
             <Button
                 x:Name="btnClear"
                 Margin="{StaticResource MarginLr8}"
-                Classes="IconButton Success"
+                Content="{x:Static resx:ResUI.menuMsgViewClear}"
                 Click="menuMsgViewClear_Click"
-                ToolTip.Tip="{x:Static resx:ResUI.menuMsgViewClear}">
-                <Button.Content>
-                    <PathIcon Data="{StaticResource SemiIconDelete}" />
-                </Button.Content>
-            </Button>
+                ToolTip.Tip="{x:Static resx:ResUI.menuMsgViewClear}" />
             <TextBlock
                 Margin="{StaticResource MarginLr8}"
                 VerticalAlignment="Center"
@@ -68,10 +61,13 @@
                 Theme="{DynamicResource SimpleToggleSwitch}" />
         </WrapPanel>
 
+        <Border BorderBrush="{DynamicResource WorkspaceBorder}" BorderThickness="1" CornerRadius="8" Padding="8">
         <avaloniaEdit:TextEditor
             Name="txtMsg"
-            Margin="{StaticResource Margin8}"
+            Margin="0"
             IsReadOnly="True"
+            FontFamily="Menlo,Cascadia Code,Consolas,DejaVu Sans Mono,monospace"
+            FontSize="{DynamicResource WorkspaceFontSize}"
             VerticalScrollBarVisibility="Auto"
             WordWrap="True">
             <avaloniaEdit:TextEditor.Options>
@@ -100,6 +96,7 @@
                 </MenuFlyout>
             </avaloniaEdit:TextEditor.ContextFlyout>
         </avaloniaEdit:TextEditor>
+        </Border>
 
     </DockPanel>
 </UserControl>

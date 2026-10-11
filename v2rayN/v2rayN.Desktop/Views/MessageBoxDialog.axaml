@@ -26,7 +26,7 @@
             <TextBlock
                 x:Name="txtMessage"
                 VerticalAlignment="Center"
-                FontSize="14"
+                FontSize="{DynamicResource WorkspaceFontSize}"
                 LineHeight="22"
                 TextWrapping="Wrap" />
         </ScrollViewer>
@@ -38,6 +38,7 @@
             Spacing="12">
             <Button
                 x:Name="btnYes"
+                Classes="primary"
                 MinWidth="90"
                 HorizontalContentAlignment="Center"
                 Content="{x:Static resx:ResUI.TbConfirm}"

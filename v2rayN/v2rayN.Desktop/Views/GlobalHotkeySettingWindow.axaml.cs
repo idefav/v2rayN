@@ -3,7 +3,7 @@ using v2rayN.Desktop.Manager;
 
 namespace v2rayN.Desktop.Views;
 
-public partial class GlobalHotkeySettingWindow : WindowBase<GlobalHotkeySettingViewModel>
+public partial class GlobalHotkeySettingWindow : PageBase<GlobalHotkeySettingViewModel>
 {
     private readonly List<object> _textBoxKeyEventItem = [];
 

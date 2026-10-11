@@ -1,7 +1,9 @@
 namespace ServiceLib.ViewModels;
 
-public partial class BackupAndRestoreViewModel : MyReactiveObject
+public partial class BackupAndRestoreViewModel : MyReactiveObject, ICloseable
 {
+    public event EventHandler? RequestClose;
+    public ReactiveCommand<RxVoid, RxVoid> SaveCmd { get; }
     private readonly string _guiConfigs = "guiConfigs";
     private static string BackupFileName => $"backup_{DateTime.Now:yyyyMMddHHmmss}.zip";
 
@@ -18,6 +20,7 @@ public partial class BackupAndRestoreViewModel : MyReactiveObject
     public BackupAndRestoreViewModel()
     {
         _config = AppManager.Instance.Config;
+        SaveCmd = ReactiveCommand.CreateFromTask(async () => { await SaveSettingsAsync(); });
 
         WebDavCheckCmd = ReactiveCommand.CreateFromTask(async () =>
         {
@@ -40,11 +43,22 @@ public partial class BackupAndRestoreViewModel : MyReactiveObject
         OperationMsg = msg;
     }
 
+    private async Task<bool> SaveSettingsAsync()
+    {
+        _config.WebDavItem = JsonUtils.DeepCopy(SelectedSource);
+        if (await ConfigHandler.SaveConfig(_config) != 0)
+        {
+            DisplayOperationMsg(ResUI.OperationFailed);
+            return false;
+        }
+        RequestClose?.Invoke(this, EventArgs.Empty);
+        return true;
+    }
+
     private async Task WebDavCheck()
     {
         DisplayOperationMsg();
-        _config.WebDavItem = SelectedSource;
-        _ = await ConfigHandler.SaveConfig(_config);
+        if (!await SaveSettingsAsync()) return;
 
         var result = await WebDavManager.Instance.CheckConnection();
         if (result)
@@ -60,6 +74,7 @@ public partial class BackupAndRestoreViewModel : MyReactiveObject
     private async Task RemoteBackup()
     {
         DisplayOperationMsg();
+        if (!await SaveSettingsAsync()) return;
         var fileName = Utils.GetBackupPath(BackupFileName);
         var result = await CreateZipFileFromDirectory(fileName);
         if (result)
@@ -78,6 +93,7 @@ public partial class BackupAndRestoreViewModel : MyReactiveObject
     private async Task RemoteRestore()
     {
         DisplayOperationMsg();
+        if (!await SaveSettingsAsync()) return;
         var fileName = Utils.GetTempPath(Utils.GetGuid());
         var result = await WebDavManager.Instance.GetRawFile(fileName);
         if (result)

@@ -40,6 +40,9 @@
 
 	<ItemGroup>
 		<ProjectCapability Include="Avalonia" />
+		<AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+			<_Parameter1>v2rayN.Desktop.Review</_Parameter1>
+		</AssemblyAttribute>
 		<AvaloniaResource Include="Assets\**" />
 		<ProjectReference Include="..\GlobalHotKeys\src\GlobalHotKeys\GlobalHotKeys.csproj" />
 		<ProjectReference Include="..\ServiceLib\ServiceLib.csproj" />

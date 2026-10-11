@@ -30,6 +30,8 @@ public partial class App : Application
             var mainWindow = (MainWindow)viewLocator.Build(mainWindowViewModel);
             mainWindow.ViewModel = mainWindowViewModel;
             desktop.MainWindow = mainWindow;
+            _ = ServiceLib.Services.ExitInfoService.Instance.StartAsync();
+            desktop.Exit += (_, _) => ServiceLib.Services.ExitInfoService.Instance.Stop();
 
             if (OperatingSystem.IsMacOS())
             {
@@ -143,6 +145,8 @@ public partial class App : Application
 
     private async void MenuExit_Click(object? sender, EventArgs e)
     {
+        if (Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime { MainWindow: MainWindow window }
+            && !await window.PrepareExitAsync()) return;
         await AppManager.Instance.AppExitAsync(false);
         AppManager.Instance.Shutdown(true);
     }

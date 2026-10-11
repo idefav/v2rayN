@@ -225,6 +225,7 @@ public partial class CoreConfigSingboxService(CoreConfigContext context)
             GenMinimizedDns();
 
             _coreConfig.route.rules.Clear();
+            _coreConfig.route.final = Global.ProxyTag;
             _coreConfig.inbounds.Clear();
             _coreConfig.inbounds.Add(new()
             {

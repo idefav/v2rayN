@@ -5,6 +5,7 @@ public class ProcessService : IDisposable
     private readonly Process _process;
     private readonly Func<bool, string, Task>? _updateFunc;
     private bool _isDisposed;
+    internal string? TemporaryConfigPath { get; set; }
 
     public int Id => _process.Id;
     public IntPtr Handle => _process.Handle;
@@ -175,6 +176,8 @@ public class ProcessService : IDisposable
         }
 
         _isDisposed = true;
+        if (TemporaryConfigPath != null)
+            try { File.Delete(TemporaryConfigPath); } catch (IOException) { }
         GC.SuppressFinalize(this);
     }
 }

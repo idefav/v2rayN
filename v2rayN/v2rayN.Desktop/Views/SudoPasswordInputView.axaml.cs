@@ -1,5 +1,6 @@
 using CliWrap.Buffered;
 using DialogHostAvalonia;
+using v2rayN.Desktop.Common;
 
 namespace v2rayN.Desktop.Views;
 
@@ -8,6 +9,7 @@ public partial class SudoPasswordInputView : UserControl
     public SudoPasswordInputView()
     {
         InitializeComponent();
+        DialogPresentation.ConstrainToWindow(this);
 
         Loaded += (s, e) => txtPassword.Focus();
 

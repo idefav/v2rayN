@@ -5,6 +5,7 @@ public class GlobalHotkeySettingViewModel : MyReactiveObject, ICloseable
     public event EventHandler? RequestClose;
 
     private readonly List<KeyEventItem> _globalHotkeys;
+    public IReadOnlyList<KeyEventItem> KeyEvents => _globalHotkeys;
 
     public ReactiveCommand<RxVoid, RxVoid> SaveCmd { get; }
 
@@ -13,6 +14,7 @@ public class GlobalHotkeySettingViewModel : MyReactiveObject, ICloseable
         _config = AppManager.Instance.Config;
 
         _globalHotkeys = JsonUtils.DeepCopy(_config.GlobalHotkeys);
+        foreach (var key in Enum.GetValues<EGlobalHotkey>()) GetKeyEventItem(key);
 
         SaveCmd = ReactiveCommand.CreateFromTask(async () =>
         {

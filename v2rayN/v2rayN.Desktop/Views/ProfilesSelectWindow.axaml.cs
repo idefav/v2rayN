@@ -8,9 +8,38 @@ public partial class ProfilesSelectWindow : WindowBase<ProfilesSelectViewModel>
     public ProfilesSelectWindow()
     {
         InitializeComponent();
+        Common.TablePresentation.AddSelectionColumn(lstProfiles);
+        lstProfiles.HeadersVisibility = DataGridHeadersVisibility.Column;
+        foreach (var column in lstProfiles.Columns)
+        {
+            if (column.Tag == null) continue;
+            column.IsVisible = column.Tag.ToString() is "Remarks" or "ConfigType" or "Address" or "Delay" or "Speed";
+            column.MinWidth = 72;
+            column.Width = new DataGridLength(column.Tag.ToString() is "Remarks" or "Address" ? 2 : 1, DataGridLengthUnitType.Star);
+        }
+        var order = new[] { "Remarks", "ConfigType", "Address", "Delay", "Speed" };
+        for (var index = 0; index < order.Length; index++)
+            lstProfiles.Columns.Single(column => column.Tag?.ToString() == order[index]).DisplayIndex = index + 1;
+        Common.TablePresentation.FitHeaders(lstProfiles);
+        var count = new TextBlock { Text = Common.WorkspaceText.Selected(0), VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center, Margin = new Thickness(0, 0, 16, 0) };
+        ((StackPanel)btnSave.Parent!).Children.Insert(0, count);
+        lstProfiles.SelectionChanged += (_, _) => count.Text = Common.WorkspaceText.Selected(lstProfiles.SelectedItems.Count);
+        Common.TablePresentation.TextButton(btnAutofitColumnWidth, Common.WorkspaceText.Columns);
+        btnAutofitColumnWidth.Click -= BtnAutofitColumnWidth_Click;
+        btnAutofitColumnWidth.Click += (_, _) =>
+        {
+            var choices = new StackPanel { Spacing = 8 };
+            foreach (var column in lstProfiles.Columns.Where(c => c.Tag != null))
+            {
+                var label = column.Header is TextBlock text ? text.Text : column.Header?.ToString();
+                var choice = new CheckBox { Content = label, IsChecked = column.IsVisible };
+                choice.IsCheckedChanged += (_, _) => column.IsVisible = choice.IsChecked == true;
+                choices.Children.Add(choice);
+            }
+            new Flyout { Content = choices }.ShowAt(btnAutofitColumnWidth);
+        };
 
         btnCancel.Click += (_, _) => Close();
-        btnAutofitColumnWidth.Click += BtnAutofitColumnWidth_Click;
         txtServerFilter.KeyDown += TxtServerFilter_KeyDown;
         lstProfiles.KeyDown += LstProfiles_KeyDown;
         lstProfiles.SelectionChanged += LstProfiles_SelectionChanged;

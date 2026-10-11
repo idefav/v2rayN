@@ -20,6 +20,7 @@ public partial class AddSshServerViewModel : MyReactiveObject, ICloseable
     [Reactive] public partial bool IsBusy { get; set; }
     [Reactive] public partial bool IsTesting { get; set; }
     [Reactive] public partial string TestStatus { get; set; } = "";
+    [Reactive] public partial SshConnectionTestResult? LastTestResult { get; set; }
     public ReactiveCommand<RxVoid, RxVoid> TestCmd { get; }
     public ReactiveCommand<RxVoid, RxVoid> StopTestCmd { get; }
     public ReactiveCommand<RxVoid, RxVoid> SaveCmd { get; }
@@ -161,15 +162,24 @@ public partial class AddSshServerViewModel : MyReactiveObject, ICloseable
         var revision = _testRevision;
         var progress = new Progress<SshConnectionTestResult>(result =>
         {
-            if (!_closed && IsTesting && revision == _testRevision) TestStatus = SshStrings.TestResult(result);
+            if (!_closed && IsTesting && revision == _testRevision)
+            {
+                LastTestResult = result;
+                TestStatus = SshStrings.TestResult(result);
+            }
         });
         var result = await Task.Run(() => _testService.TestAsync(snapshot, url, progress, token));
-        if (!_closed && revision == _testRevision) TestStatus = SshStrings.TestResult(result);
+        if (!_closed && revision == _testRevision)
+        {
+            LastTestResult = result;
+            TestStatus = SshStrings.TestResult(result);
+        }
     }
 
     private void InvalidateTest()
     {
         _testRevision++;
+        LastTestResult = null;
         TestStatus = "";
     }
 

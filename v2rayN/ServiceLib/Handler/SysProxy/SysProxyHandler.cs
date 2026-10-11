@@ -5,8 +5,16 @@ public static class SysProxyHandler
     private static readonly string _tag = "SysProxyHandler";
     private static readonly Lazy<PacManager> _pacManager = new(() => new PacManager());
 
-    public static async Task<bool> UpdateSysProxy(Config config, bool forceDisable)
+    // Process-only switch for the isolated UI review executable; never persisted in user configuration.
+    public static bool ChangesEnabled { get; set; } = true;
+
+    public static async Task<bool> UpdateSysProxy(Config config, bool forceDisable, Action<string>? onFailure = null)
     {
+        if (!ChangesEnabled)
+        {
+            onFailure?.Invoke("System proxy changes are disabled in UI review.");
+            return false;
+        }
         var type = config.SystemProxyItem.SysProxyType;
 
         if (forceDisable && type != ESysProxyType.Unchanged)
@@ -19,6 +27,7 @@ public static class SysProxyHandler
             var port = AppManager.Instance.GetLocalPort(EInboundProtocol.socks);
             if (port <= 0)
             {
+                onFailure?.Invoke(ResUI.CheckServerSettings);
                 return false;
             }
             switch (type)
@@ -30,12 +39,12 @@ public static class SysProxyHandler
 
                 case ESysProxyType.ForcedChange when Utils.IsLinux():
                     var exceptions = SanitizeExceptions(config);
-                    await ProxySettingLinux.SetProxy(Global.Loopback, port, exceptions);
+                    await ProxySettingLinux.SetProxy(Global.Loopback, port, exceptions, onFailure);
                     break;
 
                 case ESysProxyType.ForcedChange when Utils.IsMacOS():
                     var exceptions2 = SanitizeExceptions(config);
-                    await ProxySettingOSX.SetProxy(Global.Loopback, port, exceptions2);
+                    await ProxySettingOSX.SetProxy(Global.Loopback, port, exceptions2, onFailure);
                     break;
 
                 case ESysProxyType.ForcedClear when Utils.IsWindows():
@@ -43,11 +52,11 @@ public static class SysProxyHandler
                     break;
 
                 case ESysProxyType.ForcedClear when Utils.IsLinux():
-                    await ProxySettingLinux.UnsetProxy();
+                    await ProxySettingLinux.UnsetProxy(onFailure);
                     break;
 
                 case ESysProxyType.ForcedClear when Utils.IsMacOS():
-                    await ProxySettingOSX.UnsetProxy();
+                    await ProxySettingOSX.UnsetProxy(onFailure);
                     break;
 
                 case ESysProxyType.Pac when Utils.IsWindows():
@@ -62,6 +71,7 @@ public static class SysProxyHandler
         }
         catch (Exception ex)
         {
+            onFailure?.Invoke(ex.Message);
             Logging.SaveLog(_tag, ex);
         }
         return true;

@@ -15,6 +15,36 @@ public partial class AddServer2ViewModel : MyReactiveObject, ICloseable
     [Reactive]
     public partial bool IsSingboxEndpoint { get; set; }
 
+    [Reactive] public partial string? ConfigurationDraft { get; set; }
+    [Reactive] public partial string? ConfigurationLoadError { get; set; }
+    [Reactive] public partial bool IsLoadingConfiguration { get; set; }
+    public bool UseConfigurationDraft { get; set; }
+    private string? _loadedDraft;
+    private int _readRevision;
+
+    public async Task LoadConfigurationDraftAsync()
+    {
+        var revision = ++_readRevision;
+        IsLoadingConfiguration = true;
+        var address = SelectedSource.Address;
+        string text = "";
+        string? error = null;
+        try
+        {
+            if (address.IsNotEmpty())
+            {
+                var path = Path.IsPathRooted(address) ? address : Utils.GetConfigPath(address);
+                text = await File.ReadAllTextAsync(path);
+            }
+        }
+        catch (Exception) { error = ResUI.FailedReadConfiguration; }
+        if (revision != _readRevision) return;
+        _loadedDraft = text;
+        ConfigurationDraft = text;
+        ConfigurationLoadError = error;
+        IsLoadingConfiguration = false;
+    }
+
     public ReactiveCommand<RxVoid, RxVoid> BrowseServerCmd { get; }
     public ReactiveCommand<RxVoid, RxVoid> EditServerCmd { get; }
     public ReactiveCommand<RxVoid, RxVoid> SaveServerCmd { get; }
@@ -51,6 +81,7 @@ public partial class AddServer2ViewModel : MyReactiveObject, ICloseable
 
     private async Task SaveServerAsync()
     {
+        if (IsLoadingConfiguration) return;
         var remarks = SelectedSource.Remarks;
         if (remarks.IsNullOrEmpty())
         {
@@ -58,7 +89,14 @@ public partial class AddServer2ViewModel : MyReactiveObject, ICloseable
             return;
         }
 
-        if (SelectedSource.Address.IsNullOrEmpty())
+        var inlineDraft = SelectedSource.ConfigType == EConfigType.Outbound && ConfigurationDraft != null
+            && (ConfigurationDraft != _loadedDraft || SelectedSource.Address.IsNullOrEmpty());
+        if (inlineDraft && JsonUtils.ParseJson(ConfigurationDraft) == null)
+        {
+            NoticeManager.Instance.Enqueue(ResUI.OperationFailed);
+            return;
+        }
+        if (!inlineDraft && SelectedSource.Address.IsNullOrEmpty())
         {
             NoticeManager.Instance.Enqueue(ResUI.FillServerAddressCustom);
             return;
@@ -69,13 +107,40 @@ public partial class AddServer2ViewModel : MyReactiveObject, ICloseable
             IsSingboxEndpoint = IsSingboxEndpoint ? true : null,
         });
 
-        if (await ConfigHandler.EditCustomServer(_config, SelectedSource) == 0)
+        var originalAddress = SelectedSource.Address;
+        string? draftFile = null;
+        int result;
+        try
+        {
+            if (inlineDraft)
+            {
+                draftFile = Utils.GetConfigPath(Utils.GetGuid() + ".json");
+                await File.WriteAllTextAsync(draftFile, ConfigurationDraft);
+                SelectedSource.Address = Path.GetFileName(draftFile);
+            }
+            else if (UseConfigurationDraft && Path.IsPathRooted(originalAddress))
+            {
+                draftFile = Utils.GetConfigPath(Utils.GetGuid() + Path.GetExtension(originalAddress));
+                File.Copy(originalAddress, draftFile);
+                SelectedSource.Address = Path.GetFileName(draftFile);
+            }
+            result = (inlineDraft || UseConfigurationDraft) && SelectedSource.IndexId.IsNullOrEmpty()
+                ? await ConfigHandler.AddServerCommon(_config, SelectedSource)
+                : await ConfigHandler.EditCustomServer(_config, SelectedSource);
+        }
+        catch (Exception) { result = -1; }
+        if (result == 0)
         {
             NoticeManager.Instance.Enqueue(ResUI.OperationSuccess);
             RequestClose?.Invoke(this, EventArgs.Empty);
         }
         else
         {
+            SelectedSource.Address = originalAddress;
+            if (draftFile != null && File.Exists(draftFile))
+            {
+                try { File.Delete(draftFile); } catch (IOException) { }
+            }
             NoticeManager.Instance.Enqueue(ResUI.OperationFailed);
         }
     }
@@ -87,6 +152,14 @@ public partial class AddServer2ViewModel : MyReactiveObject, ICloseable
             return;
         }
 
+        if (UseConfigurationDraft)
+        {
+            var draft = JsonUtils.DeepCopy(SelectedSource);
+            draft.Address = fileName;
+            SelectedSource = draft;
+            await LoadConfigurationDraftAsync();
+            return;
+        }
         var item = await AppManager.Instance.GetProfileItem(SelectedSource.IndexId);
         item ??= SelectedSource;
         item.Address = fileName;

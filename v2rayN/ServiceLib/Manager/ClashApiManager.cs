@@ -36,7 +36,7 @@ public sealed class ClashApiManager
             {
                 item = item with { Proxies = proxies };
             }
-            if (clashProviders.providers is { Count: > 0 } providers)
+            if (clashProviders?.providers is { Count: > 0 } providers)
             {
                 foreach (var provider in providers)
                 {
@@ -105,6 +105,14 @@ public sealed class ClashApiManager
         {
             Logging.SaveLog(_tag, ex);
         }
+    }
+
+    public async Task SetActiveProxyChecked(string groupName, string nodeName)
+    {
+        using var client = new HttpClient(new SocketsHttpHandler { UseProxy = false }) { Timeout = TimeSpan.FromSeconds(10) };
+        using var body = new StringContent(JsonUtils.Serialize(new { name = nodeName }), Encoding.UTF8, "application/json");
+        using var response = await client.PutAsync($"{ApiUrl}/proxies/{Utils.UrlEncode(groupName)}", body);
+        response.EnsureSuccessStatusCode();
     }
 
     public async Task UpdateClashMode(string mode)

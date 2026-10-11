@@ -13,16 +13,16 @@
     Design.DataContext="{x:Static dd:DesignData.ClashConnections}"
     mc:Ignorable="d">
 
-    <DockPanel Margin="2">
+    <DockPanel Margin="0">
         <WrapPanel
-            Margin="{StaticResource Margin4}"
+            Margin="0,0,0,16"
             VerticalAlignment="Center"
             DockPanel.Dock="Top"
             Orientation="Horizontal">
 
             <TextBox
                 x:Name="txtHostFilter"
-                Width="200"
+                Width="280"
                 Margin="{StaticResource MarginLr8}"
                 VerticalContentAlignment="Center"
                 PlaceholderText="{x:Static resx:ResUI.ConnectionsHostFilterTitle}" />
@@ -60,9 +60,9 @@
         <DataGrid
             x:Name="lstConnections"
             AutoGenerateColumns="False"
-            BorderThickness="1"
+            BorderThickness="0"
             CanUserResizeColumns="True"
-            GridLinesVisibility="All"
+            GridLinesVisibility="Horizontal"
             HeadersVisibility="Column"
             IsReadOnly="True"
             ItemsSource="{Binding ConnectionItems}">
@@ -74,12 +74,12 @@
             </DataGrid.ContextMenu>
             <DataGrid.Columns>
                 <DataGridTextColumn
-                    Width="300"
+                    Width="*"
                     Binding="{Binding Host}"
                     Header="{x:Static resx:ResUI.TbSortingHost}"
                     Tag="Host" />
                 <DataGridTextColumn
-                    Width="500"
+                    Width="240"
                     Binding="{Binding Chain}"
                     Header="{x:Static resx:ResUI.TbSortingChain}"
                     Tag="Chain" />
@@ -89,7 +89,7 @@
                     Header="{x:Static resx:ResUI.TbSortingNetwork}"
                     Tag="Network" />
                 <DataGridTextColumn
-                    Width="160"
+                    Width="100"
                     Binding="{Binding Type}"
                     Header="{x:Static resx:ResUI.TbSortingType}"
                     Tag="Type" />

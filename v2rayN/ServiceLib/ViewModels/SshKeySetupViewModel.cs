@@ -22,6 +22,7 @@ public partial class SshKeySetupViewModel : MyReactiveObject
     [Reactive] public partial bool NeedsPassword { get; set; }
     [Reactive] public partial bool IsBusy { get; set; }
     [Reactive] public partial string Status { get; set; } = "";
+    [Reactive] public partial string CurrentStage { get; set; } = "";
     [Reactive] public partial string PublicKeyText { get; set; } = "";
     public ReactiveCommand<RxVoid, RxVoid> RunCmd { get; }
     public ReactiveCommand<RxVoid, RxVoid> BrowseCmd { get; }
@@ -87,9 +88,10 @@ public partial class SshKeySetupViewModel : MyReactiveObject
         var password = InstallationPassword;
         InstallationPassword = "";
         IsBusy = true;
+        CurrentStage = "connecting";
         using var operation = new CancellationTokenSource();
         _operation = operation;
-        var progress = new Progress<string>(stage => { if (!_closing && IsBusy) Status = SshStrings.SetupStage(stage); });
+        var progress = new Progress<string>(stage => { if (!_closing && IsBusy) { CurrentStage = stage; Status = SshStrings.SetupStage(stage); } });
         try
         {
             var result = await Task.Run(() => new SshKeyInstaller(_store).ConfigureAsync(
@@ -108,6 +110,7 @@ public partial class SshKeySetupViewModel : MyReactiveObject
             }
             if (result.Verified)
             {
+                CurrentStage = "verified";
                 Result = new(result.Key!, passphrase);
                 _closing = true;
             }

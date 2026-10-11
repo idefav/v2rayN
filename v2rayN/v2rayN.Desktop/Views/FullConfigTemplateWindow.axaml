@@ -1,4 +1,4 @@
-<Window
+<UserControl
     x:Class="v2rayN.Desktop.Views.FullConfigTemplateWindow"
     xmlns="https://github.com/avaloniaui"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -8,13 +8,9 @@
     xmlns:resx="clr-namespace:ServiceLib.Resx;assembly=ServiceLib"
     xmlns:views="clr-namespace:v2rayN.Desktop.Views"
     xmlns:vms="clr-namespace:ServiceLib.ViewModels;assembly=ServiceLib"
-    Title="{x:Static resx:ResUI.menuFullConfigTemplate}"
-    Width="900"
-    Height="600"
+    Tag="{x:Static resx:ResUI.menuFullConfigTemplate}"
     x:DataType="vms:FullConfigTemplateViewModel"
     Design.DataContext="{x:Static dd:DesignData.FullConfigTemplate}"
-    ShowInTaskbar="False"
-    WindowStartupLocation="CenterScreen"
     mc:Ignorable="d">
     <DockPanel Margin="{StaticResource Margin8}">
         <StackPanel
@@ -194,4 +190,4 @@
             </TabItem>
         </TabControl>
     </DockPanel>
-</Window>
+</UserControl>

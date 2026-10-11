@@ -1,4 +1,4 @@
-<Window
+<UserControl
     x:Class="v2rayN.Desktop.Views.OptionSettingWindow"
     xmlns="https://github.com/avaloniaui"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -7,13 +7,9 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:resx="clr-namespace:ServiceLib.Resx;assembly=ServiceLib"
     xmlns:vms="clr-namespace:ServiceLib.ViewModels;assembly=ServiceLib"
-    Title="{x:Static resx:ResUI.menuSetting}"
-    Width="1000"
-    Height="600"
+    Tag="{x:Static resx:ResUI.menuSetting}"
     x:DataType="vms:OptionSettingViewModel"
     Design.DataContext="{x:Static dd:DesignData.OptionSetting}"
-    ShowInTaskbar="False"
-    WindowStartupLocation="CenterScreen"
     mc:Ignorable="d">
     <DockPanel Margin="{StaticResource Margin8}">
         <StackPanel
@@ -34,7 +30,7 @@
                 IsCancel="True" />
         </StackPanel>
 
-        <TabControl HorizontalContentAlignment="Stretch">
+        <TabControl x:Name="pageTabs" HorizontalContentAlignment="Stretch">
             <TabItem Header="{x:Static resx:ResUI.TbSettingsCore}">
                 <ScrollViewer VerticalScrollBarVisibility="Visible">
                     <Grid
@@ -830,6 +826,7 @@
                             Margin="{StaticResource Margin4}"
                             VerticalAlignment="Center"
                             Text="{x:Static resx:ResUI.TbSettingsIPAPIUrl}" />
+                        <StackPanel Grid.Row="22" Grid.Column="1">
                         <ComboBox
                             x:Name="cmbIPAPIUrl"
                             Grid.Row="22"
@@ -837,6 +834,7 @@
                             Width="300"
                             Margin="{StaticResource Margin4}"
                             IsEditable="True" />
+                        </StackPanel>
 
                         <TextBlock
                             Grid.Row="23"
@@ -857,7 +855,7 @@
                             Grid.Column="0"
                             Margin="{StaticResource Margin4}"
                             VerticalAlignment="Center"
-                            Text="{x:Static resx:ResUI.TbSettingsMainGirdOrientation}" />
+                            Text="{x:Static resx:ResUI.TbSettingsMainGirdOrientation}" IsVisible="False" />
                         <ComboBox
                             x:Name="cmbMainGirdOrientation"
                             Grid.Row="24"
@@ -932,96 +930,47 @@
             </TabItem>
 
             <TabItem Name="tabSystemproxy" Header="{x:Static resx:ResUI.TbSettingsSystemproxy}">
-                <DockPanel Margin="{StaticResource Margin8}">
-                    <StackPanel
-                        DockPanel.Dock="Bottom"
-                        IsVisible="{Binding BlIsNonWindows}"
-                        Orientation="Vertical">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock
-                                Margin="{StaticResource Margin4}"
-                                VerticalAlignment="Center"
-                                Text="{x:Static resx:ResUI.TbSettingsCustomSystemProxyScriptPath}" />
-                            <TextBox
-                                x:Name="txtCustomSystemProxyScriptPath"
-                                Width="600"
-                                Margin="{StaticResource Margin4}"
-                                HorizontalAlignment="Left"
-                                VerticalAlignment="Center"
-                                PlaceholderText="proxy_set.sh"
-                                TextWrapping="Wrap" />
-                            <Button
-                                x:Name="btnBrowseCustomSystemProxyScriptPath"
-                                Margin="{StaticResource Margin4}"
-                                Content="{x:Static resx:ResUI.TbBrowse}" />
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <Border Classes="formGroup">
+                        <StackPanel Spacing="16">
+                            <TextBlock IsVisible="{Binding BlIsWindows}" TextWrapping="Wrap"
+                                       Text="{x:Static resx:ResUI.TbSettingsExceptionTip}" />
+                            <TextBlock IsVisible="{Binding BlIsNonWindows}" TextWrapping="Wrap"
+                                       Text="{x:Static resx:ResUI.TbSettingsExceptionTip2}" />
+                            <TextBox x:Name="txtsystemProxyExceptions" Height="220" AcceptsReturn="True"
+                                     Classes="TextArea" TextWrapping="Wrap" />
+                            <StackPanel IsVisible="{Binding BlIsNonWindows}" Spacing="8">
+                                <TextBlock Text="{x:Static resx:ResUI.TbSettingsCustomSystemProxyScriptPath}" TextWrapping="Wrap" />
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBox x:Name="txtCustomSystemProxyScriptPath" PlaceholderText="proxy_set.sh"
+                                             TextWrapping="Wrap" Margin="0,0,8,0" />
+                                    <Button x:Name="btnBrowseCustomSystemProxyScriptPath" Grid.Column="1"
+                                            Content="{x:Static resx:ResUI.TbBrowse}" />
+                                </Grid>
+                            </StackPanel>
+                            <StackPanel IsVisible="{Binding BlIsWindows}" Spacing="16">
+                                <WrapPanel>
+                                    <TextBlock Text="{x:Static resx:ResUI.TbSettingsNotProxyLocalAddress}"
+                                               TextWrapping="Wrap" VerticalAlignment="Center" Margin="0,0,12,0" />
+                                    <ToggleSwitch x:Name="tognotProxyLocalAddress" />
+                                </WrapPanel>
+                                <StackPanel Spacing="8">
+                                    <TextBlock Text="{x:Static resx:ResUI.TbSettingsAdvancedProtocol}" TextWrapping="Wrap" />
+                                    <ComboBox x:Name="cmbsystemProxyAdvancedProtocol" HorizontalAlignment="Stretch" />
+                                </StackPanel>
+                                <StackPanel Spacing="8">
+                                    <TextBlock Text="{x:Static resx:ResUI.TbSettingsCustomSystemProxyPacPath}" TextWrapping="Wrap" />
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <TextBox x:Name="txtCustomSystemProxyPacPath" PlaceholderText="pac.txt"
+                                                 TextWrapping="Wrap" Margin="0,0,8,0" />
+                                        <Button x:Name="btnBrowseCustomSystemProxyPacPath" Grid.Column="1"
+                                                Content="{x:Static resx:ResUI.TbBrowse}" />
+                                    </Grid>
+                                </StackPanel>
+                            </StackPanel>
                         </StackPanel>
-                    </StackPanel>
-                    <StackPanel
-                        DockPanel.Dock="Bottom"
-                        IsVisible="{Binding BlIsWindows}"
-                        Orientation="Vertical">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock
-                                Margin="{StaticResource Margin4}"
-                                VerticalAlignment="Center"
-                                Text="{x:Static resx:ResUI.TbSettingsNotProxyLocalAddress}" />
-                            <ToggleSwitch
-                                x:Name="tognotProxyLocalAddress"
-                                Margin="{StaticResource Margin4}"
-                                HorizontalAlignment="Left" />
-                        </StackPanel>
-
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock
-                                Margin="{StaticResource Margin4}"
-                                VerticalAlignment="Center"
-                                Text="{x:Static resx:ResUI.TbSettingsAdvancedProtocol}" />
-                            <ComboBox
-                                x:Name="cmbsystemProxyAdvancedProtocol"
-                                MinWidth="400"
-                                Margin="{StaticResource Margin4}" />
-                        </StackPanel>
-
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock
-                                Margin="{StaticResource Margin4}"
-                                VerticalAlignment="Center"
-                                Text="{x:Static resx:ResUI.TbSettingsCustomSystemProxyPacPath}" />
-                            <TextBox
-                                x:Name="txtCustomSystemProxyPacPath"
-                                Width="600"
-                                Margin="{StaticResource Margin4}"
-                                HorizontalAlignment="Left"
-                                VerticalAlignment="Center"
-                                PlaceholderText="pac.txt"
-                                TextWrapping="Wrap" />
-                            <Button
-                                x:Name="btnBrowseCustomSystemProxyPacPath"
-                                Margin="{StaticResource Margin4}"
-                                Content="{x:Static resx:ResUI.TbBrowse}" />
-                        </StackPanel>
-                    </StackPanel>
-
-                    <TextBlock
-                        Margin="{StaticResource Margin4}"
-                        VerticalAlignment="Center"
-                        DockPanel.Dock="Top"
-                        IsVisible="{Binding BlIsWindows}"
-                        Text="{x:Static resx:ResUI.TbSettingsExceptionTip}" />
-                    <TextBlock
-                        Margin="{StaticResource Margin4}"
-                        VerticalAlignment="Center"
-                        DockPanel.Dock="Top"
-                        IsVisible="{Binding BlIsNonWindows}"
-                        Text="{x:Static resx:ResUI.TbSettingsExceptionTip2}" />
-                    <TextBox
-                        x:Name="txtsystemProxyExceptions"
-                        Margin="{StaticResource Margin4}"
-                        VerticalAlignment="Stretch"
-                        BorderThickness="1"
-                        Classes="TextArea"
-                        TextWrapping="Wrap" />
-                </DockPanel>
+                    </Border>
+                </ScrollViewer>
             </TabItem>
 
             <TabItem Header="{x:Static resx:ResUI.TbSettingsTunMode}">
@@ -1189,6 +1138,7 @@
             </TabItem>
 
             <TabItem Header="{x:Static resx:ResUI.TbSettingsCoreType}">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <Grid
                     Margin="{StaticResource Margin4}"
                     ColumnDefinitions="Auto,Auto"
@@ -1310,7 +1260,8 @@
                         Width="200"
                         Margin="{StaticResource Margin4}" />
                 </Grid>
+                </ScrollViewer>
             </TabItem>
         </TabControl>
     </DockPanel>
-</Window>
+</UserControl>

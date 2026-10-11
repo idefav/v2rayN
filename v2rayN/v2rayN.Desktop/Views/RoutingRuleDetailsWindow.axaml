@@ -9,7 +9,7 @@
     xmlns:vms="clr-namespace:ServiceLib.ViewModels;assembly=ServiceLib"
     Title="{x:Static resx:ResUI.menuRoutingRuleDetailsSetting}"
     Width="900"
-    Height="600"
+    Height="820"
     x:DataType="vms:RoutingRuleDetailsViewModel"
     Design.DataContext="{x:Static dd:DesignData.RoutingRuleDetails}"
     ShowInTaskbar="False"

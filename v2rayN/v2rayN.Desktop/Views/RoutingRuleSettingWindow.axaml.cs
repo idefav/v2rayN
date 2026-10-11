@@ -8,6 +8,9 @@ public partial class RoutingRuleSettingWindow : WindowBase<RoutingRuleSettingVie
     public RoutingRuleSettingWindow()
     {
         InitializeComponent();
+        lstRules.HeadersVisibility = DataGridHeadersVisibility.All;
+        lstRules.RowHeaderWidth = 40;
+        lstRules.LoadingRow += (_, args) => args.Row.Header = (args.Row.Index + 1).ToString(CultureInfo.CurrentCulture);
 
         Loaded += Window_Loaded;
         btnCancel.Click += (s, e) => Close();
@@ -17,6 +20,29 @@ public partial class RoutingRuleSettingWindow : WindowBase<RoutingRuleSettingVie
         menuRuleSelectAll.Click += menuRuleSelectAll_Click;
         //btnBrowseCustomIcon.Click += btnBrowseCustomIcon_Click;
         btnBrowseCustomRulesetPath4Singbox.Click += btnBrowseCustomRulesetPath4Singbox_ClickAsync;
+        btnRuleEdit.Click += async (_, _) => { if (ViewModel != null) await ViewModel.RuleEditAsync(false); };
+        var dock = (DockPanel)Content!;
+        dock.Children.Remove(basicOptions);
+        dock.Children.Insert(0, basicOptions);
+        for (var index = 0; index < lstRules.Columns.Count; index++)
+        {
+            var column = lstRules.Columns[index];
+            column.MinWidth = index == 0 ? 48 : 80;
+            column.IsVisible = index < 4 || index == 8;
+            column.Width = index == 0 ? new DataGridLength(48) :
+                new DataGridLength(index is 1 or 8 ? 2 : 1, DataGridLengthUnitType.Star);
+        }
+        btnColumns.Click += (_, _) =>
+        {
+            var panel = new StackPanel { Spacing = 8 };
+            foreach (var column in lstRules.Columns.Skip(1))
+            {
+                var choice = new CheckBox { Content = column.Header, IsChecked = column.IsVisible };
+                choice.IsCheckedChanged += (_, _) => column.IsVisible = choice.IsChecked == true;
+                panel.Children.Add(choice);
+            }
+            new Flyout { Content = panel }.ShowAt(btnColumns);
+        };
 
         cmbdomainStrategy.ItemsSource = Global.DomainStrategies.AppendEmpty();
         cmbdomainStrategy4Singbox.ItemsSource = Global.DomainStrategies4Sbox;
@@ -47,13 +73,16 @@ public partial class RoutingRuleSettingWindow : WindowBase<RoutingRuleSettingVie
             this.BindCommand(ViewModel, vm => vm.MoveUpCmd, v => v.menuMoveUp).DisposeWith(disposables);
             this.BindCommand(ViewModel, vm => vm.MoveDownCmd, v => v.menuMoveDown).DisposeWith(disposables);
             this.BindCommand(ViewModel, vm => vm.MoveBottomCmd, v => v.menuMoveBottom).DisposeWith(disposables);
+            this.BindCommand(ViewModel, vm => vm.RuleRemoveCmd, v => v.btnRuleRemove).DisposeWith(disposables);
+            this.BindCommand(ViewModel, vm => vm.MoveUpCmd, v => v.btnMoveUp).DisposeWith(disposables);
+            this.BindCommand(ViewModel, vm => vm.MoveDownCmd, v => v.btnMoveDown).DisposeWith(disposables);
 
             this.BindCommand(ViewModel, vm => vm.SaveCmd, v => v.btnSave).DisposeWith(disposables);
 
             ViewModel.ShowYesNoInteraction.RegisterHandler(async interaction =>
             {
                 var message = interaction.Input;
-                var result = await UI.ShowYesNo(message);
+                var result = await UI.ShowYesNo(message, message == ResUI.RemoveServer ? WorkspaceText.Delete : null, message == ResUI.RemoveServer);
                 interaction.SetOutput(result == ButtonResult.Yes);
             }).DisposeWith(disposables);
 
@@ -85,6 +114,7 @@ public partial class RoutingRuleSettingWindow : WindowBase<RoutingRuleSettingVie
 
     private void RoutingRuleSettingWindow_KeyDown(object? sender, KeyEventArgs e)
     {
+        if (!lstRules.IsKeyboardFocusWithin) return;
         if (e.KeyModifiers is KeyModifiers.Control or KeyModifiers.Meta)
         {
             if (e.Key == Key.A)

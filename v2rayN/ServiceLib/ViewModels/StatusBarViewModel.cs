@@ -89,6 +89,13 @@ public partial class StatusBarViewModel : MyReactiveObject
     [Reactive]
     public partial string RunningInfoDisplay { get; set; }
 
+    [Reactive] public partial AvailabilityCheckResult? LastAvailabilityCheck { get; set; }
+    [Reactive] public partial bool IsTestingAvailability { get; set; }
+    [Reactive] public partial bool IsChangingConnection { get; set; }
+    [Reactive] public partial string? ConnectionError { get; set; }
+    private int _connectionOperations;
+    private string? _availabilityServerId;
+
     [Reactive]
     public partial string SpeedProxyDisplay { get; set; }
 
@@ -125,7 +132,7 @@ public partial class StatusBarViewModel : MyReactiveObject
 
         this.WhenAnyValue(x => x.SelectedRouting)
             .Where(y => y != null && !y.Remarks.IsNullOrEmpty())
-            .SubscribeAsync(async _ => await RoutingSelectedChangedAsync());
+            .SubscribeAsync(async _ => await ChangeConnectionAsync(RoutingSelectedChangedAsync));
 
         this.WhenAnyValue(x => x.SelectedServer)
             .Where(y => y != null && !y.Text.IsNullOrEmpty())
@@ -134,10 +141,10 @@ public partial class StatusBarViewModel : MyReactiveObject
         SystemProxySelected = (int)_config.SystemProxyItem.SysProxyType;
         this.WhenAnyValue(x => x.SystemProxySelected)
             .Where(y => y >= 0)
-            .SubscribeAsync(async _ => await DoSystemProxySelected());
+            .SubscribeAsync(async _ => await ChangeConnectionAsync(DoSystemProxySelected));
 
         this.WhenAnyValue(x => x.EnableTun)
-            .SubscribeAsync(async _ => await DoEnableTun());
+            .SubscribeAsync(async _ => await ChangeConnectionAsync(DoEnableTun));
 
         CopyProxyCmdToClipboardCmd = ReactiveCommand.CreateFromTask(async () =>
         {
@@ -265,6 +272,7 @@ public partial class StatusBarViewModel : MyReactiveObject
 
         //display running server
         var running = await ConfigHandler.GetDefaultServer(_config);
+        if (running?.IndexId != _availabilityServerId) LastAvailabilityCheck = null;
         if (running != null)
         {
             RunningServerDisplay = running.GetSummary();
@@ -316,15 +324,21 @@ public partial class StatusBarViewModel : MyReactiveObject
 
     public async Task<AvailabilityCheckResult?> TestServerAvailability()
     {
+        if (IsTestingAvailability) return LastAvailabilityCheck;
         var item = await ConfigHandler.GetDefaultServer(_config);
         if (item == null)
         {
             return null;
         }
 
+        IsTestingAvailability = true;
+        LastAvailabilityCheck = null;
+        try
+        {
         await TestServerAvailabilitySub(ResUI.Speedtesting);
 
         var result = await Task.Run(ConnectionHandler.RunAvailabilityCheck);
+        if (_config.IndexId == item.IndexId) { LastAvailabilityCheck = result; _availabilityServerId = item.IndexId; }
         var msg = string.Format(ResUI.TestMeOutput, result.Time, result.Ip);
 
         var ip = result.GetValidIp();
@@ -340,6 +354,23 @@ public partial class StatusBarViewModel : MyReactiveObject
         NoticeManager.Instance.SendMessageEx(msg);
         await TestServerAvailabilitySub(msg);
         return result;
+        }
+        finally { IsTestingAvailability = false; }
+    }
+
+    private async Task ChangeConnectionAsync(Func<Task> operation)
+    {
+        Interlocked.Increment(ref _connectionOperations);
+        IsChangingConnection = true;
+        ConnectionError = null;
+        try { await operation(); }
+        catch (Exception ex)
+        {
+            ConnectionError = ex.Message;
+            NoticeManager.Instance.Enqueue(ex.Message);
+            Logging.SaveLog("ChangeConnection", ex);
+        }
+        finally { IsChangingConnection = Interlocked.Decrement(ref _connectionOperations) != 0; }
     }
 
     private async Task TestServerAvailabilitySub(string msg)
@@ -375,7 +406,7 @@ public partial class StatusBarViewModel : MyReactiveObject
 
     public async Task ChangeSystemProxyAsync(ESysProxyType type, bool blChange)
     {
-        await SysProxyHandler.UpdateSysProxy(_config, false);
+        await SysProxyHandler.UpdateSysProxy(_config, false, error => ConnectionError = error);
 
         BlSystemProxyClear = type == ESysProxyType.ForcedClear;
         BlSystemProxySet = type == ESysProxyType.ForcedChange;

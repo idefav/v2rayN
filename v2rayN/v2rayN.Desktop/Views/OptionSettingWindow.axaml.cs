@@ -3,13 +3,25 @@ using v2rayN.Desktop.Common;
 
 namespace v2rayN.Desktop.Views;
 
-public partial class OptionSettingWindow : WindowBase<OptionSettingViewModel>
+public partial class OptionSettingWindow : PageBase<OptionSettingViewModel>
 {
     private static Config _config;
+    private int _sectionIndex;
+
+    public void SelectSection(int index)
+    {
+        _sectionIndex = Math.Clamp(index, 0, pageTabs.Items.Count - 1);
+        pageTabs.SelectedIndex = _sectionIndex;
+    }
 
     public OptionSettingWindow()
     {
         InitializeComponent();
+        cmbMainGirdOrientation.IsVisible = false;
+        if (cmbMainGirdOrientation.Parent is Grid layoutGrid)
+            foreach (var label in layoutGrid.Children.OfType<TextBlock>().Where(label => Grid.GetRow(label) == Grid.GetRow(cmbMainGirdOrientation)))
+                label.IsVisible = false;
+        pageTabs.Classes.Add("workspaceTabs");
 
         Loaded += Window_Loaded;
         btnCancel.Click += (s, e) => Close();
@@ -26,6 +38,15 @@ public partial class OptionSettingWindow : WindowBase<OptionSettingViewModel>
         });
 
         cmbsystemProxyAdvancedProtocol.ItemsSource = Global.IEProxyProtocols;
+        if (txtsystemProxyExceptions.Parent is StackPanel proxyFields)
+        {
+            var platformFields = proxyFields.Children.OfType<StackPanel>().ToArray();
+            foreach (var fields in platformFields.Reverse())
+            {
+                proxyFields.Children.Remove(fields);
+                proxyFields.Children.Insert(0, fields);
+            }
+        }
         cmbloglevel.ItemsSource = Global.LogLevels;
         cmbdefFingerprint.ItemsSource = Global.Fingerprints;
         cmbdefUserAgent.ItemsSource = Global.UserAgent;
@@ -114,11 +135,14 @@ public partial class OptionSettingWindow : WindowBase<OptionSettingViewModel>
             this.Bind(ViewModel, vm => vm.UdpTestTarget, v => v.cmbUdpTestTarget.Text).DisposeWith(disposables);
             this.Bind(ViewModel, vm => vm.MixedConcurrencyCount, v => v.cmbMixedConcurrencyCount.SelectedValue).DisposeWith(disposables);
             this.Bind(ViewModel, vm => vm.SubConvertUrl, v => v.cmbSubConvertUrl.Text).DisposeWith(disposables);
-            this.Bind(ViewModel, vm => vm.MainGirdOrientation, view => view.cmbMainGirdOrientation.SelectedIndex).DisposeWith(disposables);
             this.Bind(ViewModel, vm => vm.GeoFileSourceUrl, v => v.cmbGetFilesSourceUrl.Text).DisposeWith(disposables);
             this.Bind(ViewModel, vm => vm.SrsFileSourceUrl, v => v.cmbSrsFilesSourceUrl.Text).DisposeWith(disposables);
             this.Bind(ViewModel, vm => vm.RoutingRulesSourceUrl, v => v.cmbRoutingRulesSourceUrl.Text).DisposeWith(disposables);
             this.Bind(ViewModel, vm => vm.IPAPIUrl, v => v.cmbIPAPIUrl.Text).DisposeWith(disposables);
+            var autoExit = new CheckBox { Content = WorkspaceText.T("自动检测新增或变更节点的出口地区", "Automatically check exit locations for new or changed servers"), Margin = new Thickness(8) };
+            if (cmbIPAPIUrl.Parent is Panel exitPanel) exitPanel.Children.Add(autoExit);
+            autoExit.Bind(CheckBox.IsCheckedProperty, new Avalonia.Data.Binding(nameof(OptionSettingViewModel.AutoDetectExit)) { Source = ViewModel, Mode = Avalonia.Data.BindingMode.TwoWay }).DisposeWith(disposables);
+            new ActionDisposable(() => (autoExit.Parent as Panel)?.Children.Remove(autoExit)).DisposeWith(disposables);
             this.Bind(ViewModel, vm => vm.RootCertProvider, v => v.cmbRootCertificateProvider.SelectedValue).DisposeWith(disposables);
 
             this.Bind(ViewModel, vm => vm.NotProxyLocalAddress, v => v.tognotProxyLocalAddress.IsChecked).DisposeWith(disposables);
@@ -229,6 +253,7 @@ public partial class OptionSettingWindow : WindowBase<OptionSettingViewModel>
 
     private void Window_Loaded(object? sender, RoutedEventArgs e)
     {
+        pageTabs.SelectedIndex = _sectionIndex;
         btnCancel.Focus();
     }
 }

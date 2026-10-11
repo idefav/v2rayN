@@ -1,0 +1,68 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vms="clr-namespace:ServiceLib.ViewModels;assembly=ServiceLib"
+             xmlns:resx="clr-namespace:ServiceLib.Resx;assembly=ServiceLib"
+             xmlns:ws="clr-namespace:v2rayN.Desktop.Common"
+             x:Class="v2rayN.Desktop.Views.ServerWorkspaceView" x:DataType="vms:ProfilesViewModel">
+    <Grid x:Name="workspace" ColumnDefinitions="*">
+        <ContentControl x:Name="profiles" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
+        <Border x:Name="inspector" Width="360" HorizontalAlignment="Right" IsVisible="False"
+                Background="{DynamicResource WorkspaceSurface}" BorderBrush="{DynamicResource WorkspaceBorder}" BorderThickness="1,0,0,0" Padding="24,16">
+            <DockPanel>
+                <DockPanel DockPanel.Dock="Top" Margin="0,0,0,20">
+                    <Button x:Name="btnCloseDetails" DockPanel.Dock="Right" Content="×" ToolTip.Tip="{x:Static ws:WorkspaceText.Close}" />
+                    <TextBlock Classes="sectionTitle" Text="{x:Static ws:WorkspaceText.Details}" VerticalAlignment="Center" />
+                </DockPanel>
+                <StackPanel x:Name="detailActions" DockPanel.Dock="Bottom" Spacing="8" Margin="0,16,0,0">
+                    <Grid ColumnDefinitions="*,8,*">
+                        <Button Content="{x:Static resx:ResUI.menuEditServer}" Command="{Binding EditServerCmd}" HorizontalAlignment="Stretch" />
+                        <Button Grid.Column="2" Content="{x:Static resx:ResUI.menuSetDefaultServer}" Command="{Binding SetDefaultServerCmd}" Classes="primary" HorizontalAlignment="Stretch" />
+                    </Grid>
+                    <Grid ColumnDefinitions="*,8,*">
+                        <Button Content="{x:Static ws:WorkspaceText.TestSelected}" HorizontalAlignment="Stretch">
+                            <Button.Flyout>
+                                <MenuFlyout>
+                                    <MenuItem Header="{x:Static resx:ResUI.menuTcpingServer}" Command="{Binding TcpingServerCmd}" />
+                                    <MenuItem Header="{x:Static resx:ResUI.menuRealPingServer}" Command="{Binding RealPingServerCmd}" />
+                                    <MenuItem Header="{x:Static resx:ResUI.menuSpeedServer}" Command="{Binding SpeedServerCmd}" />
+                                </MenuFlyout>
+                            </Button.Flyout>
+                        </Button>
+                        <Button x:Name="btnSshKey" Grid.Column="2" Content="{x:Static resx:SshStrings.SetupKey}" HorizontalAlignment="Stretch" />
+                    </Grid>
+                </StackPanel>
+                <ScrollViewer>
+                    <StackPanel Spacing="16">
+                        <TextBlock x:Name="txtEmpty" Classes="muted" Text="{x:Static ws:WorkspaceText.Empty}" TextWrapping="Wrap" />
+                        <StackPanel x:Name="details" Spacing="16">
+                            <TextBlock Text="{Binding SelectedProfile.Remarks}" Classes="sectionTitle" TextWrapping="Wrap" />
+                            <TextBlock Text="{Binding SelectedProfile.ConfigType}" Foreground="{DynamicResource WorkspaceAccent}" />
+                            <TextBlock Classes="sectionTitle" Text="{x:Static ws:WorkspaceText.Basic}" />
+                            <Grid ColumnDefinitions="90,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto">
+                                <TextBlock Text="{x:Static resx:ResUI.LvAddress}" Classes="muted" Margin="0,0,8,12" />
+                                <SelectableTextBlock Grid.Column="1" Text="{Binding SelectedProfile.Address}" TextWrapping="Wrap" Margin="0,0,0,12" />
+                                <TextBlock Grid.Row="1" Text="{x:Static resx:ResUI.LvPort}" Classes="muted" Margin="0,0,8,12" />
+                                <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding SelectedProfile.Port}" Margin="0,0,0,12" />
+                                <TextBlock Grid.Row="2" Text="{x:Static resx:ResUI.LvSubscription}" Classes="muted" Margin="0,0,8,12" />
+                                <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding SelectedProfile.SubRemarks}" TextWrapping="Wrap" Margin="0,0,0,12" />
+                                <TextBlock Grid.Row="3" Text="{x:Static resx:ResUI.TbUsername}" Classes="muted" Margin="0,0,8,12" />
+                                <TextBlock x:Name="txtUsername" Grid.Row="3" Grid.Column="1" TextWrapping="Wrap" Margin="0,0,0,12" />
+                                <TextBlock Grid.Row="4" Text="{x:Static ws:WorkspaceText.Authentication}" Classes="muted" Margin="0,0,8,0" />
+                                <TextBlock x:Name="txtAuthentication" Grid.Row="4" Grid.Column="1" TextWrapping="Wrap" />
+                            </Grid>
+                            <Border BorderBrush="{DynamicResource WorkspaceBorder}" BorderThickness="0,1,0,0" Padding="0,16,0,0">
+                                <Grid ColumnDefinitions="90,*" RowDefinitions="Auto,Auto,Auto">
+                                    <TextBlock Text="{x:Static resx:ResUI.LvTestDelay}" Classes="muted" Margin="0,0,8,12" />
+                                    <TextBlock x:Name="txtLatency" Grid.Column="1" Margin="0,0,0,12" />
+                                    <TextBlock Grid.Row="1" Text="{x:Static ws:WorkspaceText.Speed}" Classes="muted" Margin="0,0,8,12" />
+                                    <TextBlock x:Name="txtSpeed" Grid.Row="1" Grid.Column="1" Margin="0,0,0,12" />
+                                    <TextBlock Grid.Row="2" Text="{x:Static ws:WorkspaceText.IpInfo}" Classes="muted" Margin="0,0,8,0" />
+                                    <TextBlock x:Name="txtIp" Grid.Row="2" Grid.Column="1" TextWrapping="Wrap" />
+                                </Grid>
+                            </Border>
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </DockPanel>
+        </Border>
+    </Grid>
+</UserControl>

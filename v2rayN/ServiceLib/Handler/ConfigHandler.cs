@@ -6,6 +6,7 @@ public static class ConfigHandler
 {
     private static readonly string _configRes = Global.ConfigFileName;
     private static readonly string _tag = "ConfigHandler";
+    private static readonly SemaphoreSlim _builtinRoutingGate = new(1, 1);
 
     #region ConfigHandler
 
@@ -2643,6 +2644,13 @@ public static class ConfigHandler
     /// <param name="blImportAdvancedRules">Whether to import advanced rules</param>
     /// <returns>0 if successful</returns>
     public static async Task<int> InitBuiltinRouting(Config config, bool blImportAdvancedRules = false)
+    {
+        await _builtinRoutingGate.WaitAsync();
+        try { return await InitBuiltinRoutingCore(config, blImportAdvancedRules); }
+        finally { _builtinRoutingGate.Release(); }
+    }
+
+    private static async Task<int> InitBuiltinRoutingCore(Config config, bool blImportAdvancedRules)
     {
         var ver = "V4-";
         var items = await AppManager.Instance.RoutingItems();

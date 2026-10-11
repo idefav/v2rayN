@@ -1,4 +1,4 @@
-<Window
+<UserControl
     x:Class="v2rayN.Desktop.Views.GlobalHotkeySettingWindow"
     xmlns="https://github.com/avaloniaui"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -7,13 +7,9 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:resx="clr-namespace:ServiceLib.Resx;assembly=ServiceLib"
     xmlns:vms="clr-namespace:ServiceLib.ViewModels;assembly=ServiceLib"
-    Title="{x:Static resx:ResUI.menuGlobalHotkeySetting}"
-    Width="700"
-    Height="500"
+    Tag="{x:Static resx:ResUI.menuGlobalHotkeySetting}"
     x:DataType="vms:GlobalHotkeySettingViewModel"
     Design.DataContext="{x:Static dd:DesignData.GlobalHotkeySetting}"
-    ShowInTaskbar="False"
-    WindowStartupLocation="CenterScreen"
     mc:Ignorable="d">
     <DockPanel Margin="{StaticResource Margin8}">
         <StackPanel
@@ -130,4 +126,4 @@
             </Grid>
         </ScrollViewer>
     </DockPanel>
-</Window>
+</UserControl>

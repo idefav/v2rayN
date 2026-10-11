@@ -28,6 +28,7 @@ public partial class ProfileItemModel : ReactiveObject
 
     [Reactive]
     public partial string IpInfo { get; set; }
+    [Reactive] public partial ExitInfoItem? ExitInfo { get; set; }
 
     [Reactive]
     public partial string TodayUp { get; set; }

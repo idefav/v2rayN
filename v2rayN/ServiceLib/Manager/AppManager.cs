@@ -124,6 +124,7 @@ public sealed class AppManager
         try
         {
             Logging.SaveLog("AppExitAsync Begin");
+            if (ExitInfoService.DesktopOwnsDetection) await ExitInfoService.Instance.StopAsync();
 
             await SysProxyHandler.UpdateSysProxy(_config, true);
             AppEvents.AppExitRequested.Publish();

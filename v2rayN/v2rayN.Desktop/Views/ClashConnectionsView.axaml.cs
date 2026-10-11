@@ -9,6 +9,16 @@ public partial class ClashConnectionsView : ReactiveUserControl<ClashConnections
     {
         InitializeComponent();
 
+        Common.TablePresentation.TextButton(btnConnectionCloseAll, ResUI.menuConnectionCloseAll);
+        btnConnectionCloseAll.Classes.Add("danger");
+        Common.TablePresentation.TextButton(btnAutofitColumnWidth, ResUI.menuProfileAutofitColumnWidth);
+        var closeSelected = new Button { Content = Common.WorkspaceText.T("关闭此连接", "Close connection") };
+        closeSelected.Classes.Add("danger");
+        Common.TablePresentation.AddDetails(this, lstConnections, Common.WorkspaceText.T("连接详情", "Connection details"),
+            [(ResUI.TbSortingHost, "Host"), (Common.WorkspaceText.T("路由链", "Chain"), "Chain"), (ResUI.TbSortingNetwork, "Network"),
+             (Common.WorkspaceText.T("类型", "Type"), "Type"), (Common.WorkspaceText.T("进程", "Process"), "ProcessPath"),
+             (Common.WorkspaceText.T("持续时间", "Duration"), "Elapsed")], closeSelected);
+
         _config = AppManager.Instance.Config;
 
         btnAutofitColumnWidth.Click += BtnAutofitColumnWidth_Click;
@@ -19,6 +29,7 @@ public partial class ClashConnectionsView : ReactiveUserControl<ClashConnections
             this.Bind(ViewModel, vm => vm.SelectedSource, v => v.lstConnections.SelectedItem).DisposeWith(disposables);
 
             this.BindCommand(ViewModel, vm => vm.ConnectionCloseCmd, v => v.menuConnectionClose).DisposeWith(disposables);
+            closeSelected.Command = ViewModel.ConnectionCloseCmd;
             this.BindCommand(ViewModel, vm => vm.ConnectionCloseAllCmd, v => v.menuConnectionCloseAll).DisposeWith(disposables);
 
             this.Bind(ViewModel, vm => vm.HostFilter, v => v.txtHostFilter.Text).DisposeWith(disposables);

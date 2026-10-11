@@ -89,8 +89,9 @@ public partial class MainWindowViewModel : MyReactiveObject
 
     #region Init
 
-    public MainWindowViewModel()
+    public MainWindowViewModel(bool designMode = false)
     {
+        DesignMode = designMode;
         _config = AppManager.Instance.Config;
         BlIsWindows = Utils.IsWindows();
         MainGirdOrientation = _config.UiItem.MainGirdOrientation;
@@ -578,7 +579,7 @@ public partial class MainWindowViewModel : MyReactiveObject
         var subSettingViewModel = new SubSettingViewModel();
         if (await AppManager.Instance.WindowDialog.ShowDialogAsync(subSettingViewModel) == true)
         {
-            await RefreshSubscriptions();
+            await ApplySettingsChangesAsync("Subscriptions");
         }
     }
 
@@ -597,12 +598,7 @@ public partial class MainWindowViewModel : MyReactiveObject
         var ret = await AppManager.Instance.WindowDialog.ShowDialogAsync(settingViewModel);
         if (ret == true)
         {
-            MainGirdOrientation = _config.UiItem.MainGirdOrientation;
-            RxSchedulers.MainThreadScheduler.Schedule(async () =>
-            {
-                await StatusBarViewModel.InboundDisplayStatus();
-            });
-            await Reload();
+            await ApplySettingsChangesAsync("Options");
         }
     }
 
@@ -612,12 +608,7 @@ public partial class MainWindowViewModel : MyReactiveObject
         var ret = await AppManager.Instance.WindowDialog.ShowDialogAsync(routingSettingViewModel);
         if (ret == true)
         {
-            await ConfigHandler.InitBuiltinRouting(_config);
-            RxSchedulers.MainThreadScheduler.Schedule(async () =>
-            {
-                await StatusBarViewModel.RefreshRoutingsMenu();
-            });
-            await Reload();
+            await ApplySettingsChangesAsync("Routing");
         }
     }
 
@@ -627,7 +618,7 @@ public partial class MainWindowViewModel : MyReactiveObject
         var ret = await AppManager.Instance.WindowDialog.ShowDialogAsync(dnsSettingViewModel);
         if (ret == true)
         {
-            await Reload();
+            await ApplySettingsChangesAsync("DNS");
         }
     }
 
@@ -637,8 +628,30 @@ public partial class MainWindowViewModel : MyReactiveObject
         var ret = await AppManager.Instance.WindowDialog.ShowDialogAsync(fullConfigTemplateViewModel);
         if (ret == true)
         {
-            await Reload();
+            await ApplySettingsChangesAsync("Templates");
         }
+    }
+
+    public async Task ApplySettingsChangesAsync(string section)
+    {
+        if (DesignMode) return;
+        if (section == "Subscriptions")
+        {
+            await RefreshSubscriptions();
+            return;
+        }
+        if (section == "Options")
+        {
+            MainGirdOrientation = _config.UiItem.MainGirdOrientation;
+            await StatusBarViewModel.InboundDisplayStatus();
+        }
+        if (section == "Routing")
+        {
+            await ConfigHandler.InitBuiltinRouting(_config);
+            await StatusBarViewModel.RefreshRoutingsMenu();
+        }
+        if (section is "Hotkeys" or "Backup") return;
+        await Reload();
     }
 
     private async Task ClearServerStatistics()
@@ -690,6 +703,7 @@ public partial class MainWindowViewModel : MyReactiveObject
         try
         {
             SetReloadEnabled(false);
+            StatusBarViewModel.ConnectionError = null;
 
             RxSchedulers.MainThreadScheduler.Schedule(() =>
             {
@@ -701,12 +715,14 @@ public partial class MainWindowViewModel : MyReactiveObject
             var profileItem = await ConfigHandler.GetDefaultServer(_config);
             if (profileItem == null)
             {
+                StatusBarViewModel.ConnectionError = ResUI.CheckServerSettings;
                 NoticeManager.Instance.Enqueue(ResUI.CheckServerSettings);
                 return;
             }
             var allResult = await CoreConfigContextBuilder.BuildAll(_config, profileItem);
             if (NoticeManager.Instance.NotifyValidatorResult(allResult.CombinedValidatorResult) && !allResult.Success)
             {
+                StatusBarViewModel.ConnectionError = string.Join(Environment.NewLine, allResult.CombinedValidatorResult.Errors);
                 return;
             }
 
@@ -748,6 +764,12 @@ public partial class MainWindowViewModel : MyReactiveObject
             }
 
             ReloadResult(showClashUI);
+        }
+        catch (Exception ex)
+        {
+            StatusBarViewModel.ConnectionError = ex.Message;
+            Logging.SaveLog("Reload", ex);
+            NoticeManager.Instance.Enqueue(ex.Message);
         }
         finally
         {

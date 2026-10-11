@@ -1,82 +1,59 @@
-<UserControl
-    x:Class="v2rayN.Desktop.Views.StatusBarView"
-    xmlns="https://github.com/avaloniaui"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-    xmlns:dd="clr-namespace:v2rayN.Desktop.DesignData"
-    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+<UserControl x:Class="v2rayN.Desktop.Views.StatusBarView"
+    xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:resx="clr-namespace:ServiceLib.Resx;assembly=ServiceLib"
     xmlns:vms="clr-namespace:ServiceLib.ViewModels;assembly=ServiceLib"
-    x:DataType="vms:StatusBarViewModel"
-    Design.DataContext="{x:Static dd:DesignData.StatusBar}"
-    mc:Ignorable="d">
-    <Grid>
-        <DockPanel Margin="{StaticResource Margin8}">
-            <StackPanel
-                Margin="{StaticResource MarginLr8}"
-                VerticalAlignment="Center"
-                DockPanel.Dock="Right">
-                <TextBlock x:Name="txtSpeedProxyDisplay" HorizontalAlignment="Right" />
-                <Border Margin="1" />
-                <TextBlock x:Name="txtSpeedDirectDisplay" HorizontalAlignment="Right" />
-            </StackPanel>
-
-            <StackPanel
-                Margin="{StaticResource MarginLr8}"
-                VerticalAlignment="Center"
-                DockPanel.Dock="Left">
-                <TextBlock x:Name="txtInboundDisplay" />
-                <Border Margin="1" />
-                <TextBlock x:Name="txtInboundLanDisplay" />
-            </StackPanel>
-
-            <StackPanel
-                x:Name="spEnableTun"
-                Margin="{StaticResource MarginLr8}"
-                VerticalAlignment="Center"
-                DockPanel.Dock="Left"
-                Orientation="Horizontal">
-                <TextBlock
-                    Margin="{StaticResource MarginLr8}"
-                    VerticalAlignment="Center"
-                    Text="{x:Static resx:ResUI.TbEnableTunAs}" />
-                <ToggleSwitch
-                    x:Name="togEnableTun"
-                    Margin="{StaticResource Margin4}"
-                    HorizontalAlignment="Center"
-                    Theme="{DynamicResource SimpleToggleSwitch}" />
-            </StackPanel>
-
-            <StackPanel
-                Margin="{StaticResource MarginLr8}"
-                VerticalAlignment="Center"
-                DockPanel.Dock="Left"
-                Orientation="Horizontal">
-                <ComboBox
-                    x:Name="cmbSystemProxy"
-                    Width="160"
-                    Margin="{StaticResource MarginLr8}"
-                    ToolTip.Tip="{x:Static resx:ResUI.menuSystemproxy}">
-                    <ComboBoxItem Content="{x:Static resx:ResUI.menuSystemProxyClear}" />
-                    <ComboBoxItem Content="{x:Static resx:ResUI.menuSystemProxySet}" />
-                    <ComboBoxItem Content="{x:Static resx:ResUI.menuSystemProxyNothing}" />
-                    <ComboBoxItem Content="{x:Static resx:ResUI.menuSystemProxyPac}" />
-                </ComboBox>
-
-                <ComboBox
-                    x:Name="cmbRoutings2"
-                    Width="160"
-                    Margin="{StaticResource MarginLr8}"
-                    DisplayMemberBinding="{Binding Remarks}"
-                    ItemsSource="{Binding RoutingItems}"
-                    ToolTip.Tip="{x:Static resx:ResUI.menuRouting}" />
-            </StackPanel>
-
-            <StackPanel Margin="{StaticResource MarginLr8}" VerticalAlignment="Center">
-                <TextBlock x:Name="txtRunningServerDisplay" />
-                <Border Margin="1" />
-                <TextBlock x:Name="txtRunningInfoDisplay" />
-            </StackPanel>
+    xmlns:ws="clr-namespace:v2rayN.Desktop.Common" x:DataType="vms:StatusBarViewModel">
+    <Border Background="{DynamicResource WorkspaceSidebar}" CornerRadius="8" Padding="12,8">
+        <DockPanel>
+            <Button x:Name="btnConnectionControls" DockPanel.Dock="Right" Content="{x:Static ws:WorkspaceText.ConnectionControls}" Margin="12,0,0,0">
+                <Button.Flyout>
+                    <Flyout Placement="BottomEdgeAlignedRight">
+                        <ScrollViewer x:Name="connectionScroll" MaxHeight="560">
+                            <StackPanel x:Name="connectionPanel" Width="336" Spacing="16" Margin="8">
+                                <DockPanel>
+                                    <Button x:Name="btnCloseConnection" DockPanel.Dock="Right" Content="×" ToolTip.Tip="{x:Static ws:WorkspaceText.Close}" />
+                                    <TextBlock Text="{x:Static ws:WorkspaceText.ConnectionControls}" Classes="sectionTitle" VerticalAlignment="Center" />
+                                </DockPanel>
+                                <StackPanel x:Name="connectionFields" Spacing="12">
+                                    <TextBlock Text="{x:Static resx:ResUI.menuSystemproxy}" />
+                                    <ComboBox x:Name="cmbSystemProxy" HorizontalAlignment="Stretch">
+                                        <ComboBoxItem Content="{x:Static resx:ResUI.menuSystemProxyClear}" />
+                                        <ComboBoxItem Content="{x:Static resx:ResUI.menuSystemProxySet}" />
+                                        <ComboBoxItem Content="{x:Static resx:ResUI.menuSystemProxyNothing}" />
+                                        <ComboBoxItem Content="{x:Static resx:ResUI.menuSystemProxyPac}" />
+                                    </ComboBox>
+                                    <DockPanel x:Name="spEnableTun">
+                                        <ToggleSwitch x:Name="togEnableTun" DockPanel.Dock="Right" Theme="{DynamicResource SimpleToggleSwitch}" />
+                                        <TextBlock Text="{x:Static resx:ResUI.TbEnableTunAs}" VerticalAlignment="Center" />
+                                    </DockPanel>
+                                    <TextBlock Text="{x:Static resx:ResUI.menuRouting}" />
+                                    <ComboBox x:Name="cmbRoutings2" HorizontalAlignment="Stretch" PlaceholderText="—" ItemsSource="{Binding RoutingItems}" DisplayMemberBinding="{Binding Remarks}" />
+                                    <Button x:Name="btnRestart" Content="{x:Static resx:ResUI.menuReload}" Classes="primary" HorizontalAlignment="Stretch" />
+                                </StackPanel>
+                                <StackPanel x:Name="inboundLabels" Spacing="8">
+                                    <TextBlock Text="{x:Static ws:WorkspaceText.LocalListeners}" Classes="sectionTitle" />
+                                    <TextBlock x:Name="txtInboundDisplay" Classes="muted" TextWrapping="Wrap" />
+                                    <TextBlock x:Name="txtInboundLanDisplay" Classes="muted" TextWrapping="Wrap" />
+                                    <TextBlock x:Name="txtSpeedProxyDisplay" Classes="muted" TextWrapping="Wrap" />
+                                    <TextBlock x:Name="txtSpeedDirectDisplay" Classes="muted" TextWrapping="Wrap" />
+                                </StackPanel>
+                                <TextBlock Text="{x:Static ws:WorkspaceText.ConnectionImmediate}" Classes="muted" TextWrapping="Wrap"/>
+                                <TextBlock x:Name="txtConnectionError" Foreground="Red" TextWrapping="Wrap" IsVisible="False" />
+                                <Button x:Name="btnAvailability" Content="{x:Static resx:ResUI.menuRealPingServer}" />
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Flyout>
+                </Button.Flyout>
+            </Button>
+            <WrapPanel x:Name="overview" VerticalAlignment="Center">
+                <TextBlock x:Name="txtCoreState" FontWeight="SemiBold" Margin="0,4,16,4" />
+                <TextBlock x:Name="txtRunningServerDisplay" TextTrimming="CharacterEllipsis" MaxWidth="360" Margin="0,4,16,4" />
+                <TextBlock x:Name="txtRunningInfoDisplay" Classes="muted" Margin="0,4,16,4" />
+                <StackPanel x:Name="transferSummary" Orientation="Horizontal" Spacing="16" Margin="0,4">
+                    <TextBlock x:Name="txtDownload" Text="↓ —" Classes="muted" />
+                    <TextBlock x:Name="txtUpload" Text="↑ —" Classes="muted" />
+                </StackPanel>
+            </WrapPanel>
         </DockPanel>
-    </Grid>
+    </Border>
 </UserControl>

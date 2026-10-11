@@ -2,6 +2,7 @@ namespace ServiceLib.ViewModels;
 
 public partial class AddGroupServerViewModel : MyReactiveObject, ICloseable
 {
+    private long _previewRevision;
     public event EventHandler? RequestClose;
 
     [Reactive]
@@ -218,7 +219,9 @@ public partial class AddGroupServerViewModel : MyReactiveObject, ICloseable
 
     public async Task UpdatePreviewList()
     {
-        AllProfilePreviewItemsObs.ReplaceRange(await GroupProfileManager.GetChildProfileItemsByProtocolExtra(GetUpdatedProtocolExtra()));
+        var revision = Interlocked.Increment(ref _previewRevision);
+        var items = await GroupProfileManager.GetChildProfileItemsByProtocolExtra(GetUpdatedProtocolExtra());
+        if (revision == _previewRevision) AllProfilePreviewItemsObs.ReplaceRange(items);
     }
 
     private async Task SaveServerAsync()

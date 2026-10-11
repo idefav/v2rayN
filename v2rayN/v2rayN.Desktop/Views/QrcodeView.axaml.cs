@@ -1,3 +1,6 @@
+using DialogHostAvalonia;
+using v2rayN.Desktop.Common;
+
 namespace v2rayN.Desktop.Views;
 
 public partial class QrcodeView : UserControl
@@ -5,6 +8,7 @@ public partial class QrcodeView : UserControl
     public QrcodeView()
     {
         InitializeComponent();
+        DialogPresentation.ConstrainToWindow(this);
         if (Design.IsDesignMode)
         {
             //const string url = Global.AppName;
@@ -14,11 +18,19 @@ public partial class QrcodeView : UserControl
         }
     }
 
-    public QrcodeView(string? url)
+    public QrcodeView(string? url, string? dialogIdentifier = null)
     {
         InitializeComponent();
+        DialogPresentation.ConstrainToWindow(this);
 
+        btnCopyLink.Click += async (_, _) => await AvaUtils.SetClipboardData(this, txtContent.Text ?? "");
+        btnClose.Click += (_, _) => DialogHost.Close(dialogIdentifier);
         txtContent.Text = url;
+        if (Uri.TryCreate(url, UriKind.Absolute, out var share))
+        {
+            txtNodeSummary.Text = share.Scheme.ToUpperInvariant() + (share.Fragment.Length > 1 ? " · " + Uri.UnescapeDataString(share.Fragment[1..]) : "");
+            txtNodeSummary.IsVisible = true;
+        }
         imgQrcode.Source = GetQRCode(url);
 
         txtContent.GotFocus += (_, _) => Dispatcher.UIThread.Post(() => { txtContent.SelectAll(); });

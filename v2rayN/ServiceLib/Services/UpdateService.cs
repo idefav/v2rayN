@@ -223,7 +223,7 @@ public partial class UpdateService(Config config, Func<bool, string, Task> updat
     [GeneratedRegex(@"v?(?<version>\d+\.\d+\.\d+(?:-[0-9a-zA-Z.-]+)?(?:\+[0-9a-zA-Z.-]+)?)", RegexOptions.IgnoreCase)]
     private static partial Regex SemVerRegex();
 
-    private async Task<SemanticVersion> GetCoreVersion(ECoreType type, CancellationToken cancellationToken = default)
+    public async Task<SemanticVersion> GetCoreVersion(ECoreType type, CancellationToken cancellationToken = default)
     {
         try
         {

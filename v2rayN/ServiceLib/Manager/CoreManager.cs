@@ -14,6 +14,14 @@ public class CoreManager
 
     private ProcessService? _processService;
     private ProcessService? _processPreService;
+    public bool IsCoreRunning
+    {
+        get
+        {
+            try { return _processService is { HasExited: false }; }
+            catch (InvalidOperationException) { return false; }
+        }
+    }
     private bool _linuxSudo = false;
     private Func<bool, string, Task>? _updateFunc;
     private const string _tag = "CoreHandler";
@@ -141,7 +149,10 @@ public class CoreManager
 
         var coreType = context.RunCoreType;
         var coreInfo = CoreInfoManager.Instance.GetCoreInfo(coreType);
-        return await RunProcess(coreInfo, fileName, true, false);
+        var process = await RunProcess(coreInfo, fileName, true, false);
+        if (process != null) process.TemporaryConfigPath = configPath;
+        else File.Delete(configPath);
+        return process;
     }
 
     public async Task CoreStop()

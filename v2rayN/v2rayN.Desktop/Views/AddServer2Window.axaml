@@ -1,205 +1,62 @@
-<Window
-    x:Class="v2rayN.Desktop.Views.AddServer2Window"
-    xmlns="https://github.com/avaloniaui"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-    xmlns:dd="clr-namespace:v2rayN.Desktop.DesignData"
-    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-    xmlns:resx="clr-namespace:ServiceLib.Resx;assembly=ServiceLib"
-    xmlns:vms="clr-namespace:ServiceLib.ViewModels;assembly=ServiceLib"
-    Title="{x:Static resx:ResUI.menuAddCustomServer}"
-    Width="700"
-    Height="500"
-    x:DataType="vms:AddServer2ViewModel"
-    Design.DataContext="{x:Static dd:DesignData.AddServer2}"
-    ShowInTaskbar="False"
-    WindowStartupLocation="CenterScreen"
-    mc:Ignorable="d">
-    <DockPanel Margin="{StaticResource Margin8}">
-        <StackPanel
-            Margin="{StaticResource Margin4}"
-            HorizontalAlignment="Center"
-            DockPanel.Dock="Bottom"
-            Orientation="Horizontal">
-            <Button
-                x:Name="btnSave"
-                MinWidth="100"
-                Content="{x:Static resx:ResUI.TbConfirm}"
-                IsDefault="True" />
-            <Button
-                x:Name="btnCancel"
-                MinWidth="100"
-                Margin="{StaticResource MarginLr8}"
-                Content="{x:Static resx:ResUI.TbCancel}"
-                IsCancel="True" />
-        </StackPanel>
-        <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-            <Grid ColumnDefinitions="Auto,Auto,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto">
-
-                <TextBlock
-                    Grid.Row="0"
-                    Grid.Column="0"
-                    Margin="{StaticResource Margin4}"
-                    Text="{x:Static resx:ResUI.menuServers}" />
-
-                <TextBlock
-                    Grid.Row="1"
-                    Grid.Column="0"
-                    Margin="{StaticResource Margin4}"
-                    VerticalAlignment="Center"
-                    Text="{x:Static resx:ResUI.TbRemarks}" />
-
-                <TextBox
-                    x:Name="txtRemarks"
-                    Grid.Row="1"
-                    Grid.Column="1"
-                    Width="400"
-                    Margin="{StaticResource Margin4}"
-                    HorizontalAlignment="Left"
-                    VerticalAlignment="Center" />
-
-                <TextBlock
-                    Grid.Row="2"
-                    Grid.Column="0"
-                    Margin="{StaticResource Margin4}"
-                    VerticalAlignment="Center"
-                    Text="{x:Static resx:ResUI.TbAddress}" />
-                <TextBox
-                    x:Name="txtAddress"
-                    Grid.Row="2"
-                    Grid.Column="1"
-                    Width="400"
-                    Margin="{StaticResource Margin4}"
-                    HorizontalAlignment="Left"
-                    VerticalAlignment="Center"
-                    IsReadOnly="True" />
-                <StackPanel
-                    Grid.Row="2"
-                    Grid.Column="2"
-                    VerticalAlignment="Center"
-                    Orientation="Horizontal">
-                    <Button
-                        x:Name="btnBrowse"
-                        Margin="{StaticResource MarginLr4}"
-                        Content="{x:Static resx:ResUI.TbBrowse}" />
-                    <Button
-                        x:Name="btnEdit"
-                        Margin="{StaticResource MarginLr4}"
-                        Content="{x:Static resx:ResUI.TbEdit}" />
-                </StackPanel>
-
-                <TextBlock
-                    Grid.Row="3"
-                    Grid.Column="0"
-                    Margin="{StaticResource Margin4}"
-                    VerticalAlignment="Center"
-                    Text="{x:Static resx:ResUI.TbCoreType}" />
-                <ComboBox
-                    x:Name="cmbCoreType"
-                    Grid.Row="3"
-                    Grid.Column="1"
-                    Width="200"
-                    Margin="{StaticResource Margin4}"
-                    HorizontalAlignment="Left"
-                    MaxDropDownHeight="1000" />
-
-                <Separator
-                    Grid.Row="4"
-                    Grid.Column="0"
-                    Grid.ColumnSpan="3"
-                    Margin="{StaticResource Margin4}" />
-
-                <Grid
-                    x:Name="gridCustomServer"
-                    Grid.Row="5"
-                    Grid.Column="0"
-                    Grid.ColumnSpan="3"
-                    ColumnDefinitions="Auto,Auto,Auto"
-                    RowDefinitions="Auto,Auto,Auto">
-
-                    <TextBlock
-                        Grid.Row="0"
-                        Grid.Column="0"
-                        Margin="{StaticResource Margin4}"
-                        VerticalAlignment="Center"
-                        Text="{x:Static resx:ResUI.TbDisplayLog}" />
-                    <StackPanel
-                        Grid.Row="0"
-                        Grid.Column="1"
-                        Margin="{StaticResource Margin4}"
-                        Orientation="Horizontal">
-                        <ToggleSwitch
-                            x:Name="togDisplayLog"
-                            Margin="{StaticResource Margin4}"
-                            HorizontalAlignment="Left" />
-                        <TextBlock
-                            Margin="{StaticResource MarginLr8}"
-                            VerticalAlignment="Center"
-                            Text="{x:Static resx:ResUI.TipDisplayLog}" />
-                    </StackPanel>
-
-                    <TextBlock
-                        Grid.Row="1"
-                        Grid.Column="0"
-                        Margin="{StaticResource Margin4}"
-                        VerticalAlignment="Center"
-                        Text="{x:Static resx:ResUI.TbPreSocksPort}" />
-                    <TextBox
-                        x:Name="txtPreSocksPort"
-                        Grid.Row="1"
-                        Grid.Column="1"
-                        Width="200"
-                        Margin="{StaticResource Margin4}"
-                        HorizontalAlignment="Left" />
-                    <StackPanel
-                        Grid.Row="2"
-                        Grid.Column="1"
-                        Grid.ColumnSpan="2"
-                        Margin="{StaticResource Margin4}">
-                        <TextBlock
-                            Width="500"
-                            VerticalAlignment="Center"
-                            Text="{x:Static resx:ResUI.TipPreSocksPort}"
-                            TextWrapping="Wrap" />
-                        <TextBlock
-                            Width="500"
-                            Margin="{StaticResource MarginLr8}"
-                            VerticalAlignment="Center"
-                            Text="{x:Static resx:ResUI.CustomServerTips}"
-                            TextWrapping="Wrap" />
-                    </StackPanel>
-                </Grid>
-
-                <Grid
-                    x:Name="gridCustomOutbound"
-                    Grid.Row="5"
-                    Grid.Column="0"
-                    Grid.ColumnSpan="3"
-                    ColumnDefinitions="Auto,Auto,Auto"
-                    IsVisible="False"
-                    RowDefinitions="Auto,Auto,Auto">
-                    <TextBlock
-                        Grid.Row="0"
-                        Grid.Column="0"
-                        Margin="{StaticResource Margin4}"
-                        VerticalAlignment="Center"
-                        Text="Sing-Box Endpoint" />
-                    <ToggleSwitch
-                        x:Name="togSingBoxEndpoint"
-                        Grid.Row="0"
-                        Grid.Column="1"
-                        Margin="{StaticResource Margin4}"
-                        HorizontalAlignment="Left" />
-                    <TextBlock
-                        Grid.Row="1"
-                        Grid.Column="1"
-                        Grid.ColumnSpan="2"
-                        Width="500"
-                        VerticalAlignment="Center"
-                        Text="{x:Static resx:ResUI.TbCustomOutboundTip}"
-                        TextWrapping="Wrap" />
-                </Grid>
-            </Grid>
-        </ScrollViewer>
-    </DockPanel>
+<Window x:Class="v2rayN.Desktop.Views.AddServer2Window" xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ xmlns:resx="clr-namespace:ServiceLib.Resx;assembly=ServiceLib" xmlns:vms="clr-namespace:ServiceLib.ViewModels;assembly=ServiceLib"
+ xmlns:ws="clr-namespace:v2rayN.Desktop.Common" x:DataType="vms:AddServer2ViewModel"
+ Title="{x:Static resx:ResUI.menuAddCustomServer}" Width="900" Height="820" MinWidth="600" MinHeight="480" ShowInTaskbar="False" WindowStartupLocation="CenterOwner">
+ <DockPanel Margin="24">
+  <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="12" Margin="0,16,0,0">
+   <Button x:Name="btnCancel" MinWidth="100" Content="{x:Static resx:ResUI.TbCancel}" IsCancel="True"/>
+   <Button x:Name="btnSave" MinWidth="110" Classes="primary" Content="{x:Static ws:WorkspaceText.Save}" IsDefault="True"/>
+  </StackPanel>
+  <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+   <StackPanel x:Name="configurationBody" Spacing="12">
+    <Border Classes="formGroup">
+     <StackPanel Spacing="12">
+      <TextBlock Classes="sectionTitle" Text="{x:Static ws:WorkspaceText.Basic}"/>
+      <Grid Classes="responsiveCards">
+       <StackPanel Spacing="6">
+        <TextBlock Text="{x:Static resx:ResUI.TbRemarks}"/><TextBox x:Name="txtRemarks"/>
+       </StackPanel>
+       <StackPanel Spacing="6">
+        <TextBlock Text="{x:Static ws:WorkspaceText.ConfigurationFile}"/>
+        <DockPanel>
+         <Button x:Name="btnEdit" DockPanel.Dock="Right" Content="{x:Static resx:ResUI.TbEdit}" Margin="8,0,0,0"/>
+         <Button x:Name="btnBrowse" DockPanel.Dock="Right" Content="{x:Static resx:ResUI.TbBrowse}" Margin="8,0,0,0"/>
+         <TextBox x:Name="txtAddress" IsReadOnly="True"/>
+        </DockPanel>
+       </StackPanel>
+      </Grid>
+      <Grid Classes="taskFields" ColumnDefinitions="120,*">
+       <TextBlock Text="{x:Static resx:ResUI.TbCoreType}" VerticalAlignment="Center"/>
+       <ComboBox x:Name="cmbCoreType" Grid.Column="1" MinWidth="220" PlaceholderText="{x:Static ws:WorkspaceText.Automatic}"/>
+      </Grid>
+     </StackPanel>
+    </Border>
+    <Border x:Name="gridCustomServer" Classes="formGroup">
+     <StackPanel Spacing="8">
+      <Grid Classes="responsiveCards">
+       <StackPanel Spacing="6">
+        <ToggleSwitch x:Name="togDisplayLog" Content="{x:Static resx:ResUI.TbDisplayLog}"/>
+        <TextBlock Text="{x:Static resx:ResUI.TipDisplayLog}" Classes="muted" TextWrapping="Wrap"/>
+       </StackPanel>
+       <StackPanel Spacing="6">
+        <TextBlock Text="{x:Static resx:ResUI.TbPreSocksPort}"/><TextBox x:Name="txtPreSocksPort"/>
+       </StackPanel>
+      </Grid>
+      <Expander Header="{x:Static ws:WorkspaceText.Advanced}" HorizontalAlignment="Stretch">
+       <StackPanel Spacing="8">
+        <TextBlock Text="{x:Static resx:ResUI.TipPreSocksPort}" TextWrapping="Wrap" Classes="muted"/>
+        <TextBlock Text="{x:Static resx:ResUI.CustomServerTips}" TextWrapping="Wrap" Classes="muted"/>
+       </StackPanel>
+      </Expander>
+     </StackPanel>
+    </Border>
+    <Border x:Name="gridCustomOutbound" Classes="formGroup" IsVisible="False">
+     <StackPanel Spacing="8">
+      <ToggleSwitch x:Name="togSingBoxEndpoint" Content="sing-box Endpoint"/>
+      <TextBlock Text="{x:Static resx:ResUI.TbCustomOutboundTip}" TextWrapping="Wrap" Classes="muted"/>
+     </StackPanel>
+    </Border>
+   </StackPanel>
+  </ScrollViewer>
+ </DockPanel>
 </Window>

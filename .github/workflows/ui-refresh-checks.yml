@@ -1,0 +1,52 @@
+name: Avalonia UI review
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'v2rayN/v2rayN.Desktop/**'
+      - 'v2rayN/v2rayN.Desktop.Review/**'
+      - 'v2rayN/ServiceLib/**'
+      - 'v2rayN/Directory.*.props'
+      - '.github/workflows/ui-refresh-checks.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            rid: linux-x64
+          - os: windows-latest
+            rid: win-x64
+          - os: macos-latest
+            rid: osx-arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.1xx
+      - name: Build desktop
+        working-directory: v2rayN
+        run: dotnet publish v2rayN.Desktop -c Release -r ${{ matrix.rid }} --self-contained -p:UsedAvaloniaProducts= -o ../artifacts/${{ matrix.rid }}
+      - name: Build UI review
+        working-directory: v2rayN
+        run: dotnet build v2rayN.Desktop.Review -c Release -p:UsedAvaloniaProducts=
+      - name: Render actual controls and check navigation
+        working-directory: v2rayN
+        run: dotnet v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll ../artifacts/ui-review --headless
+      - name: Service regression tests
+        working-directory: v2rayN
+        run: dotnet test --project ServiceLib.Tests -c Release --results-directory ../artifacts/tests -- --report-trx
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: ui-review-${{ matrix.rid }}
+          path: artifacts

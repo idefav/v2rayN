@@ -7,15 +7,15 @@ public static class SshStrings
     public static string StopTest => Get(nameof(StopTest));
     public static string TestResult(SshConnectionTestResult result)
     {
-        string Stage(string name, SshTestStage stage)
-        {
-            var state = Get("Test" + stage.State);
-            var detail = stage.Error == null ? "" : " · " + Get("TestError_" + stage.Error);
-            var http = stage.HttpStatus == null ? "" : $" · HTTP {stage.HttpStatus}";
-            var elapsed = stage.State is SshTestState.Running or SshTestState.Waiting or SshTestState.Skipped ? "" : $" · {stage.ElapsedMs} ms";
-            return $"{Get(name)}: {state}{http}{elapsed}{detail}";
-        }
-        return $"{Get("TestTarget")}: {result.Url}\n{Stage("TestLogin", result.Login)}\n{Stage("TestProxy", result.Proxy)}";
+        return $"{Get("TestTarget")}: {result.Url}\n{TestStage(true, result.Login)}\n{TestStage(false, result.Proxy)}";
+    }
+    public static string TestStage(bool login, SshTestStage stage)
+    {
+        var state = Get("Test" + stage.State);
+        var detail = stage.Error == null ? "" : " · " + Get("TestError_" + stage.Error);
+        var http = stage.HttpStatus == null ? "" : $" · HTTP {stage.HttpStatus}";
+        var elapsed = stage.State is SshTestState.Running or SshTestState.Waiting or SshTestState.Skipped ? "" : $" · {stage.ElapsedMs} ms";
+        return $"{Get(login ? "TestLogin" : "TestProxy")}: {state}{http}{elapsed}{detail}";
     }
     public static string SetupTitle => Get(nameof(SetupTitle));
     public static string SetupKey => Get(nameof(SetupKey));

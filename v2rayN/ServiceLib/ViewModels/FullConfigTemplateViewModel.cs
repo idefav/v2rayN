@@ -3,6 +3,7 @@ namespace ServiceLib.ViewModels;
 public partial class FullConfigTemplateViewModel : MyReactiveObject, ICloseable
 {
     public event EventHandler? RequestClose;
+    public Task Initialization { get; }
 
     #region Reactive
 
@@ -48,7 +49,7 @@ public partial class FullConfigTemplateViewModel : MyReactiveObject, ICloseable
             await SaveSettingAsync();
         });
 
-        _ = Init();
+        Initialization = Init();
     }
 
     private async Task Init()
@@ -74,6 +75,12 @@ public partial class FullConfigTemplateViewModel : MyReactiveObject, ICloseable
 
     private async Task SaveSettingAsync()
     {
+        if (new[] { FullConfigTemplate4Ray, FullTunConfigTemplate4Ray, FullConfigTemplate4Singbox, FullTunConfigTemplate4Singbox }
+            .Any(json => json.IsNotEmpty() && JsonUtils.ParseJson(json) is not JsonObject))
+        {
+            NoticeManager.Instance.Enqueue(ResUI.OperationFailed);
+            return;
+        }
         if (!await SaveXrayConfigAsync())
         {
             return;
@@ -102,8 +109,7 @@ public partial class FullConfigTemplateViewModel : MyReactiveObject, ICloseable
         item.AddProxyOnly = AddProxyOnly4Ray;
         item.ProxyDetour = ProxyDetour4Ray;
 
-        await ConfigHandler.SaveFullConfigTemplate(_config, item);
-        return true;
+        return await ConfigHandler.SaveFullConfigTemplate(_config, item) == 0;
     }
 
     private async Task<bool> SaveSingboxConfigAsync()
@@ -120,7 +126,6 @@ public partial class FullConfigTemplateViewModel : MyReactiveObject, ICloseable
         item.AddProxyOnly = AddProxyOnly4Singbox;
         item.ProxyDetour = ProxyDetour4Singbox;
 
-        await ConfigHandler.SaveFullConfigTemplate(_config, item);
-        return true;
+        return await ConfigHandler.SaveFullConfigTemplate(_config, item) == 0;
     }
 }

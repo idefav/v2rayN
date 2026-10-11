@@ -3,6 +3,7 @@ namespace ServiceLib.ViewModels;
 public partial class OptionSettingViewModel : MyReactiveObject, ICloseable
 {
     public event EventHandler? RequestClose;
+    public Task Initialization { get; }
 
     #region Core
 
@@ -65,6 +66,7 @@ public partial class OptionSettingViewModel : MyReactiveObject, ICloseable
     [Reactive] public partial string SrsFileSourceUrl { get; set; }
     [Reactive] public partial string RoutingRulesSourceUrl { get; set; }
     [Reactive] public partial string IPAPIUrl { get; set; }
+    [Reactive] public partial bool AutoDetectExit { get; set; }
     [Reactive] public partial string RootCertProvider { get; set; }
 
     #endregion UI
@@ -132,7 +134,7 @@ public partial class OptionSettingViewModel : MyReactiveObject, ICloseable
             await SaveSettingAsync();
         });
 
-        _ = Init();
+        Initialization = Init();
     }
 
     private async Task Init()
@@ -144,7 +146,7 @@ public partial class OptionSettingViewModel : MyReactiveObject, ICloseable
         SecondLocalPortEnabled = inbound.SecondLocalPortEnabled;
         UdpEnabled = inbound.UdpEnabled;
         SniffingEnabled = inbound.SniffingEnabled;
-        DestOverride = inbound.DestOverride ?? [];
+        DestOverride = inbound.DestOverride?.ToList() ?? [];
         RouteOnly = inbound.RouteOnly;
         AllowLANConn = inbound.AllowLANConn;
         NewPort4LAN = inbound.NewPort4LAN;
@@ -199,6 +201,7 @@ public partial class OptionSettingViewModel : MyReactiveObject, ICloseable
         SrsFileSourceUrl = _config.ConstItem.SrsSourceUrl;
         RoutingRulesSourceUrl = _config.ConstItem.RouteRulesTemplateSourceUrl;
         IPAPIUrl = _config.SpeedTestItem.IPAPIUrl;
+        AutoDetectExit = _config.SpeedTestItem.AutoDetectExit;
         RootCertProvider = _config.GuiItem.RootCertProvider;
 
         #endregion UI
@@ -378,6 +381,7 @@ public partial class OptionSettingViewModel : MyReactiveObject, ICloseable
         _config.ConstItem.SrsSourceUrl = SrsFileSourceUrl;
         _config.ConstItem.RouteRulesTemplateSourceUrl = RoutingRulesSourceUrl;
         _config.SpeedTestItem.IPAPIUrl = IPAPIUrl;
+        _config.SpeedTestItem.AutoDetectExit = AutoDetectExit;
         _config.GuiItem.RootCertProvider = RootCertProvider;
 
         //systemProxy

@@ -2,12 +2,14 @@ using System.Text.Json;
 using System.Xml;
 using AvaloniaEdit.Highlighting;
 using AvaloniaEdit.Highlighting.Xshd;
+using v2rayN.Desktop.Common;
 
 namespace v2rayN.Desktop.Views;
 
 public partial class JsonEditor : UserControl
 {
     private static readonly JsonSerializerOptions SIndentedOptions = new() { WriteIndented = true };
+    private static readonly JsonDocumentOptions SDocumentOptions = new() { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true };
 
     private static readonly Lazy<IHighlightingDefinition> SHighlightingDark =
         new(() => BuildHighlighting(dark: true), isThreadSafe: true);
@@ -23,17 +25,46 @@ public partial class JsonEditor : UserControl
         get => GetValue(TextProperty);
         set => SetValue(TextProperty, value);
     }
+    public bool IsReadOnly
+    {
+        get => Editor.IsReadOnly;
+        set
+        {
+            Editor.IsReadOnly = value;
+            btnFormat.IsVisible = !value;
+            menuFormat.IsEnabled = menuPaste.IsEnabled = !value;
+        }
+    }
+    public bool ShowValidation { get => txtValidation.IsVisible; set => txtValidation.IsVisible = value; }
 
     public JsonEditor()
     {
         InitializeComponent();
 
-        var isDark = Application.Current?.ActualThemeVariant != ThemeVariant.Light;
-        Editor.SyntaxHighlighting = isDark ? SHighlightingDark.Value : SHighlightingLight.Value;
+        void UpdateHighlighting()
+        {
+            var theme = ActualThemeVariant ?? Application.Current?.ActualThemeVariant ?? ThemeVariant.Light;
+            while (theme.InheritVariant != null) theme = theme.InheritVariant;
+            Editor.SyntaxHighlighting = theme == ThemeVariant.Dark ? SHighlightingDark.Value : SHighlightingLight.Value;
+        }
+        UpdateHighlighting();
+        ActualThemeVariantChanged += (_, _) => UpdateHighlighting();
         Editor.TextArea.TextView.Options.EnableHyperlinks = false;
 
         Editor.TextChanged += (_, _) =>
         {
+            try
+            {
+                using var parsed = JsonDocument.Parse(Editor.Text, SDocumentOptions);
+                txtValidation.Text = WorkspaceText.T("JSON 格式正确", "Valid JSON");
+                txtValidation.Foreground = Avalonia.Media.Brushes.ForestGreen;
+            }
+            catch (JsonException error)
+            {
+                txtValidation.Text = string.IsNullOrWhiteSpace(Editor.Text) ? "—" : WorkspaceText.T("格式错误，行 ", "Invalid JSON at line ") + (error.LineNumber + 1);
+                if (string.IsNullOrWhiteSpace(Editor.Text)) txtValidation.ClearValue(TextBlock.ForegroundProperty);
+                else txtValidation.Foreground = Avalonia.Media.Brushes.IndianRed;
+            }
             if (Text != Editor.Text)
             {
                 SetCurrentValue(TextProperty, Editor.Text);
@@ -85,20 +116,21 @@ public partial class JsonEditor : UserControl
 
     private void FormatJson_Click(object? sender, RoutedEventArgs e)
     {
+        if (IsReadOnly) return;
         try
         {
-            var obj = JsonUtils.ParseJson(Editor.Text);
-            Editor.Text = JsonUtils.Serialize(obj, SIndentedOptions);
+            using var document = JsonDocument.Parse(Editor.Text, SDocumentOptions);
+            Editor.Text = JsonSerializer.Serialize(document.RootElement, SIndentedOptions);
         }
-        catch
+        catch (JsonException)
         {
-            // ignored
+            txtValidation.Text = ResUI.OperationFailed;
         }
     }
 
     private void Copy_Click(object? sender, RoutedEventArgs e) => Editor.Copy();
 
-    private void Paste_Click(object? sender, RoutedEventArgs e) => Editor.Paste();
+    private void Paste_Click(object? sender, RoutedEventArgs e) { if (!IsReadOnly) Editor.Paste(); }
 
     private void SelectAll_Click(object? sender, RoutedEventArgs e) => Editor.SelectAll();
 }

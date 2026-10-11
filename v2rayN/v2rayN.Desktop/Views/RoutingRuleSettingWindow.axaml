@@ -7,21 +7,31 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:resx="clr-namespace:ServiceLib.Resx;assembly=ServiceLib"
     xmlns:vms="clr-namespace:ServiceLib.ViewModels;assembly=ServiceLib"
+    xmlns:ws="clr-namespace:v2rayN.Desktop.Common"
     Title="{x:Static resx:ResUI.menuRoutingRuleSetting}"
     Width="900"
-    Height="600"
+    Height="820"
     x:DataType="vms:RoutingRuleSettingViewModel"
     Design.DataContext="{x:Static dd:DesignData.RoutingRuleSetting}"
     ShowInTaskbar="False"
     WindowStartupLocation="CenterScreen"
     mc:Ignorable="d">
     <DockPanel>
-        <Menu Margin="{StaticResource Margin4}" DockPanel.Dock="Top">
-            <MenuItem x:Name="menuRuleAdd" Header="{x:Static resx:ResUI.menuRuleAdd}" />
-            <MenuItem x:Name="menuImportRulesFromFile" Header="{x:Static resx:ResUI.menuImportRulesFromFile}" />
-            <MenuItem x:Name="menuImportRulesFromClipboard" Header="{x:Static resx:ResUI.menuImportRulesFromClipboard}" />
-            <MenuItem x:Name="menuImportRulesFromUrl" Header="{x:Static resx:ResUI.menuImportRulesFromUrl}" />
-        </Menu>
+        <WrapPanel Margin="0,0,0,16" DockPanel.Dock="Top">
+            <Button x:Name="menuRuleAdd" Classes="primary" Content="{x:Static resx:ResUI.menuRuleAdd}" Margin="0,0,8,8" />
+            <Button Content="{x:Static ws:WorkspaceText.Import}" Margin="0,0,8,8">
+                <Button.Flyout><MenuFlyout>
+                    <MenuItem x:Name="menuImportRulesFromFile" Header="{x:Static resx:ResUI.menuImportRulesFromFile}" />
+                    <MenuItem x:Name="menuImportRulesFromClipboard" Header="{x:Static resx:ResUI.menuImportRulesFromClipboard}" />
+                    <MenuItem x:Name="menuImportRulesFromUrl" Header="{x:Static resx:ResUI.menuImportRulesFromUrl}" />
+                </MenuFlyout></Button.Flyout>
+            </Button>
+            <Button x:Name="btnRuleEdit" Content="{x:Static ws:WorkspaceText.Edit}" Margin="0,0,8,8" />
+            <Button x:Name="btnRuleRemove" Content="{x:Static resx:ResUI.menuRuleRemove}" Margin="0,0,8,8" />
+            <Button x:Name="btnMoveUp" Content="{x:Static resx:ResUI.menuMoveUp}" Margin="0,0,8,8" />
+            <Button x:Name="btnMoveDown" Content="{x:Static resx:ResUI.menuMoveDown}" Margin="0,0,8,8" />
+            <Button x:Name="btnColumns" Content="{x:Static ws:WorkspaceText.Columns}" Margin="0,0,8,8" />
+        </WrapPanel>
 
         <StackPanel
             Margin="{StaticResource Margin4}"
@@ -41,10 +51,10 @@
                 IsCancel="True" />
         </StackPanel>
 
+        <Expander x:Name="basicOptions" Header="{x:Static ws:WorkspaceText.Basic}" DockPanel.Dock="Top" IsExpanded="False" Margin="0,0,0,12">
         <Grid
             Margin="{StaticResource Margin4}"
             ColumnDefinitions="Auto,Auto,Auto"
-            DockPanel.Dock="Top"
             RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto">
             <TextBlock
                 Grid.Row="0"
@@ -167,6 +177,7 @@
                 Margin="{StaticResource Margin4}"
                 Content="{x:Static resx:ResUI.TbBrowse}" />
         </Grid>
+        </Expander>
 
         <TabControl x:Name="tabAdvanced">
             <TabItem HorizontalAlignment="Left" Header="{x:Static resx:ResUI.menuRuleList}">

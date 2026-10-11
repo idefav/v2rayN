@@ -496,7 +496,7 @@ public class SpeedtestService(Config config, Func<SpeedTestResult, Task> updateF
         ProfileExManager.Instance.SetTestDelay(it.IndexId, responseTime);
         await UpdateFunc(it.IndexId, responseTime.ToString());
 
-        if (!_config.UiItem.HideColumnIpInfo && responseTime > 0)
+        if (!ExitInfoService.DesktopOwnsDetection && !_config.UiItem.HideColumnIpInfo && responseTime > 0)
         {
             var ipInfo = await ConnectionHandler.GetIPInfo(webProxy, ct);
             var ipStr = ipInfo?.ToString() ?? Global.None;

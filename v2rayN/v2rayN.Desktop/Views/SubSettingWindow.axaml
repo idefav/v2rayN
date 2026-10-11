@@ -1,81 +1,52 @@
-<Window
-    x:Class="v2rayN.Desktop.Views.SubSettingWindow"
-    xmlns="https://github.com/avaloniaui"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-    xmlns:dd="clr-namespace:v2rayN.Desktop.DesignData"
+<UserControl x:Class="v2rayN.Desktop.Views.SubSettingWindow"
+    xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:dialogHost="clr-namespace:DialogHostAvalonia;assembly=DialogHost.Avalonia"
-    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:resx="clr-namespace:ServiceLib.Resx;assembly=ServiceLib"
+    xmlns:ws="clr-namespace:v2rayN.Desktop.Common"
+    xmlns:conv="using:v2rayN.Desktop.Converters"
     xmlns:vms="clr-namespace:ServiceLib.ViewModels;assembly=ServiceLib"
-    Title="{x:Static resx:ResUI.menuSubSetting}"
-    Width="900"
-    Height="600"
-    x:DataType="vms:SubSettingViewModel"
-    Design.DataContext="{x:Static dd:DesignData.SubSetting}"
-    ShowInTaskbar="False"
-    WindowStartupLocation="CenterScreen"
-    mc:Ignorable="d">
-    <dialogHost:DialogHost
-        CloseOnClickAway="True"
-        DisableOpeningAnimation="True"
-        Identifier="dialogHostSub">
-        <DockPanel Margin="{StaticResource Margin8}">
-            <Menu Margin="{StaticResource Margin4}" DockPanel.Dock="Top">
-                <MenuItem x:Name="menuSubAdd" Header="{x:Static resx:ResUI.menuSubAdd}" />
-                <MenuItem x:Name="menuSubDelete" Header="{x:Static resx:ResUI.menuSubDelete}" />
-                <MenuItem x:Name="menuSubEdit" Header="{x:Static resx:ResUI.menuSubEdit}" />
-                <MenuItem x:Name="menuSubShare" Header="{x:Static resx:ResUI.menuSubShare}" />
-                <MenuItem x:Name="menuClose" Header="{x:Static resx:ResUI.menuClose}" />
-            </Menu>
-
-            <DataGrid
-                x:Name="lstSubscription"
-                AutoGenerateColumns="False"
-                BorderThickness="1"
-                CanUserResizeColumns="True"
-                GridLinesVisibility="All"
-                HeadersVisibility="Column"
-                IsReadOnly="True"
-                ItemsSource="{Binding SubItems}">
-                <DataGrid.KeyBindings>
-                    <KeyBinding Command="{Binding SubDeleteCmd}" Gesture="Delete" />
-                </DataGrid.KeyBindings>
-                <DataGrid.ContextMenu>
-                    <ContextMenu>
-                        <MenuItem x:Name="menuSubAdd2" Header="{x:Static resx:ResUI.menuSubAdd}" />
-                        <MenuItem x:Name="menuSubDelete2" Header="{x:Static resx:ResUI.menuSubDelete}" />
-                        <MenuItem x:Name="menuSubEdit2" Header="{x:Static resx:ResUI.menuSubEdit}" />
-                        <MenuItem x:Name="menuSubShare2" Header="{x:Static resx:ResUI.menuSubShare}" />
-                    </ContextMenu>
-                </DataGrid.ContextMenu>
+    xmlns:entities="clr-namespace:ServiceLib.Models.Entities;assembly=ServiceLib"
+    Tag="{x:Static ws:WorkspaceText.GroupsAndSubscriptions}" x:DataType="vms:SubSettingViewModel">
+    <UserControl.Resources><conv:UnknownTextConverter x:Key="UnknownTextConverter" /></UserControl.Resources>
+    <dialogHost:DialogHost CloseOnClickAway="True" DisableOpeningAnimation="True" Identifier="dialogHostSub">
+        <DockPanel>
+            <StackPanel DockPanel.Dock="Top" Spacing="8" Margin="0,0,0,16">
+                <TextBlock x:Name="txtGroupHint" Classes="muted" TextWrapping="Wrap" />
+                <WrapPanel x:Name="subscriptionToolbar">
+                    <TextBox x:Name="txtSubscriptionFilter" Width="240" Margin="0,0,8,4" />
+                    <ComboBox x:Name="cmbSubscriptionKind" Width="160" Margin="0,0,8,4" />
+                    <Button x:Name="btnUpdateAll" Margin="0,0,4,4" />
+                    <Button x:Name="btnUpdateOptions" Content="⌄" Margin="0,0,8,4">
+                        <Button.Flyout><MenuFlyout><MenuItem x:Name="menuUpdateAllViaProxy" /></MenuFlyout></Button.Flyout>
+                    </Button>
+                    <Button x:Name="menuSubAdd" Classes="primary" Content="{x:Static resx:ResUI.menuSubAdd}" Margin="0,0,8,4">
+                        <Button.Flyout><MenuFlyout>
+                            <MenuItem x:Name="menuAddSubscription" />
+                            <MenuItem x:Name="menuAddLocalGroup" />
+                        </MenuFlyout></Button.Flyout>
+                    </Button>
+                    <Button x:Name="menuClose" Content="{x:Static resx:ResUI.menuClose}" IsVisible="False" Margin="0,0,0,4" />
+                </WrapPanel>
+                <TextBlock x:Name="txtSubscriptionStatus" Classes="muted" TextWrapping="Wrap" IsVisible="False" />
+            </StackPanel>
+            <TextBlock x:Name="txtSubscriptionCount" DockPanel.Dock="Bottom" Classes="muted" Margin="8,12" />
+            <DataGrid x:Name="lstSubscription" AutoGenerateColumns="False" BorderThickness="0"
+                CanUserResizeColumns="True" GridLinesVisibility="Horizontal" HeadersVisibility="Column"
+                IsReadOnly="True" SelectionMode="Extended">
+                <DataGrid.KeyBindings><KeyBinding Command="{Binding SubDeleteCmd}" Gesture="Delete" /></DataGrid.KeyBindings>
+                <DataGrid.ContextMenu><ContextMenu>
+                    <MenuItem x:Name="menuSubEdit2" Header="{x:Static resx:ResUI.menuSubEdit}" />
+                    <MenuItem x:Name="menuUpdateSelected" />
+                    <MenuItem x:Name="menuUpdateSelectedViaProxy" />
+                    <MenuItem x:Name="menuSubShare2" Header="{x:Static resx:ResUI.menuSubShare}" />
+                    <Separator />
+                    <MenuItem x:Name="menuSubDelete2" Header="{x:Static resx:ResUI.menuSubDelete}" />
+                </ContextMenu></DataGrid.ContextMenu>
                 <DataGrid.Columns>
-                    <DataGridTextColumn
-                        Width="*"
-                        Binding="{Binding Remarks}"
-                        Header="{x:Static resx:ResUI.LvRemarks}" />
-                    <DataGridTextColumn
-                        Width="*"
-                        Binding="{Binding Url}"
-                        Header="{x:Static resx:ResUI.LvUrl}" />
-                    <DataGridCheckBoxColumn
-                        Width="100"
-                        Binding="{Binding Enabled}"
-                        Header="{x:Static resx:ResUI.LvEnabled}" />
-                    <DataGridTextColumn
-                        Width="150"
-                        Binding="{Binding AutoUpdateInterval}"
-                        Header="{x:Static resx:ResUI.LvAutoUpdateInterval}" />
-                    <DataGridTextColumn
-                        Width="150"
-                        Binding="{Binding UserAgent}"
-                        Header="{x:Static resx:ResUI.LvUserAgent}" />
-                    <DataGridTextColumn
-                        Width="80"
-                        Binding="{Binding Sort}"
-                        Header="{x:Static resx:ResUI.LvSort}" />
+                    <DataGridTextColumn x:DataType="entities:SubItem" Width="180" MinWidth="120" Binding="{Binding Remarks, Mode=OneWay}" Header="{x:Static resx:ResUI.LvRemarks}" />
+                    <DataGridTextColumn x:DataType="entities:SubItem" Width="*" MinWidth="180" Binding="{Binding Url, Mode=OneWay, Converter={StaticResource UnknownTextConverter}}" Header="{x:Static resx:ResUI.LvUrl}" />
                 </DataGrid.Columns>
             </DataGrid>
         </DockPanel>
     </dialogHost:DialogHost>
-</Window>
+</UserControl>

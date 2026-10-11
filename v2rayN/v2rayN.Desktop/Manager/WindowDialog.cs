@@ -12,6 +12,36 @@ public class WindowDialog : IWindowDialog
 
         var view = SimpleViewLocator.Instance.Build(vm);
 
+        if (view is IWorkspacePage page)
+        {
+            ((ReactiveUserControl<TViewModel>)view).ViewModel = vm;
+            var host = new WindowBase<TViewModel>
+            {
+                ViewModel = vm, Content = view, Title = page.PageTitle,
+                WindowSizeKey = view.GetType().Name,
+                Width = 1100, Height = 800, MinWidth = 600,
+                ShowInTaskbar = false, WindowStartupLocation = WindowStartupLocation.CenterOwner
+            };
+            var closingFromPage = false;
+            Action<object?> close = result => { closingFromPage = true; host.Close(result is true); };
+            host.Closing += (_, args) =>
+            {
+                if (closingFromPage) return;
+                args.Cancel = true;
+                page.Close();
+            };
+            EventHandler saved = (_, _) => Dispatch(() => page.Close(true));
+            page.CloseRequested += close;
+            if (vm is ServiceLib.Base.ICloseable editable) editable.RequestClose += saved;
+            try { return await host.ShowDialog<bool>(owner); }
+            finally
+            {
+                page.CloseRequested -= close;
+                if (vm is ServiceLib.Base.ICloseable editablePage) editablePage.RequestClose -= saved;
+                if (vm is GlobalHotkeySettingViewModel) HotkeyManager.Instance.IsPause = false;
+            }
+        }
+
         if (view is not WindowBase<TViewModel> window)
         {
             return false;
@@ -19,13 +49,13 @@ public class WindowDialog : IWindowDialog
 
         window.ViewModel = vm;
 
+        EventHandler closed = (_, _) => Dispatch(() => window.Close(true));
         if (vm is ServiceLib.Base.ICloseable closeable)
         {
-            closeable.RequestClose += (_, _) => Dispatch(() => window.Close(true));
+            closeable.RequestClose += closed;
         }
-
-        var result = await window.ShowDialog<bool>(owner);
-        return result;
+        try { return await window.ShowDialog<bool>(owner); }
+        finally { if (vm is ServiceLib.Base.ICloseable editableWindow) editableWindow.RequestClose -= closed; }
     }
 
     public static Window TryGetOwnerWindow()

@@ -7,6 +7,19 @@ public partial class AddServerWindow : WindowBase<AddServerViewModel>
     public AddServerWindow()
     {
         InitializeComponent();
+        // Keep the frequently used Realm URL in the form; retain packet and obfuscation options in their flyout.
+        var realmOptions = (StackPanel)txtHy2RealmUrl.Parent!;
+        var realmIndex = realmOptions.Children.IndexOf(txtHy2RealmUrl);
+        var realmLabel = realmOptions.Children[realmIndex - 1];
+        var realmHint = realmOptions.Children[realmIndex + 1];
+        foreach (var control in new[] { realmLabel, txtHy2RealmUrl, realmHint }) realmOptions.Children.Remove(control);
+        Grid.SetRow(realmLabel, 5); Grid.SetColumn(realmLabel, 0);
+        Grid.SetRow(txtHy2RealmUrl, 5); Grid.SetColumn(txtHy2RealmUrl, 1);
+        Grid.SetRow(realmHint, 5); Grid.SetColumn(realmHint, 2);
+        gridHysteria2.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
+        gridHysteria2.Children.Add(realmLabel);
+        gridHysteria2.Children.Add(txtHy2RealmUrl);
+        gridHysteria2.Children.Add(realmHint);
 
         Loaded += Window_Loaded;
         btnCancel.Click += (s, e) => Close();
@@ -17,6 +30,9 @@ public partial class AddServerWindow : WindowBase<AddServerViewModel>
         btnGUID5.Click += btnGUID_Click;
 
         cmbCoreType.ItemsSource = Global.CoreTypes.AppendEmpty();
+        cmbCoreType.PlaceholderText = Common.WorkspaceText.T("自动选择", "Automatic");
+        foreach (var password in new[] { txtId3, txtId4, txtId6, txtId7, txtSecurity8, txtId9, txtPreSharedKey9, txtId11, txtSecurity12, txtSecurity14 })
+            password.PasswordChar = '●';
         cmbNetwork.ItemsSource = Global.Networks;
 
         cmbHeaderTypeRaw.ItemsSource = new List<string> { Global.None, Global.RawHeaderHttp };
@@ -320,7 +336,7 @@ public partial class AddServerWindow : WindowBase<AddServerViewModel>
 
     private void CmbStreamSecurity_SelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
-        var security = cmbStreamSecurity.SelectedItem.ToString();
+        var security = ViewModel?.SelectedSource.ConfigType == EConfigType.WireGuard ? "" : cmbStreamSecurity.SelectedItem?.ToString();
         if (security == Global.StreamSecurityReality)
         {
             gridRealityMore.IsVisible = true;

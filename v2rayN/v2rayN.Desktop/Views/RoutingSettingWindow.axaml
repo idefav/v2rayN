@@ -1,4 +1,4 @@
-<Window
+<UserControl
     x:Class="v2rayN.Desktop.Views.RoutingSettingWindow"
     xmlns="https://github.com/avaloniaui"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -7,20 +7,16 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:resx="clr-namespace:ServiceLib.Resx;assembly=ServiceLib"
     xmlns:vms="clr-namespace:ServiceLib.ViewModels;assembly=ServiceLib"
-    Title="{x:Static resx:ResUI.menuRoutingSetting}"
-    Width="900"
-    Height="600"
+    Tag="{x:Static resx:ResUI.menuRoutingSetting}"
     x:DataType="vms:RoutingSettingViewModel"
     Design.DataContext="{x:Static dd:DesignData.RoutingSetting}"
-    ShowInTaskbar="False"
-    WindowStartupLocation="CenterScreen"
     mc:Ignorable="d">
 
     <DockPanel>
-        <Menu Margin="{StaticResource Margin4}" DockPanel.Dock="Top">
-            <MenuItem x:Name="menuRoutingAdvancedAdd2" Header="{x:Static resx:ResUI.menuRoutingAdvancedAdd}" />
-            <MenuItem x:Name="menuRoutingAdvancedImportRules2" Header="{x:Static resx:ResUI.menuRoutingAdvancedImportRules}" />
-        </Menu>
+        <WrapPanel Margin="0,0,0,16" DockPanel.Dock="Top">
+            <Button x:Name="menuRoutingAdvancedAdd2" Classes="primary" Content="{x:Static resx:ResUI.menuRoutingAdvancedAdd}" Margin="0,0,8,8" />
+            <Button x:Name="menuRoutingAdvancedImportRules2" Content="{x:Static resx:ResUI.menuRoutingAdvancedImportRules}" Margin="0,0,8,8" />
+        </WrapPanel>
 
         <Grid
             Margin="{StaticResource Margin4}"
@@ -123,4 +119,4 @@
             </TabItem>
         </TabControl>
     </DockPanel>
-</Window>
+</UserControl>

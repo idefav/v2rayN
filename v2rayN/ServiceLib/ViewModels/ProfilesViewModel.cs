@@ -16,6 +16,7 @@ public partial class ProfilesViewModel : MyReactiveObject
     #region private prop
 
     private string _serverFilter = string.Empty;
+    private int _refreshGeneration;
     private readonly Dictionary<string, bool> _dicHeaderSort = new();
     private SpeedtestService? _speedtestService;
     private string? _pendingSelectIndexId;
@@ -360,7 +361,13 @@ public partial class ProfilesViewModel : MyReactiveObject
 
     public async Task RefreshServersBiz()
     {
-        var lstModel = await GetProfileItemsEx(_config.SubIndexId, _serverFilter);
+        var generation = Interlocked.Increment(ref _refreshGeneration);
+        var groupId = _config.SubIndexId;
+        var filter = _serverFilter;
+        var selectionIds = SelectedProfiles?.Select(p => p.IndexId).ToHashSet() ?? [];
+        var currentId = SelectedProfile?.IndexId;
+        var lstModel = await GetProfileItemsEx(groupId, filter);
+        if (generation != _refreshGeneration || groupId != _config.SubIndexId || filter != _serverFilter) return;
 
         ProfileItems.ReplaceRange(lstModel ?? []);
         if (lstModel?.Count > 0)
@@ -371,9 +378,12 @@ public partial class ProfilesViewModel : MyReactiveObject
                 selected = lstModel.FirstOrDefault(t => t.IndexId == _pendingSelectIndexId);
                 _pendingSelectIndexId = null;
             }
+            selected ??= lstModel.FirstOrDefault(t => t.IndexId == currentId);
             selected ??= lstModel.FirstOrDefault(t => t.IndexId == _config.IndexId);
             SelectedProfile = selected ?? lstModel.First();
         }
+        else SelectedProfile = new ProfileItemModel();
+        SelectedProfiles = (lstModel ?? []).Where(p => selectionIds.Contains(p.IndexId)).ToList();
 
         await DispatcherRefreshServersBizInteraction.HandleSafe(RxVoid.Default);
     }
@@ -397,7 +407,7 @@ public partial class ProfilesViewModel : MyReactiveObject
 
     private async Task<List<ProfileItemModel>?> GetProfileItemsEx(string subid, string filter)
     {
-        var lstModel = await AppManager.Instance.ProfileModels(_config.SubIndexId, filter);
+        var lstModel = await AppManager.Instance.ProfileModels(subid, filter);
 
         await ConfigHandler.SetDefaultServer(_config, lstModel);
 
@@ -427,6 +437,7 @@ public partial class ProfilesViewModel : MyReactiveObject
                         DelayVal = t33?.Delay != 0 ? $"{t33?.Delay}" : string.Empty,
                         SpeedVal = t33?.Speed > 0 ? $"{t33?.Speed}" : t33?.Message ?? string.Empty,
                         IpInfo = t33?.IpInfo ?? string.Empty,
+                        ExitInfo = ExitInfoService.Instance.Get(t.IndexId),
                         TodayDown = t22 == null ? "" : Utils.HumanFy(t22.TodayDown),
                         TodayUp = t22 == null ? "" : Utils.HumanFy(t22.TodayUp),
                         TotalDown = t22 == null ? "" : Utils.HumanFy(t22.TotalDown),

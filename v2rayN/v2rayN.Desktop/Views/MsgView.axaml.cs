@@ -4,6 +4,7 @@ namespace v2rayN.Desktop.Views;
 
 public partial class MsgView : ReactiveUserControl<MsgViewModel>
 {
+    public void SetCompact(bool compact) => toolbar.IsVisible = !compact;
     //private const int KeepLines = 30;
 
     public MsgView()

@@ -1,255 +1,91 @@
-<Window
-    x:Class="v2rayN.Desktop.Views.AddGroupServerWindow"
-    xmlns="https://github.com/avaloniaui"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-    xmlns:dd="clr-namespace:v2rayN.Desktop.DesignData"
-    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-    xmlns:resx="clr-namespace:ServiceLib.Resx;assembly=ServiceLib"
-    xmlns:vms="clr-namespace:ServiceLib.ViewModels;assembly=ServiceLib"
-    Title="{x:Static resx:ResUI.menuServers}"
-    Width="900"
-    Height="700"
-    x:DataType="vms:AddGroupServerViewModel"
-    Design.DataContext="{x:Static dd:DesignData.AddGroupServer}"
-    ShowInTaskbar="False"
-    WindowStartupLocation="CenterScreen"
-    mc:Ignorable="d">
-
-    <DockPanel Margin="{StaticResource Margin8}">
-        <StackPanel
-            Margin="{StaticResource Margin4}"
-            HorizontalAlignment="Center"
-            DockPanel.Dock="Bottom"
-            Orientation="Horizontal">
-            <Button
-                x:Name="btnSave"
-                MinWidth="100"
-                Content="{x:Static resx:ResUI.TbConfirm}"
-                IsDefault="True" />
-            <Button
-                x:Name="btnCancel"
-                MinWidth="100"
-                Margin="{StaticResource MarginLr8}"
-                Content="{x:Static resx:ResUI.TbCancel}"
-                IsCancel="True" />
+<Window x:Class="v2rayN.Desktop.Views.AddGroupServerWindow"
+    xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:resx="clr-namespace:ServiceLib.Resx;assembly=ServiceLib" xmlns:vms="clr-namespace:ServiceLib.ViewModels;assembly=ServiceLib"
+    xmlns:ws="clr-namespace:v2rayN.Desktop.Common"
+    Title="{x:Static resx:ResUI.menuServers}" Width="960" Height="820" MinWidth="600" MinHeight="480"
+    x:DataType="vms:AddGroupServerViewModel" ShowInTaskbar="False" WindowStartupLocation="CenterScreen">
+    <DockPanel Margin="24">
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="12" Margin="0,20,0,0">
+            <Button x:Name="btnCancel" MinWidth="100" Content="{x:Static resx:ResUI.TbCancel}" IsCancel="True" />
+            <Button x:Name="btnSave" MinWidth="100" Content="{x:Static ws:WorkspaceText.Save}" IsDefault="True" Classes="primary" />
         </StackPanel>
-
-        <Grid
-            ColumnDefinitions="300,Auto,Auto"
-            DockPanel.Dock="Top"
-            RowDefinitions="Auto,Auto,Auto,Auto">
-            <TextBlock
-                Grid.Row="0"
-                Grid.Column="0"
-                Margin="{StaticResource Margin4}"
-                Text="{x:Static resx:ResUI.menuServers}" />
-
-            <TextBlock
-                Grid.Row="1"
-                Grid.Column="0"
-                Margin="{StaticResource Margin4}"
-                VerticalAlignment="Center"
-                Text="{x:Static resx:ResUI.TbRemarks}" />
-            <TextBox
-                x:Name="txtRemarks"
-                Grid.Row="1"
-                Grid.Column="1"
-                Width="400"
-                Margin="{StaticResource Margin4}" />
-
-            <TextBlock
-                Grid.Row="2"
-                Grid.Column="0"
-                Margin="{StaticResource Margin4}"
-                VerticalAlignment="Center"
-                Text="{x:Static resx:ResUI.TbCoreType}" />
-            <ComboBox
-                x:Name="cmbCoreType"
-                Grid.Row="2"
-                Grid.Column="1"
-                Width="200"
-                Margin="{StaticResource Margin4}" />
-
-            <Grid
-                x:Name="gridPolicyGroup"
-                Grid.Row="3"
-                Grid.Column="0"
-                Grid.ColumnSpan="3"
-                ColumnDefinitions="300,Auto,Auto">
-                <TextBlock
-                    Grid.Column="0"
-                    Margin="{StaticResource Margin4}"
-                    VerticalAlignment="Center"
-                    Text="{x:Static resx:ResUI.TbPolicyGroupType}" />
-                <ComboBox
-                    x:Name="cmbPolicyGroupType"
-                    Grid.Column="1"
-                    Width="200"
-                    Margin="{StaticResource Margin4}" />
+        <Grid x:Name="basicFields" Classes="taskFields" DockPanel.Dock="Top" ColumnDefinitions="120,*" RowDefinitions="Auto,Auto,Auto" Margin="0,0,0,16">
+            <TextBlock Text="{x:Static resx:ResUI.TbRemarks}" VerticalAlignment="Center" />
+            <TextBox x:Name="txtRemarks" Grid.Column="1" Margin="0,0,0,12" />
+            <TextBlock Grid.Row="1" Text="{x:Static resx:ResUI.TbCoreType}" VerticalAlignment="Center" />
+            <ComboBox x:Name="cmbCoreType" Grid.Row="1" Grid.Column="1" MinWidth="220" Margin="0,0,0,12" />
+            <Grid x:Name="gridPolicyGroup" Classes="taskFields" Grid.Row="2" Grid.ColumnSpan="2" ColumnDefinitions="120,*">
+                <TextBlock Text="{x:Static resx:ResUI.TbPolicyGroupType}" VerticalAlignment="Center" />
+                <ComboBox x:Name="cmbPolicyGroupType" Grid.Column="1" MinWidth="220" />
             </Grid>
         </Grid>
-
-        <TabControl
-            x:Name="tabControl"
-            HorizontalContentAlignment="Stretch"
-            DockPanel.Dock="Top">
-            <TabItem HorizontalAlignment="Left" Header="{x:Static resx:ResUI.menuServerList}">
-                <Grid
-                    Margin="{StaticResource Margin8}"
-                    ColumnDefinitions="Auto,Auto,Auto"
-                    RowDefinitions="Auto,Auto,Auto">
-
-                    <TextBlock
-                        Grid.Row="0"
-                        Grid.Column="0"
-                        Margin="{StaticResource Margin4}"
-                        VerticalAlignment="Center"
-                        Text="{x:Static resx:ResUI.menuSubscription}" />
-                    <ComboBox
-                        x:Name="cmbSubChildItems"
-                        Grid.Row="0"
-                        Grid.Column="1"
-                        Width="600"
-                        Margin="{StaticResource Margin4}"
-                        DisplayMemberBinding="{Binding Remarks}"
-                        ItemsSource="{Binding SubItems}" />
-                    <TextBlock
-                        Grid.Row="0"
-                        Grid.Column="2"
-                        Margin="{StaticResource Margin4}"
-                        VerticalAlignment="Center"
-                        Text="{x:Static resx:ResUI.TbPolicyGroupSubChildTip}"
-                        TextWrapping="Wrap" />
-
-                    <TextBlock
-                        Grid.Row="1"
-                        Grid.Column="0"
-                        Margin="{StaticResource Margin4}"
-                        VerticalAlignment="Center"
-                        Text="{x:Static resx:ResUI.LvFilter}" />
-                    <ComboBox
-                        x:Name="cmbFilter"
-                        Grid.Row="1"
-                        Grid.Column="1"
-                        Width="600"
-                        Margin="{StaticResource Margin4}"
-                        VerticalAlignment="Center"
-                        IsEditable="True" />
+        <TabControl x:Name="tabControl" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
+            <TabItem x:Name="automaticTab" Header="{x:Static ws:WorkspaceText.Automatic}">
+                <Grid RowDefinitions="Auto,Auto,*" Margin="0,16,0,0">
+                    <Grid Classes="taskFields" ColumnDefinitions="120,*" RowDefinitions="Auto,Auto">
+                        <TextBlock Text="{x:Static resx:ResUI.menuSubscription}" VerticalAlignment="Center" />
+                        <ComboBox x:Name="cmbSubChildItems" Grid.Column="1" HorizontalAlignment="Stretch" Margin="0,0,0,12" DisplayMemberBinding="{Binding Remarks}" ItemsSource="{Binding SubItems}" />
+                        <TextBlock Grid.Row="1" Text="{x:Static resx:ResUI.LvFilter}" VerticalAlignment="Center" />
+                        <ComboBox x:Name="cmbFilter" Grid.Row="1" Grid.Column="1" HorizontalAlignment="Stretch" IsEditable="True" />
+                    </Grid>
+                    <StackPanel Grid.Row="1" Spacing="8" Margin="0,12">
+                        <TextBlock Text="{x:Static resx:ResUI.TbPolicyGroupSubChildTip}" Classes="muted" TextWrapping="Wrap" />
+                        <TextBlock x:Name="txtMatchCount" Classes="sectionTitle" />
+                    </StackPanel>
+                    <DataGrid x:Name="lstAutomaticPreview" Grid.Row="2" AutoGenerateColumns="False" ItemsSource="{Binding AllProfilePreviewItemsObs}" IsReadOnly="True" HeadersVisibility="Column">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Width="2*" Binding="{Binding Remarks}" Header="{x:Static resx:ResUI.LvRemarks}" />
+                            <DataGridTextColumn Width="*" Binding="{Binding ConfigType}" Header="{x:Static resx:ResUI.LvServiceType}" />
+                            <DataGridTextColumn Width="2*" Binding="{Binding Address}" Header="{x:Static resx:ResUI.LvAddress}" />
+                        </DataGrid.Columns>
+                    </DataGrid>
                 </Grid>
             </TabItem>
-
-            <TabItem HorizontalAlignment="Left" Header="{x:Static resx:ResUI.menuServerList2}">
-                <DataGrid
-                    x:Name="lstChild"
-                    AutoGenerateColumns="False"
-                    Background="Transparent"
-                    BorderThickness="1"
-                    CanUserReorderColumns="False"
-                    CanUserResizeColumns="True"
-                    CanUserSortColumns="False"
-                    GridLinesVisibility="All"
-                    HeadersVisibility="Column"
-                    IsReadOnly="True"
-                    ItemsSource="{Binding ChildItemsObs}"
-                    SelectionMode="Extended">
-                    <DataGrid.ContextMenu>
-                        <ContextMenu>
-                            <MenuItem x:Name="menuAddChildServer" Header="{x:Static resx:ResUI.menuAddChildServer}" />
-                            <MenuItem
-                                x:Name="menuRemoveChildServer"
-                                Header="{x:Static resx:ResUI.menuRemoveChildServer}"
-                                InputGesture="Back" />
-                            <MenuItem
-                                x:Name="menuSelectAllChild"
-                                Header="{x:Static resx:ResUI.menuSelectAll}"
-                                InputGesture="Ctrl+A" />
-                            <Separator />
-                            <MenuItem
-                                x:Name="menuMoveTop"
-                                Header="{x:Static resx:ResUI.menuMoveTop}"
-                                InputGesture="T" />
-                            <MenuItem
-                                x:Name="menuMoveUp"
-                                Header="{x:Static resx:ResUI.menuMoveUp}"
-                                InputGesture="U" />
-                            <MenuItem
-                                x:Name="menuMoveDown"
-                                Header="{x:Static resx:ResUI.menuMoveDown}"
-                                InputGesture="D" />
-                            <MenuItem
-                                x:Name="menuMoveBottom"
-                                Header="{x:Static resx:ResUI.menuMoveBottom}"
-                                InputGesture="B" />
-                        </ContextMenu>
-                    </DataGrid.ContextMenu>
-                    <DataGrid.Columns>
-                        <DataGridTextColumn
-                            Width="150"
-                            Binding="{Binding ConfigType}"
-                            Header="{x:Static resx:ResUI.LvServiceType}" />
-                        <DataGridTextColumn
-                            Width="200"
-                            Binding="{Binding Remarks}"
-                            Header="{x:Static resx:ResUI.LvRemarks}" />
-                        <DataGridTextColumn
-                            Width="200"
-                            Binding="{Binding Address}"
-                            Header="{x:Static resx:ResUI.LvAddress}" />
-                        <DataGridTextColumn
-                            Width="100"
-                            Binding="{Binding Port}"
-                            Header="{x:Static resx:ResUI.LvPort}" />
-                        <DataGridTextColumn
-                            Width="100"
-                            Binding="{Binding Network}"
-                            Header="{x:Static resx:ResUI.LvTransportProtocol}" />
-                        <DataGridTextColumn
-                            Width="100"
-                            Binding="{Binding StreamSecurity}"
-                            Header="{x:Static resx:ResUI.LvTLS}" />
-                    </DataGrid.Columns>
-                </DataGrid>
+            <TabItem x:Name="manualTab" Header="{x:Static ws:WorkspaceText.Manual}">
+                <DockPanel Margin="0,16,0,0" VerticalAlignment="Top">
+                    <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,12">
+                        <Button x:Name="btnAddChild" Content="{x:Static resx:ResUI.menuAddChildServer}" Margin="0,0,8,8" />
+                        <Button x:Name="btnRemoveChild" Content="{x:Static resx:ResUI.menuRemoveChildServer}" Margin="0,0,8,8" />
+                        <Button x:Name="btnMoveUp" Content="{x:Static resx:ResUI.menuMoveUp}" Margin="0,0,8,8" />
+                        <Button x:Name="btnMoveDown" Content="{x:Static resx:ResUI.menuMoveDown}" Margin="0,0,8,8" />
+                    </WrapPanel>
+                    <Border x:Name="chainPreview" DockPanel.Dock="Bottom" Background="{DynamicResource WorkspaceSidebar}" CornerRadius="8" Margin="0,12,0,0" Padding="16" IsVisible="False">
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="{x:Static ws:WorkspaceText.Preview}" Classes="sectionTitle" />
+                            <TextBlock x:Name="txtChainOrder" TextWrapping="Wrap" Foreground="{DynamicResource WorkspaceAccent}" />
+                        </StackPanel>
+                    </Border>
+                    <DataGrid x:Name="lstChild" Height="280" AutoGenerateColumns="False" CanUserSortColumns="False" HeadersVisibility="All" RowHeaderWidth="40" IsReadOnly="True" ItemsSource="{Binding ChildItemsObs}" SelectionMode="Extended">
+                        <DataGrid.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem x:Name="menuAddChildServer" Header="{x:Static resx:ResUI.menuAddChildServer}" />
+                                <MenuItem x:Name="menuRemoveChildServer" Header="{x:Static resx:ResUI.menuRemoveChildServer}" InputGesture="Back" />
+                                <MenuItem x:Name="menuSelectAllChild" Header="{x:Static resx:ResUI.menuSelectAll}" InputGesture="Ctrl+A" />
+                                <Separator />
+                                <MenuItem x:Name="menuMoveTop" Header="{x:Static resx:ResUI.menuMoveTop}" />
+                                <MenuItem x:Name="menuMoveUp" Header="{x:Static resx:ResUI.menuMoveUp}" />
+                                <MenuItem x:Name="menuMoveDown" Header="{x:Static resx:ResUI.menuMoveDown}" />
+                                <MenuItem x:Name="menuMoveBottom" Header="{x:Static resx:ResUI.menuMoveBottom}" />
+                            </ContextMenu>
+                        </DataGrid.ContextMenu>
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Width="2*" Binding="{Binding Remarks}" Header="{x:Static resx:ResUI.LvRemarks}" />
+                            <DataGridTextColumn Width="*" Binding="{Binding ConfigType}" Header="{x:Static resx:ResUI.LvServiceType}" />
+                            <DataGridTextColumn Width="2*" Binding="{Binding Address}" Header="{x:Static resx:ResUI.LvAddress}" />
+                            <DataGridTextColumn Width="90" Binding="{Binding Port}" Header="{x:Static resx:ResUI.LvPort}" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
             </TabItem>
-            <TabItem HorizontalAlignment="Left" Header="{x:Static resx:ResUI.menuServerListPreview}">
-                <DataGrid
-                    x:Name="lstPreviewChild"
-                    AutoGenerateColumns="False"
-                    Background="Transparent"
-                    BorderThickness="1"
-                    CanUserReorderColumns="False"
-                    CanUserResizeColumns="True"
-                    CanUserSortColumns="False"
-                    GridLinesVisibility="All"
-                    HeadersVisibility="Column"
-                    IsReadOnly="True"
-                    ItemsSource="{Binding AllProfilePreviewItemsObs}"
-                    SelectionMode="Extended">
+            <TabItem Header="{x:Static ws:WorkspaceText.Preview}">
+                <DataGrid x:Name="lstPreviewChild" Margin="0,16,0,0" AutoGenerateColumns="False" IsReadOnly="True" HeadersVisibility="Column" ItemsSource="{Binding AllProfilePreviewItemsObs}">
                     <DataGrid.Columns>
-                        <DataGridTextColumn
-                            Width="150"
-                            Binding="{Binding ConfigType}"
-                            Header="{x:Static resx:ResUI.LvServiceType}" />
-                        <DataGridTextColumn
-                            Width="200"
-                            Binding="{Binding Remarks}"
-                            Header="{x:Static resx:ResUI.LvRemarks}" />
-                        <DataGridTextColumn
-                            Width="200"
-                            Binding="{Binding Address}"
-                            Header="{x:Static resx:ResUI.LvAddress}" />
-                        <DataGridTextColumn
-                            Width="100"
-                            Binding="{Binding Port}"
-                            Header="{x:Static resx:ResUI.LvPort}" />
-                        <DataGridTextColumn
-                            Width="100"
-                            Binding="{Binding Network}"
-                            Header="{x:Static resx:ResUI.LvTransportProtocol}" />
-                        <DataGridTextColumn
-                            Width="100"
-                            Binding="{Binding StreamSecurity}"
-                            Header="{x:Static resx:ResUI.LvTLS}" />
+                        <DataGridTextColumn Width="2*" Binding="{Binding Remarks}" Header="{x:Static resx:ResUI.LvRemarks}" />
+                        <DataGridTextColumn Width="*" Binding="{Binding ConfigType}" Header="{x:Static resx:ResUI.LvServiceType}" />
+                        <DataGridTextColumn Width="2*" Binding="{Binding Address}" Header="{x:Static resx:ResUI.LvAddress}" />
+                        <DataGridTextColumn Width="90" Binding="{Binding Port}" Header="{x:Static resx:ResUI.LvPort}" />
+                        <DataGridTextColumn Width="*" Binding="{Binding Network}" Header="{x:Static resx:ResUI.LvTransportProtocol}" />
+                        <DataGridTextColumn Width="*" Binding="{Binding StreamSecurity}" Header="{x:Static resx:ResUI.LvTLS}" />
                     </DataGrid.Columns>
                 </DataGrid>
             </TabItem>

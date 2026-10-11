@@ -2,7 +2,7 @@ using v2rayN.Desktop.Base;
 
 namespace v2rayN.Desktop.Views;
 
-public partial class FullConfigTemplateWindow : WindowBase<FullConfigTemplateViewModel>
+public partial class FullConfigTemplateWindow : PageBase<FullConfigTemplateViewModel>
 {
     private static Config _config;
 

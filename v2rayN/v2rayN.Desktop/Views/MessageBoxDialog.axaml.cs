@@ -9,7 +9,7 @@ public partial class MessageBoxDialog : Window
     {
     }
 
-    public MessageBoxDialog(string caption, string message)
+    public MessageBoxDialog(string caption, string message, string? confirmText = null, bool dangerous = false)
     {
         InitializeComponent();
 
@@ -21,6 +21,13 @@ public partial class MessageBoxDialog : Window
 
         Title = caption;
         txtMessage.Text = message;
+        if (confirmText != null) btnYes.Content = confirmText;
+        if (dangerous)
+        {
+            btnYes.Classes.Remove("primary");
+            btnYes.Classes.Add("danger");
+            btnYes.IsDefault = false;
+        }
 
         btnYes.Click += BtnYes_Click;
         btnNo.Click += BtnNo_Click;

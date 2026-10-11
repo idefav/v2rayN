@@ -224,6 +224,9 @@ jobs:
           - 原生 SSH 节点：密码、私钥及加密私钥认证。
           - 共用 SSH 密钥选择、一键配置免密登录。
           - 编辑器内分别测试 SSH 登录与代理访问。
+          - Avalonia 全界面换新：节点工作区、固定操作列、分组与订阅、设置及编辑器。
+          - 当前代理按单节点／策略组展示；新增独立出口 IP、地区与国旗检测，支持自动和手动检查。
+          - 出口检测不切换活动服务器，不修改系统代理、TUN 或路由；自动检测可在设置关闭。
           - Windows WPF / Avalonia、Linux、macOS：x64 / arm64 ZIP；macOS 另有 DMG。
           - 安装包包含运行时及代理核心；\`SHA256SUMS\` 用于校验下载文件。
           - 此版本未配置 GPG 发布签名，macOS 包未经 Apple 开发者签名及公证。
@@ -233,6 +236,7 @@ jobs:
           验证：单元测试、隔离 SSH 集成测试、全部平台编译与包完整性检查。
 
           [SSH 使用说明](https://github.com/$GH_REPO/blob/$RELEASE_TAG/docs/ssh-key-setup.zh-Hans.md)
+          · [UI 与出口检测说明](https://github.com/$GH_REPO/blob/$RELEASE_TAG/docs/exit-info-preview.zh-Hans.md)
           · [构建记录](https://github.com/$GH_REPO/actions/runs/$GITHUB_RUN_ID)
           EOF
           # A failed upload may leave a draft; never overwrite a published release.

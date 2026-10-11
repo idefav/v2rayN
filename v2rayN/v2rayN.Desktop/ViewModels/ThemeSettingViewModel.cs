@@ -30,11 +30,12 @@ public partial class ThemeSettingViewModel : MyReactiveObject
 
     private void BindingUI()
     {
-        CurrentTheme = _config.UiItem.CurrentTheme;
-        CurrentFontSize = _config.UiItem.CurrentFontSize;
+        CurrentTheme = Enum.TryParse<ETheme>(_config.UiItem.CurrentTheme, out var theme) ? theme.ToString() : nameof(ETheme.FollowSystem);
+        CurrentFontSize = _config.UiItem.CurrentFontSize >= Global.MinFontSize ? _config.UiItem.CurrentFontSize : 14;
         CurrentLanguage = _config.UiItem.CurrentLanguage;
 
         this.WhenAnyValue(x => x.CurrentTheme)
+            .Skip(1)
             .Where(y => y.IsNotEmpty())
             .SubscribeAsync(async _ =>
             {
@@ -47,6 +48,7 @@ public partial class ThemeSettingViewModel : MyReactiveObject
             });
 
         this.WhenAnyValue(x => x.CurrentFontSize)
+            .Skip(1)
             .Where(y => y > 0)
             .SubscribeAsync(async _ =>
             {
@@ -59,6 +61,7 @@ public partial class ThemeSettingViewModel : MyReactiveObject
             });
 
         this.WhenAnyValue(x => x.CurrentLanguage)
+            .Skip(1)
             .Where(y => !y.IsNullOrEmpty())
             .SubscribeAsync(async _ =>
             {
@@ -98,35 +101,13 @@ public partial class ThemeSettingViewModel : MyReactiveObject
             return;
         }
 
-        Style style = new(x => Selectors.Or(
-            x.OfType<Button>(),
-            x.OfType<TextBox>(),
-            x.OfType<TextBlock>(),
-            x.OfType<SelectableTextBlock>(),
-            x.OfType<Menu>(),
-            x.OfType<ContextMenu>(),
-            x.OfType<DataGridRow>(),
-            x.OfType<ListBoxItem>(),
-            x.OfType<HeaderedContentControl>(),
-            x.OfType<TextEditor>()
-        ));
-        style.Add(new Setter()
-        {
-            Property = TemplatedControl.FontSizeProperty,
-            Value = size,
-        });
-        Application.Current?.Styles.Add(style);
-
-        ModifyFontSizeEx(size);
-    }
-
-    private void ModifyFontSizeEx(double size)
-    {
-        //DataGrid
-        var rowHeight = 20 + (size / 2);
-        var style = new Style(x => x.OfType<DataGrid>());
-        style.Add(new Setter(DataGrid.RowHeightProperty, rowHeight));
-        Application.Current?.Styles.Add(style);
+        if (Application.Current is not { } app) return;
+        app.Resources["WorkspaceFontSize"] = size;
+        app.Resources["WorkspaceTitleSize"] = size * 20 / 14;
+        app.Resources["WorkspaceSectionSize"] = size * 16 / 14;
+        app.Resources["WorkspaceCaptionSize"] = size * 12 / 14;
+        app.Resources["WorkspaceMetricSize"] = size * 22 / 14;
+        app.Resources["WorkspaceRowHeight"] = Math.Max(48, size * 3.4);
     }
 
     private void ModifyFontFamily()

@@ -1,4 +1,5 @@
 using Avalonia.Controls.Notifications;
+using Avalonia.VisualTree;
 using DialogHostAvalonia;
 using v2rayN.Desktop.Base;
 using v2rayN.Desktop.Common;
@@ -9,10 +10,8 @@ namespace v2rayN.Desktop.Views;
 public partial class MainWindow : WindowBase<MainWindowViewModel>
 {
     private static Config _config;
-    private readonly SingleReplaceableDisposable _layoutBindingsDisposable = new();
     private readonly WindowNotificationManager? _manager;
     private CheckUpdateView? _checkUpdateView;
-    private BackupAndRestoreView? _backupAndRestoreView;
     private bool _blCloseByUser = false;
 
     public MainWindow()
@@ -30,7 +29,18 @@ public partial class MainWindow : WindowBase<MainWindowViewModel>
         menuBackupAndRestore.Click += MenuBackupAndRestore_Click;
         menuClose.Click += MenuClose_Click;
 
-        conTheme.Content ??= new ThemeSettingView();
+        menuSubSetting.Click += async (_, _) => await NavigateAsync("Subscriptions");
+        menuOptionSetting.Click += async (_, _) => await NavigateAsync("Settings");
+        menuRoutingSetting.Click += async (_, _) => await NavigateAsync("Routing");
+        menuDNSSetting.Click += async (_, _) => await OpenSettingsAsync("DNS");
+        menuFullConfigTemplate.Click += async (_, _) => await OpenSettingsAsync("Templates");
+        menuGlobalHotkeySetting.Click += async (_, _) => await OpenSettingsAsync("Hotkeys");
+        btnSettings.Click += async (_, _) => await NavigateAsync("Settings");
+        btnHelp.Click += (_, _) => ShowHelpMenu();
+        btnClearLogs.Click += (_, _) => _logs?.ClearMsg();
+        btnToggleLogs.Click += (_, _) => ToggleLogDrawer();
+        SizeChanged += (_, _) => ResizeWorkspace();
+        PropertyChanged += (_, args) => { if (args.Property == FontSizeProperty) ResizeWorkspace(); };
 
         this.WhenActivated(disposables =>
         {
@@ -57,18 +67,12 @@ public partial class MainWindow : WindowBase<MainWindowViewModel>
             this.BindCommand(ViewModel, vm => vm.AddServerViaImageCmd, v => v.menuAddServerViaImage).DisposeWith(disposables);
 
             //sub
-            this.BindCommand(ViewModel, vm => vm.SubSettingCmd, v => v.menuSubSetting).DisposeWith(disposables);
             this.BindCommand(ViewModel, vm => vm.SubUpdateCmd, v => v.menuSubUpdate).DisposeWith(disposables);
             this.BindCommand(ViewModel, vm => vm.SubUpdateViaProxyCmd, v => v.menuSubUpdateViaProxy).DisposeWith(disposables);
             this.BindCommand(ViewModel, vm => vm.SubGroupUpdateCmd, v => v.menuSubGroupUpdate).DisposeWith(disposables);
             this.BindCommand(ViewModel, vm => vm.SubGroupUpdateViaProxyCmd, v => v.menuSubGroupUpdateViaProxy).DisposeWith(disposables);
 
             //setting
-            this.BindCommand(ViewModel, vm => vm.OptionSettingCmd, v => v.menuOptionSetting).DisposeWith(disposables);
-            this.BindCommand(ViewModel, vm => vm.RoutingSettingCmd, v => v.menuRoutingSetting).DisposeWith(disposables);
-            this.BindCommand(ViewModel, vm => vm.DNSSettingCmd, v => v.menuDNSSetting).DisposeWith(disposables);
-            this.BindCommand(ViewModel, vm => vm.FullConfigTemplateCmd, v => v.menuFullConfigTemplate).DisposeWith(disposables);
-            this.BindCommand(ViewModel, vm => vm.GlobalHotkeySettingCmd, v => v.menuGlobalHotkeySetting).DisposeWith(disposables);
             this.BindCommand(ViewModel, vm => vm.RebootAsAdminCmd, v => v.menuRebootAsAdmin).DisposeWith(disposables);
             this.BindCommand(ViewModel, vm => vm.ClearServerStatisticsCmd, v => v.menuClearServerStatistics).DisposeWith(disposables);
             this.BindCommand(ViewModel, vm => vm.OpenTheFileLocationCmd, v => v.menuOpenTheFileLocation).DisposeWith(disposables);
@@ -80,13 +84,13 @@ public partial class MainWindow : WindowBase<MainWindowViewModel>
             this.OneWayBind(ViewModel, vm => vm.BlReloadEnabled, v => v.menuReload.IsEnabled).DisposeWith(disposables);
             this.OneWayBind(ViewModel, vm => vm.BlNewUpdate, v => v.btnNewUpdate.IsVisible).DisposeWith(disposables);
 
-            this.OneWayBind(ViewModel, vm => vm.StatusBarViewModel, v => v.contentStatusBarView.Content).DisposeWith(disposables);
 
-            _layoutBindingsDisposable.DisposeWith(disposables);
-
-            this.WhenAnyValue(v => v.ViewModel.MainGirdOrientation)
+            InitializeWorkspace();
+            this.WhenAnyValue(v => v.ViewModel.BlReloadEnabled).ObserveOn(RxSchedulers.MainThreadScheduler)
+                .Subscribe(enabled => (contentStatusBarView.Content as StatusBarView)?.SetReloading(!enabled)).DisposeWith(disposables);
+            this.WhenAnyValue(v => v.ViewModel.ShowClashUI)
                 .ObserveOn(RxSchedulers.MainThreadScheduler)
-                .Subscribe(UpdateLayout)
+                .Subscribe(UpdateProxyNavigation)
                 .DisposeWith(disposables);
 
             ViewModel.ReadTextFromClipboardInteraction.RegisterHandler(async interaction =>
@@ -217,6 +221,7 @@ public partial class MainWindow : WindowBase<MainWindowViewModel>
 
     private async void MainWindow_KeyDown(object? sender, KeyEventArgs e)
     {
+        if (e.Source is TextBox || (e.Source is Visual visual && visual.GetVisualAncestors().Any(v => v is TextBox or AvaloniaEdit.TextEditor))) return;
         if (e.KeyModifiers is KeyModifiers.Control or KeyModifiers.Meta)
         {
             switch (e.Key)
@@ -275,18 +280,14 @@ public partial class MainWindow : WindowBase<MainWindowViewModel>
 
     private void MenuCheckUpdate_Click(object? sender, RoutedEventArgs e)
     {
-        _checkUpdateView ??= new CheckUpdateView();
-        _checkUpdateView.ViewModel = ViewModel?.CheckUpdateViewModel;
-        DialogHost.Show(_checkUpdateView);
+        _ = OpenSettingsAsync("Updates");
 
         AppEvents.HasUpdateNotified.Publish(false);
     }
 
     private void MenuBackupAndRestore_Click(object? sender, RoutedEventArgs e)
     {
-        _backupAndRestoreView ??= new BackupAndRestoreView();
-        _backupAndRestoreView.ViewModel = ViewModel?.BackupAndRestoreViewModel;
-        DialogHost.Show(_backupAndRestoreView);
+        _ = OpenSettingsAsync("Backup");
     }
 
     private async void MenuClose_Click(object? sender, RoutedEventArgs e)
@@ -299,6 +300,7 @@ public partial class MainWindow : WindowBase<MainWindowViewModel>
             }
 
             _blCloseByUser = true;
+            if (!await PrepareExitAsync()) { _blCloseByUser = false; return; }
             StorageUI();
 
             await AppManager.Instance.AppExitAsync(true);
@@ -368,104 +370,12 @@ public partial class MainWindow : WindowBase<MainWindowViewModel>
         {
             ShowHideWindow(false);
         }
-        RestoreUI();
-    }
-
-    private void RestoreUI()
-    {
-        if (_config.UiItem.MainGirdHeight1 > 0 && _config.UiItem.MainGirdHeight2 > 0)
-        {
-            if (_config.UiItem.MainGirdOrientation == EGirdOrientation.Horizontal)
-            {
-                gridMain.ColumnDefinitions[0].Width = new GridLength(_config.UiItem.MainGirdHeight1, GridUnitType.Star);
-                gridMain.ColumnDefinitions[2].Width = new GridLength(_config.UiItem.MainGirdHeight2, GridUnitType.Star);
-            }
-            else if (_config.UiItem.MainGirdOrientation == EGirdOrientation.Vertical)
-            {
-                gridMain1.RowDefinitions[0].Height = new GridLength(_config.UiItem.MainGirdHeight1, GridUnitType.Star);
-                gridMain1.RowDefinitions[2].Height = new GridLength(_config.UiItem.MainGirdHeight2, GridUnitType.Star);
-            }
-        }
+        ResizeWorkspace();
     }
 
     private void StorageUI()
     {
         ConfigHandler.SaveWindowSizeItem(_config, GetType().Name, Width, Height);
-
-        if (_config.UiItem.MainGirdOrientation == EGirdOrientation.Horizontal)
-        {
-            ConfigHandler.SaveMainGirdHeight(_config, gridMain.ColumnDefinitions[0].ActualWidth, gridMain.ColumnDefinitions[2].ActualWidth);
-        }
-        else if (_config.UiItem.MainGirdOrientation == EGirdOrientation.Vertical)
-        {
-            ConfigHandler.SaveMainGirdHeight(_config, gridMain1.RowDefinitions[0].ActualHeight, gridMain1.RowDefinitions[2].ActualHeight);
-        }
-    }
-
-    private void UpdateLayout(EGirdOrientation orientation)
-    {
-        var currentLayoutDisposables = new MultipleDisposable();
-        _layoutBindingsDisposable.Create(currentLayoutDisposables);
-
-        ClearLayoutContent();
-
-        gridMain.IsVisible = orientation == EGirdOrientation.Horizontal;
-        gridMain1.IsVisible = orientation == EGirdOrientation.Vertical;
-        gridMain2.IsVisible = orientation == EGirdOrientation.Tab;
-
-        switch (orientation)
-        {
-            case EGirdOrientation.Horizontal:
-                this.OneWayBind(ViewModel, vm => vm.ProfilesViewModel, v => v.tabProfiles.Content).DisposeWith(currentLayoutDisposables);
-                this.OneWayBind(ViewModel, vm => vm.MsgViewModel, v => v.tabMsgView.Content).DisposeWith(currentLayoutDisposables);
-                this.OneWayBind(ViewModel, vm => vm.ClashProxiesViewModel, v => v.tabClashProxies.Content).DisposeWith(currentLayoutDisposables);
-                this.OneWayBind(ViewModel, vm => vm.ClashConnectionsViewModel, v => v.tabClashConnections.Content).DisposeWith(currentLayoutDisposables);
-                this.OneWayBind(ViewModel, vm => vm.ShowClashUI, v => v.tabClashProxies.IsVisible).DisposeWith(currentLayoutDisposables);
-                this.OneWayBind(ViewModel, vm => vm.ShowClashUI, v => v.tabClashConnections.IsVisible).DisposeWith(currentLayoutDisposables);
-                this.Bind(ViewModel, vm => vm.TabMainSelectedIndex, v => v.tabMain.SelectedIndex).DisposeWith(currentLayoutDisposables);
-                break;
-
-            case EGirdOrientation.Vertical:
-                this.OneWayBind(ViewModel, vm => vm.ProfilesViewModel, v => v.tabProfiles1.Content).DisposeWith(currentLayoutDisposables);
-                this.OneWayBind(ViewModel, vm => vm.MsgViewModel, v => v.tabMsgView1.Content).DisposeWith(currentLayoutDisposables);
-                this.OneWayBind(ViewModel, vm => vm.ClashProxiesViewModel, v => v.tabClashProxies1.Content).DisposeWith(currentLayoutDisposables);
-                this.OneWayBind(ViewModel, vm => vm.ClashConnectionsViewModel, v => v.tabClashConnections1.Content).DisposeWith(currentLayoutDisposables);
-                this.OneWayBind(ViewModel, vm => vm.ShowClashUI, v => v.tabClashProxies1.IsVisible).DisposeWith(currentLayoutDisposables);
-                this.OneWayBind(ViewModel, vm => vm.ShowClashUI, v => v.tabClashConnections1.IsVisible).DisposeWith(currentLayoutDisposables);
-                this.Bind(ViewModel, vm => vm.TabMainSelectedIndex, v => v.tabMain1.SelectedIndex).DisposeWith(currentLayoutDisposables);
-                break;
-
-            case EGirdOrientation.Tab:
-            default:
-                this.OneWayBind(ViewModel, vm => vm.ProfilesViewModel, v => v.tabProfiles2.Content).DisposeWith(currentLayoutDisposables);
-                this.OneWayBind(ViewModel, vm => vm.MsgViewModel, v => v.tabMsgView2.Content).DisposeWith(currentLayoutDisposables);
-                this.OneWayBind(ViewModel, vm => vm.ClashProxiesViewModel, v => v.tabClashProxies2.Content).DisposeWith(currentLayoutDisposables);
-                this.OneWayBind(ViewModel, vm => vm.ClashConnectionsViewModel, v => v.tabClashConnections2.Content).DisposeWith(currentLayoutDisposables);
-                this.OneWayBind(ViewModel, vm => vm.ShowClashUI, v => v.tabClashProxies2.IsVisible).DisposeWith(currentLayoutDisposables);
-                this.OneWayBind(ViewModel, vm => vm.ShowClashUI, v => v.tabClashConnections2.IsVisible).DisposeWith(currentLayoutDisposables);
-                this.Bind(ViewModel, vm => vm.TabMainSelectedIndex, v => v.tabMain2.SelectedIndex).DisposeWith(currentLayoutDisposables);
-                break;
-        }
-
-        RestoreUI();
-    }
-
-    private void ClearLayoutContent()
-    {
-        tabProfiles.Content = null;
-        tabMsgView.Content = null;
-        tabClashProxies.Content = null;
-        tabClashConnections.Content = null;
-
-        tabProfiles1.Content = null;
-        tabMsgView1.Content = null;
-        tabClashProxies1.Content = null;
-        tabClashConnections1.Content = null;
-
-        tabProfiles2.Content = null;
-        tabMsgView2.Content = null;
-        tabClashProxies2.Content = null;
-        tabClashConnections2.Content = null;
     }
 
     private void AddHelpMenuItem()

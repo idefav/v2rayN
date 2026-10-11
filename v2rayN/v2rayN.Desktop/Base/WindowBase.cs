@@ -2,6 +2,8 @@ namespace v2rayN.Desktop.Base;
 
 public class WindowBase<TViewModel> : ReactiveWindow<TViewModel> where TViewModel : class
 {
+    private bool _presented;
+    public string? WindowSizeKey { get; set; }
     public WindowBase()
     {
         Loaded += OnLoaded;
@@ -21,9 +23,18 @@ public class WindowBase<TViewModel> : ReactiveWindow<TViewModel> where TViewMode
 
     protected virtual void OnLoaded(object? sender, RoutedEventArgs e)
     {
+        if (!_presented && GetType().Name != "MainWindow")
+        {
+            _presented = true;
+            MinWidth = Math.Max(MinWidth, 600);
+            MinHeight = Math.Max(MinHeight, 480);
+            Width = Math.Max(Width, MinWidth);
+            Height = Math.Max(Height, MinHeight);
+            Common.FormPresentation.Apply(this);
+        }
         try
         {
-            var sizeItem = ConfigHandler.GetWindowSizeItem(AppManager.Instance.Config, GetType().Name);
+            var sizeItem = ConfigHandler.GetWindowSizeItem(AppManager.Instance.Config, WindowSizeKey ?? GetType().Name);
             if (sizeItem is null)
             {
                 return;
@@ -55,7 +66,7 @@ public class WindowBase<TViewModel> : ReactiveWindow<TViewModel> where TViewMode
         base.OnClosed(e);
         try
         {
-            ConfigHandler.SaveWindowSizeItem(AppManager.Instance.Config, GetType().Name, Width, Height);
+            ConfigHandler.SaveWindowSizeItem(AppManager.Instance.Config, WindowSizeKey ?? GetType().Name, Width, Height);
         }
         catch { }
     }

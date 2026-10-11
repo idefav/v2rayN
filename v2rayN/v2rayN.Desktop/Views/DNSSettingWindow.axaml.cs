@@ -1,14 +1,24 @@
 using v2rayN.Desktop.Base;
+using v2rayN.Desktop.Common;
 
 namespace v2rayN.Desktop.Views;
 
-public partial class DNSSettingWindow : WindowBase<DNSSettingViewModel>
+public partial class DNSSettingWindow : PageBase<DNSSettingViewModel>
 {
     private static Config _config;
 
     public DNSSettingWindow()
     {
         InitializeComponent();
+        var priority = new TextBlock
+        {
+            Text = WorkspaceText.T("启用自定义 DNS 后，相应内核使用自定义配置；基础与进阶配置会暂停生效。",
+                "Custom DNS takes priority for its core. Basic and advanced settings are suspended while custom DNS is enabled."),
+            TextWrapping = TextWrapping.Wrap, Margin = new Thickness(8, 0, 8, 12)
+        };
+        priority.Classes.Add("muted");
+        DockPanel.SetDock(priority, Dock.Top);
+        ((DockPanel)Content!).Children.Insert(0, priority);
 
         _config = AppManager.Instance.Config;
         Loaded += Window_Loaded;
@@ -17,6 +27,11 @@ public partial class DNSSettingWindow : WindowBase<DNSSettingViewModel>
         cmbDirectDNSStrategy.ItemsSource = Global.DomainStrategy;
         cmbRemoteDNSStrategy.ItemsSource = Global.DomainStrategy;
         cmbProxyDialDNSStrategy.ItemsSource = Global.DomainStrategy;
+        cmbDirectDNSStrategy.PlaceholderText = cmbRemoteDNSStrategy.PlaceholderText = cmbProxyDialDNSStrategy.PlaceholderText = "AsIs";
+        foreach (var strategy in new[] { cmbDirectDNSStrategy, cmbRemoteDNSStrategy, cmbProxyDialDNSStrategy, cmbdomainStrategy4FreedomCompatible })
+            TablePresentation.DisplaySelection(strategy, "AsIs");
+        TablePresentation.DisplaySelection(cmbdomainStrategy4OutCompatible, "—");
+        cmbDirectExpectedIPs.PlaceholderText = WorkspaceText.T("不限制", "No restriction");
         cmbDirectDNS.ItemsSource = Global.DomainDirectDNSAddress;
         cmbRemoteDNS.ItemsSource = Global.DomainRemoteDNSAddress;
         cmbBootstrapDNS.ItemsSource = Global.DomainPureIPDNSAddress;
@@ -69,10 +84,10 @@ public partial class DNSSettingWindow : WindowBase<DNSSettingViewModel>
 
             this.WhenAnyValue(x => x.ViewModel.IsSimpleDNSEnabled)
                 .Select(b => !b)
-                .BindTo(txtBasicDNSSettingsInvalid, t => t.IsVisible);
+                .BindTo(txtBasicDNSSettingsInvalid, t => t.IsVisible).DisposeWith(disposables);
             this.WhenAnyValue(x => x.ViewModel.IsSimpleDNSEnabled)
                 .Select(b => !b)
-                .BindTo(txtAdvancedDNSSettingsInvalid, t => t.IsVisible);
+                .BindTo(txtAdvancedDNSSettingsInvalid, t => t.IsVisible).DisposeWith(disposables);
             this.Bind(ViewModel, vm => vm.IsSimpleDNSEnabled, v => v.gridBasicDNSSettings.IsEnabled).DisposeWith(disposables);
             this.Bind(ViewModel, vm => vm.IsSimpleDNSEnabled, v => v.gridAdvancedDNSSettings.IsEnabled).DisposeWith(disposables);
         });

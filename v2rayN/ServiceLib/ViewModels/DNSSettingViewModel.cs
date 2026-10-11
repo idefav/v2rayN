@@ -3,6 +3,7 @@ namespace ServiceLib.ViewModels;
 public partial class DNSSettingViewModel : MyReactiveObject, ICloseable
 {
     public event EventHandler? RequestClose;
+    public Task Initialization { get; }
 
     [Reactive] public partial bool UseSystemHosts { get; set; }
     [Reactive] public partial bool AddCommonHosts { get; set; }
@@ -63,7 +64,7 @@ public partial class DNSSettingViewModel : MyReactiveObject, ICloseable
         this.WhenAnyValue(x => x.RayCustomDNSEnableCompatible, x => x.SBCustomDNSEnableCompatible)
             .Subscribe(_ => this.RaisePropertyChanged(nameof(IsSimpleDNSEnabled)));
 
-        _ = Init();
+        Initialization = Init();
     }
 
     private async Task Init()
@@ -105,23 +106,6 @@ public partial class DNSSettingViewModel : MyReactiveObject, ICloseable
 
     private async Task SaveSettingAsync()
     {
-        _config.SimpleDNSItem.UseSystemHosts = UseSystemHosts;
-        _config.SimpleDNSItem.AddCommonHosts = AddCommonHosts;
-        _config.SimpleDNSItem.FakeIP = FakeIP;
-        _config.SimpleDNSItem.FakeIPRange = FakeIPRange;
-        _config.SimpleDNSItem.BlockBindingQuery = BlockBindingQuery;
-        _config.SimpleDNSItem.BlockAAAAQuery = BlockAAAAQuery;
-        _config.SimpleDNSItem.DirectDNS = DirectDNS;
-        _config.SimpleDNSItem.RemoteDNS = RemoteDNS;
-        _config.SimpleDNSItem.BootstrapDNS = BootstrapDNS;
-        _config.SimpleDNSItem.Strategy4Freedom = Strategy4Freedom;
-        _config.SimpleDNSItem.Strategy4Proxy = Strategy4Proxy;
-        _config.SimpleDNSItem.Strategy4ProxyDial = Strategy4ProxyDial;
-        _config.SimpleDNSItem.Hosts = Hosts;
-        _config.SimpleDNSItem.DirectExpectedIPs = DirectExpectedIPs;
-        _config.SimpleDNSItem.ParallelQuery = ParallelQuery;
-        _config.SimpleDNSItem.ServeStale = ServeStale;
-        _config.SimpleDNSItem.EnableHappyEyeballs = EnableHappyEyeballs;
         if (NormalDNSCompatible.IsNotEmpty())
         {
             var obj = JsonUtils.ParseJson(NormalDNSCompatible);
@@ -175,6 +159,24 @@ public partial class DNSSettingViewModel : MyReactiveObject, ICloseable
             }
         }
 
+        _config.SimpleDNSItem.UseSystemHosts = UseSystemHosts;
+        _config.SimpleDNSItem.AddCommonHosts = AddCommonHosts;
+        _config.SimpleDNSItem.FakeIP = FakeIP;
+        _config.SimpleDNSItem.FakeIPRange = FakeIPRange;
+        _config.SimpleDNSItem.BlockBindingQuery = BlockBindingQuery;
+        _config.SimpleDNSItem.BlockAAAAQuery = BlockAAAAQuery;
+        _config.SimpleDNSItem.DirectDNS = DirectDNS;
+        _config.SimpleDNSItem.RemoteDNS = RemoteDNS;
+        _config.SimpleDNSItem.BootstrapDNS = BootstrapDNS;
+        _config.SimpleDNSItem.Strategy4Freedom = Strategy4Freedom;
+        _config.SimpleDNSItem.Strategy4Proxy = Strategy4Proxy;
+        _config.SimpleDNSItem.Strategy4ProxyDial = Strategy4ProxyDial;
+        _config.SimpleDNSItem.Hosts = Hosts;
+        _config.SimpleDNSItem.DirectExpectedIPs = DirectExpectedIPs;
+        _config.SimpleDNSItem.ParallelQuery = ParallelQuery;
+        _config.SimpleDNSItem.ServeStale = ServeStale;
+        _config.SimpleDNSItem.EnableHappyEyeballs = EnableHappyEyeballs;
+
         var item1 = await AppManager.Instance.GetDNSItem(ECoreType.Xray);
         item1.Enabled = RayCustomDNSEnableCompatible;
         item1.DomainStrategy4Freedom = DomainStrategy4FreedomCompatible;
@@ -182,7 +184,11 @@ public partial class DNSSettingViewModel : MyReactiveObject, ICloseable
         item1.UseSystemHosts = UseSystemHostsCompatible;
         item1.NormalDNS = NormalDNSCompatible;
         item1.TunDNS = TunDNSCompatible;
-        await ConfigHandler.SaveDNSItems(_config, item1);
+        if (await ConfigHandler.SaveDNSItems(_config, item1) != 0)
+        {
+            NoticeManager.Instance.Enqueue(ResUI.OperationFailed);
+            return;
+        }
 
         var item2 = await AppManager.Instance.GetDNSItem(ECoreType.sing_box);
         item2.Enabled = SBCustomDNSEnableCompatible;
@@ -190,9 +196,17 @@ public partial class DNSSettingViewModel : MyReactiveObject, ICloseable
         item2.DomainDNSAddress = DomainDNSAddress2Compatible;
         item2.NormalDNS = JsonUtils.Serialize(JsonUtils.Deserialize<Dns4Sbox>(NormalDNS2Compatible));
         item2.TunDNS = JsonUtils.Serialize(JsonUtils.Deserialize<Dns4Sbox>(TunDNS2Compatible));
-        await ConfigHandler.SaveDNSItems(_config, item2);
+        if (await ConfigHandler.SaveDNSItems(_config, item2) != 0)
+        {
+            NoticeManager.Instance.Enqueue(ResUI.OperationFailed);
+            return;
+        }
 
-        await ConfigHandler.SaveConfig(_config);
+        if (await ConfigHandler.SaveConfig(_config) != 0)
+        {
+            NoticeManager.Instance.Enqueue(ResUI.OperationFailed);
+            return;
+        }
         RequestClose?.Invoke(this, EventArgs.Empty);
     }
 }
