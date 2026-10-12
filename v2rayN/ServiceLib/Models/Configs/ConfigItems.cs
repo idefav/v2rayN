@@ -100,7 +100,7 @@ public class UIItem
     public bool DoubleClick2Activate { get; set; }
     public bool AutoHideStartup { get; set; }
     public bool Hide2TrayWhenClose { get; set; }
-    public bool MacOSShowInDock { get; set; }
+    public bool MacOSShowInDock { get; set; } = true;
     public List<ColumnItem> MainColumnItem { get; set; }
     public List<WindowSizeItem> WindowSizeItem { get; set; }
     public bool HideColumnIpInfo { get; set; }
