@@ -54,7 +54,64 @@ Minimum OS requirements: [Release files introduction](https://github.com/2dust/v
 
 ---
 
+## macOS: “已损坏，无法打开” / “App is damaged and can't be opened”
+
+本仓库的 SSH/UI **测试版**未使用 Apple Developer ID 签名和公证。浏览器下载的文件带有下载隔离标记，可能被 macOS Gatekeeper 拦截；“已损坏”也可能表示下载不完整、签名失效或文件被修改，不能仅凭提示认定没有风险。测试版下载入口为 [idefav/v2rayN Releases](https://github.com/idefav/v2rayN/releases)，与上方上游正式版入口不同。
+
+### 1. 先确认来源与下载完整性
+
+从对应 Release 页面下载适合机器的包：Apple Silicon 使用 `arm64`，Intel 使用 `64`。测试版提供 `SHA256SUMS`，将本地计算值与**同一版本、同名文件**的记录对比：
+
+```bash
+shasum -a 256 "$HOME/Downloads/v2rayN-macos-arm64.dmg"
+hdiutil verify "$HOME/Downloads/v2rayN-macos-arm64.dmg"
+```
+
+如果下载文件名带有 `(1)` 等后缀，请替换为实际路径并保留引号。SHA-256 不匹配或磁盘映像校验失败时重新下载，不执行下面的放行步骤。校验和只能证明与发布文件一致，不代替开发者身份验证。
+
+### 2. 将应用复制到“应用程序”，再打开
+
+打开 DMG，将 `v2rayN.app` 拖入 `/Applications`，然后推出磁盘映像，从“应用程序”打开。不要直接运行 `/Volumes/...` 磁盘映像内的应用，也不要对只读映像内的文件执行修改命令。
+
+若已有客户端正在工作，请先保存配置并安排好切换时间；退出旧客户端可能影响当前代理连接，不要为了处理此提示直接停止正在使用的代理。
+
+### 3. 对确认可信的测试版单独放行
+
+尝试打开后，如果“系统设置 → 隐私与安全性”出现该应用的“仍要打开”，按提示确认。该入口不一定适用于所有“已损坏”提示。参见 [Apple：在 Mac 上安全地打开 App](https://support.apple.com/zh-cn/102445)。
+
+如果仍被拦截，且已经确认来源可信、文件校验通过，可在终端**仅移除这个应用**的下载隔离属性，再从“应用程序”重试：
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/v2rayN.app"
+```
+
+安装在其他目录时替换路径。只有出现 `Permission denied` 且确认目标路径无误时，才使用管理员权限：
+
+```bash
+sudo xattr -dr com.apple.quarantine "/Applications/v2rayN.app"
+```
+
+此操作不会修复损坏的二进制、缺失的文件或无效签名。不要关闭全局 Gatekeeper／SIP，不要对整个 `/Applications` 或下载目录递归清除属性；若提示“将损坏你的电脑”或检测到恶意软件，不按此流程绕过。
+
+### 4. 仍无法打开时
+
+收集以下只读诊断输出，连同 macOS 版本、CPU 架构、测试版标签及下载文件名提交 Issue：
+
+```bash
+codesign --verify --deep --strict --verbose=2 "/Applications/v2rayN.app"
+spctl --assess --type execute --verbose=4 "/Applications/v2rayN.app"
+xattr -lr "/Applications/v2rayN.app"
+```
+
+未经 Developer ID 签名／公证的测试版被 `spctl` 拒绝是可能的，不能单独证明文件损坏。若报告签名资源被修改或缺失，应重新下载完整应用并反馈，不建议用重新签名掩盖错误。分享输出前隐藏个人路径。长期减少此类拦截需要发布方使用 Developer ID 签名并完成 Apple 公证；本节命令只是可信测试包的本地处理方式。
+
+**English:** These feature previews are not Developer ID signed or notarized. Verify the download against the matching release checksums, copy the app from the DMG to Applications, then use Privacy & Security → Open Anyway if available. For a trusted, verified preview only, the scoped `xattr` command above removes its download quarantine attribute. It does not repair corrupted files or signatures; do not disable system-wide security.
+
+---
+
 ## GPG Verification / GPG 签名校验
+
+以下为上游正式版的 GPG 校验说明。本仓库的 `*-ssh-preview.*` 测试版未提供 GPG 发布签名，使用各测试版附件中的 `SHA256SUMS` 校验完整性。
 
 Release files are signed with GPG to verify authenticity and integrity, helping prevent mirror, ISP, or CDN hijacking.
 
