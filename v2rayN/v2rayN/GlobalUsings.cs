@@ -35,3 +35,4 @@ global using ServiceLib.Models.Entities;
 global using ServiceLib.Resx;
 global using ServiceLib.ViewModels;
 global using v2rayN.Common;
+global using WindowsUtils = v2rayN.Common.WindowsUtils;
