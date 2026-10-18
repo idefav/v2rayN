@@ -124,6 +124,17 @@ public partial class StatusBarView : ReactiveUserControl<StatusBarViewModel>
 
     private void UpdateCoreState()
     {
+        var recovery = AppManager.Instance.ConnectionRecovery;
+        txtRecoveryState.Text = recovery?.State switch
+        {
+            RecoveryState.Checking => WorkspaceText.T("检查中", "Checking connection"),
+            RecoveryState.Recovering => WorkspaceText.T("恢复中", "Recovering connection"),
+            RecoveryState.Offline => WorkspaceText.T("等待网络", "Waiting for network"),
+            RecoveryState.Failed => WorkspaceText.T("连接异常", "Connection unavailable"),
+            _ => string.Empty,
+        };
+        txtRecoveryState.IsVisible = !string.IsNullOrEmpty(txtRecoveryState.Text);
+        ToolTip.SetTip(txtRecoveryState, recovery?.Error);
         UpdateExitSummary();
         var running = CoreManager.Instance.IsCoreRunning;
         txtCoreState.Text = running ? WorkspaceText.Running : WorkspaceText.Stopped;

@@ -10,6 +10,9 @@ public sealed class AppManager
     private int? _statePort2;
     public static AppManager Instance => _instance.Value;
     public Config Config => _config;
+    internal ConnectionRecoveryService? ConnectionRecovery { get; set; }
+    internal bool IsExiting { get; private set; }
+    internal Func<Task>? WaitForCoreReloadAsync { get; set; }
     public IWindowDialog WindowDialog { get; set; } = null!;
 
     public int StatePort
@@ -124,6 +127,9 @@ public sealed class AppManager
         try
         {
             Logging.SaveLog("AppExitAsync Begin");
+            IsExiting = true;
+            if (ConnectionRecovery != null) await ConnectionRecovery.StopAsync();
+            if (WaitForCoreReloadAsync != null) await WaitForCoreReloadAsync();
             if (ExitInfoService.DesktopOwnsDetection) await ExitInfoService.Instance.StopAsync();
 
             await SysProxyHandler.UpdateSysProxy(_config, true);

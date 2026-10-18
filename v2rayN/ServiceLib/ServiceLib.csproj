@@ -6,6 +6,8 @@
 
     <ItemGroup>
         <InternalsVisibleTo Include="ServiceLib.Tests" />
+        <InternalsVisibleTo Include="v2rayN" />
+        <InternalsVisibleTo Include="v2rayN.Desktop.Review" />
     </ItemGroup>
 
 	<ItemGroup>

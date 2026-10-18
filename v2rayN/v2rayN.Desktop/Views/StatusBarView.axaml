@@ -47,6 +47,7 @@
             </Button>
             <WrapPanel x:Name="overview" VerticalAlignment="Center">
                 <TextBlock x:Name="txtCoreState" VerticalAlignment="Center" FontWeight="SemiBold" Margin="0,4,16,4" />
+                <TextBlock x:Name="txtRecoveryState" VerticalAlignment="Center" Margin="0,4,16,4" IsVisible="False" />
                 <TextBlock x:Name="txtRunningServerDisplay" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="360" Margin="0,4,16,4" />
                 <ContentControl x:Name="exitSummary" MaxWidth="280" VerticalAlignment="Center" Margin="0,4,16,4" />
                 <TextBlock x:Name="txtRunningInfoDisplay" VerticalAlignment="Center" Classes="muted" Margin="0,4,16,4" />

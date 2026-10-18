@@ -33,10 +33,16 @@ for name, encryption in [
 allowed_key = client_key.public_key().public_bytes(
     serialization.Encoding.OpenSSH, serialization.PublicFormat.OpenSSH).decode()
 auth_attempts = 0
+ssh_channels_enabled = threading.Event()
+ssh_channels_enabled.set()
 
 
 class HttpHandler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
+        if self.path == "/stall-ssh":
+            ssh_channels_enabled.clear()
+        elif self.path == "/resume-ssh":
+            ssh_channels_enabled.set()
         body = str(auth_attempts).encode() if self.path == "/auth-count" else b"ssh-proxy-ok"
         self.send_response(200)
         self.send_header("Content-Length", str(len(body)))
@@ -92,6 +98,8 @@ class SshServer(paramiko.ServerInterface):
             key.get_name() + " " + key.get_base64()) == allowed_key else paramiko.AUTH_FAILED
 
     def check_channel_direct_tcpip_request(self, channel_id, origin, destination):
+        # Test-only silent stall: the SSH socket stays alive but new forwarding channels cannot open.
+        ssh_channels_enabled.wait(timeout=30)
         if destination not in (("127.0.0.1", http_server.server_port), ("127.0.0.1", https.server_port)):
             return paramiko.OPEN_FAILED_ADMINISTRATIVELY_PROHIBITED
         self.destinations[channel_id] = destination

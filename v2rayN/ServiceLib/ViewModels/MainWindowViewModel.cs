@@ -321,8 +321,11 @@ public partial class MainWindowViewModel : MyReactiveObject
             .ObserveOn(RxSchedulers.MainThreadScheduler)
             .SubscribeAsync(async blProxy => await UpdateSubscriptionProcess("", blProxy));
 
-        _ = Init();
+        AppManager.Instance.WaitForCoreReloadAsync = _reloadCoordinator.WaitForIdleAsync;
+        Initialization = Init();
     }
+
+    internal Task Initialization { get; }
 
     private async Task Init()
     {
@@ -682,24 +685,44 @@ public partial class MainWindowViewModel : MyReactiveObject
 
     #region core job
 
-    private bool _hasNextReloadJob = false;
-    private readonly SemaphoreSlim _reloadSemaphore = new(1, 1);
+    private readonly ConnectionReloadCoordinator _reloadCoordinator = new();
+    private long _connectionRevision;
+    private int _manualReloads;
+
+    internal RecoveryContext? GetRecoveryContext()
+    {
+        if (DesignMode || AppManager.Instance.IsExiting || Volatile.Read(ref _manualReloads) > 0
+            || StatusBarViewModel.IsChangingConnection || !SysProxyHandler.ChangesEnabled
+            || _config.TunModeItem.EnableTun || _config.SystemProxyItem.SysProxyType != ESysProxyType.ForcedChange
+            || _config.SystemProxyItem.CustomSystemProxyScriptPath.IsNotEmpty() || _config.IndexId.IsNullOrEmpty()) return null;
+        var port = AppManager.Instance.GetLocalPort(EInboundProtocol.socks);
+        return port > 0 ? new(_config.IndexId, port, _config.SpeedTestItem.SpeedPingTestUrl, Interlocked.Read(ref _connectionRevision)) : null;
+    }
 
     public async Task Reload()
     {
-        //If there are unfinished reload job, marked with next job.
-        if (!await _reloadSemaphore.WaitAsync(0))
+        Interlocked.Increment(ref _manualReloads);
+        Interlocked.Increment(ref _connectionRevision);
+        AppManager.Instance.ConnectionRecovery?.RequestCheck("configuration changed");
+        try { await ReloadCoreAsync(null, CancellationToken.None); }
+        finally
         {
-            _hasNextReloadJob = true;
-            return;
+            Interlocked.Decrement(ref _manualReloads);
+            AppManager.Instance.ConnectionRecovery?.RequestCheck("reload completed");
         }
+    }
 
-        if (DesignMode)
+    internal async Task<bool> ReloadForRecoveryAsync(RecoveryContext expected, CancellationToken token)
+    {
+        if (!await ReloadCoreAsync(expected, token)) return false;
+        return await RecoveryProbe.WaitForListenerAsync(expected.Port, token);
+    }
+
+    private async Task<bool> ReloadCoreAsync(RecoveryContext? expected, CancellationToken token)
+    {
+        return await _reloadCoordinator.RunAsync(
+            () => !DesignMode && !AppManager.Instance.IsExiting && (expected == null || GetRecoveryContext() == expected), async () =>
         {
-            _reloadSemaphore.Release();
-            return;
-        }
-
         try
         {
             SetReloadEnabled(false);
@@ -717,22 +740,30 @@ public partial class MainWindowViewModel : MyReactiveObject
             {
                 StatusBarViewModel.ConnectionError = ResUI.CheckServerSettings;
                 NoticeManager.Instance.Enqueue(ResUI.CheckServerSettings);
-                return;
+                return false;
             }
             var allResult = await CoreConfigContextBuilder.BuildAll(_config, profileItem);
             if (NoticeManager.Instance.NotifyValidatorResult(allResult.CombinedValidatorResult) && !allResult.Success)
             {
                 StatusBarViewModel.ConnectionError = string.Join(Environment.NewLine, allResult.CombinedValidatorResult.Errors);
-                return;
+                return false;
             }
 
+            if (expected != null)
+            {
+                token.ThrowIfCancellationRequested();
+                if (GetRecoveryContext() != expected) return false;
+            }
+
+            // Finish an initiated reload transaction before another reload or shutdown can stop it.
+            var proxyApplied = false;
             await Task.Run(async () =>
             {
                 await LoadCore(allResult.MainResult.Context, allResult.PreSocksResult?.Context);
-                await SysProxyHandler.UpdateSysProxy(_config, false);
+                proxyApplied = await SysProxyHandler.UpdateSysProxy(_config, false, error => StatusBarViewModel.ConnectionError = error);
                 await Task.Delay(1000);
             });
-            RxSchedulers.MainThreadScheduler.Schedule(async () =>
+            if (expected == null) RxSchedulers.MainThreadScheduler.Schedule(async () =>
             {
                 var result = await StatusBarViewModel.TestServerAvailability();
                 if (result == null || profileItem.IndexId.IsNullOrEmpty())
@@ -764,24 +795,20 @@ public partial class MainWindowViewModel : MyReactiveObject
             }
 
             ReloadResult(showClashUI);
+            return proxyApplied && CoreManager.Instance.IsCoreRunning;
         }
         catch (Exception ex)
         {
             StatusBarViewModel.ConnectionError = ex.Message;
             Logging.SaveLog("Reload", ex);
             NoticeManager.Instance.Enqueue(ex.Message);
+            return false;
         }
         finally
         {
             SetReloadEnabled(true);
-            _reloadSemaphore.Release();
-            //If there is a next reload job, execute it.
-            if (_hasNextReloadJob)
-            {
-                _hasNextReloadJob = false;
-                await Reload();
-            }
         }
+        }, token);
     }
 
     private void ReloadResult(bool showClashUI)

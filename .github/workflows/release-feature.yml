@@ -228,6 +228,8 @@ jobs:
           - 当前代理按单节点／策略组展示；新增独立出口 IP、地区与国旗检测，支持自动和手动检查。
           - 活动节点整行持续高亮，顶部运行摘要新增出口地区与检测状态，悬停查看 IP 和检测详情。
           - 出口检测不切换活动服务器，不修改系统代理、TUN 或路由；自动检测可在设置关闭。
+          - macOS 启动、休眠唤醒与网络变化后自动检查当前连接；先修复系统代理，连续两轮检测失败才重启内核。
+          - 自动恢复包含事件合并、重启限频及退出取消；适用于关闭 TUN、自动配置系统代理且未使用自定义代理脚本的配置。
           - Windows WPF / Avalonia、Linux、macOS：x64 / arm64 ZIP；macOS 另有 DMG。
           - 安装包包含运行时及代理核心；\`SHA256SUMS\` 用于校验下载文件。
           - 此版本未配置 GPG 发布签名，macOS 包未经 Apple 开发者签名及公证。
@@ -235,9 +237,11 @@ jobs:
           源码提交：\`$GITHUB_SHA\`
           核心包提交：\`$CORE_BIN_REF\`（2dust/v2rayN-core-bin）
           验证：单元测试、隔离 SSH 集成测试、全部平台编译与包完整性检查。
+          macOS 本地已验证原生唤醒通知与 SSH 静默卡住恢复；真实休眠、整夜休眠及整机重启需安装后验收。
 
           [SSH 使用说明](https://github.com/$GH_REPO/blob/$RELEASE_TAG/docs/ssh-key-setup.zh-Hans.md)
           · [UI 与出口检测说明](https://github.com/$GH_REPO/blob/$RELEASE_TAG/docs/exit-info-preview.zh-Hans.md)
+          · [macOS 网络恢复说明](https://github.com/$GH_REPO/blob/$RELEASE_TAG/docs/macos-network-recovery.md)
           · [构建记录](https://github.com/$GH_REPO/actions/runs/$GITHUB_RUN_ID)
           EOF
           # A failed upload may leave a draft; never overwrite a published release.

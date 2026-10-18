@@ -44,6 +44,7 @@ internal static class Program
     public static bool ScreensOnly;
     public static bool Interactive;
     public static bool WorkflowOnly;
+    public static bool RecoveryOnly;
     public static bool LegacyColumns;
     public static string Language = "zh-Hans";
     public static string Theme = "Light";
@@ -62,6 +63,7 @@ internal static class Program
         ScreensOnly = args.Contains("--screens-only");
         Interactive = args.Contains("--interactive");
         WorkflowOnly = args.Contains("--workflow-only");
+        RecoveryOnly = args.Contains("--recovery-only");
         LegacyColumns = args.Contains("--legacy-columns");
         foreach (var argument in args.Skip(1))
         {
@@ -161,6 +163,36 @@ public class ReviewApp : v2rayN.Desktop.App
         Network = "ws", StreamSecurity = "tls", Sni = "server.example.com"
     };
 
+    private async Task CheckRecoveryStatesAsync()
+    {
+        var bar = _main.GetLogicalDescendants().OfType<StatusBarView>().Single();
+        var label = bar.FindControl<TextBlock>("txtRecoveryState")!;
+        foreach (var width in new[] { 700, 1100 })
+        foreach (var state in new[] { RecoveryState.Checking, RecoveryState.Recovering, RecoveryState.Offline, RecoveryState.Failed, RecoveryState.Idle })
+        {
+            _main.Width = width;
+            using var cancel = new CancellationTokenSource();
+            var recovery = new ConnectionRecoveryService(() => new("fixture", 10808, "https://fixture.invalid", 1),
+                _ => Task.FromResult<string?>(state == RecoveryState.Offline ? null : "fixture"),
+                (_, _) => Task.FromResult(new ProxyCheckResult(state is RecoveryState.Checking or RecoveryState.Idle, "fixture")),
+                async (_, token) => { if (state == RecoveryState.Recovering) await Task.Delay(Timeout.Infinite, token); return false; },
+                (_, _) => Task.FromResult(true), (_, _) => Task.FromResult(false), _ => { },
+                options: new() { StableDelay = state == RecoveryState.Checking ? TimeSpan.FromMinutes(1) : TimeSpan.Zero, ProxyRetryDelay = TimeSpan.Zero });
+            AppManager.Instance.ConnectionRecovery = recovery;
+            var checking = recovery.CheckAsync("render fixture", cancel.Token);
+            await Task.Delay(1150);
+            Check(recovery.State == state && label.IsEffectivelyVisible == (state != RecoveryState.Idle), $"recovery state {state} visible at width {width}");
+            if (label.IsEffectivelyVisible)
+                Check(label.Bounds.Width > 0 && label.TranslatePoint(default, _main) is { X: >= 0 } point && point.X + label.Bounds.Width <= _main.ClientSize.Width,
+                    $"recovery label fits width {width}");
+            await CaptureAsync($"recovery-{state}-{width}", state + " · fixture", _main);
+            cancel.Cancel();
+            try { await checking; } catch (OperationCanceledException) { }
+            await recovery.StopAsync();
+        }
+        AppManager.Instance.ConnectionRecovery = null;
+    }
+
     private async Task ReviewAsync()
     {
         await Task.WhenAll(Enumerable.Range(0, 8).Select(_ => ConfigHandler.InitBuiltinRouting(AppManager.Instance.Config)));
@@ -207,6 +239,13 @@ public class ReviewApp : v2rayN.Desktop.App
         _main.GetLogicalDescendants().OfType<ProfilesView>().Single().RefreshServersBiz();
         AppEvents.SendMsgViewRequested.Publish("[UI review] Isolated fixture configuration loaded.\n[UI review] Core launch disabled; network status remains untested.\n");
         await CheckExitPresentationAsync();
+        if (Program.RecoveryOnly)
+        {
+            await CheckRecoveryStatesAsync();
+            File.WriteAllText(Path.Combine(Program.Output, "manifest.json"), JsonSerializer.Serialize(new { fixtureData = true, screenshots = _shots, checks = _checks }, new JsonSerializerOptions { WriteIndented = true }));
+            Console.WriteLine($"Reviewed {_shots.Count} recovery screens; {_checks.Count} scenarios passed.");
+            return;
+        }
         if (!Program.WorkflowOnly)
         {
         await CaptureAsync("00", "服务器主界面", _main);

@@ -1,5 +1,7 @@
 using v2rayN.Desktop.Common;
 using v2rayN.Desktop.Views;
+using ServiceLib.Services;
+using ServiceLib.Handler.SysProxy;
 
 namespace v2rayN.Desktop;
 
@@ -36,10 +38,35 @@ public partial class App : Application
             if (OperatingSystem.IsMacOS())
             {
                 Current?.TryGetFeature<IActivatableLifetime>()?.Activated += OnMacOSActivated;
+                if (!Design.IsDesignMode && SysProxyHandler.ChangesEnabled)
+                {
+                    var recovery = new ConnectionRecoveryService(mainWindowViewModel.GetRecoveryContext,
+                        MacRecoveryPlatform.NetworkAsync, MacRecoveryPlatform.ReadProxyAsync,
+                        (_, token) => SysProxyHandler.UpdateSysProxy(AppManager.Instance.Config, false, cancellationToken: token),
+                        (snapshot, token) => RecoveryProbe.ProbeAsync(snapshot, token, RecoveryLog),
+                        mainWindowViewModel.ReloadForRecoveryAsync, RecoveryLog);
+                    AppManager.Instance.ConnectionRecovery = recovery;
+                    var events = new MacConnectionEvents(recovery);
+                    recovery.Stopping += events.Dispose;
+                    desktop.Exit += (_, _) => { events.Dispose(); _ = recovery.StopAsync(); };
+                    _ = StartRecoveryAsync(mainWindowViewModel, recovery);
+                }
             }
         }
 
         base.OnFrameworkInitializationCompleted();
+    }
+
+    private static void RecoveryLog(string message) => Logging.SaveLog("ConnectionRecovery " + message);
+
+    private static async Task StartRecoveryAsync(MainWindowViewModel viewModel, ConnectionRecoveryService recovery)
+    {
+        try
+        {
+            await viewModel.Initialization;
+            if (!AppManager.Instance.IsExiting) recovery.Start();
+        }
+        catch (Exception ex) { RecoveryLog("startup failed=" + ex.GetType().Name); }
     }
 
     #region MacOS Activation

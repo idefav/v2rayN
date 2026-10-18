@@ -361,6 +361,7 @@ public partial class StatusBarViewModel : MyReactiveObject
 
     private async Task ChangeConnectionAsync(Func<Task> operation)
     {
+        AppManager.Instance.ConnectionRecovery?.RequestCheck("connection settings changed");
         Interlocked.Increment(ref _connectionOperations);
         IsChangingConnection = true;
         ConnectionError = null;
@@ -371,7 +372,11 @@ public partial class StatusBarViewModel : MyReactiveObject
             NoticeManager.Instance.Enqueue(ex.Message);
             Logging.SaveLog("ChangeConnection", ex);
         }
-        finally { IsChangingConnection = Interlocked.Decrement(ref _connectionOperations) != 0; }
+        finally
+        {
+            IsChangingConnection = Interlocked.Decrement(ref _connectionOperations) != 0;
+            AppManager.Instance.ConnectionRecovery?.RequestCheck("connection settings applied");
+        }
     }
 
     private async Task TestServerAvailabilitySub(string msg)
