@@ -53,6 +53,8 @@ public partial class CoreConfigSingboxService(CoreConfigContext context)
 
             GenDns();
 
+            GenLocalDns();
+
             GenExperimental();
 
             ConvertGeo2Ruleset();

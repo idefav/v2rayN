@@ -157,6 +157,14 @@ routed to SSH fails rather than falling back to a direct connection. Simple
 proxied UDP DNS servers are generated as TCP DNS servers at the same address and
 port. Proxied custom UDP/QUIC/HTTP3 DNS must be changed to TCP/TLS/HTTPS.
 
+Generated sing-box configurations resolve `.local` names through local mDNS
+(the system resolver on macOS) and connect directly on the LAN, including names
+with a trailing dot.
+These rules precede Global/Direct modes, FakeIP and public DNS, so a LAN name is
+not sent to a public resolver or the SSH server. This requires sing-box 1.14 or
+later ([mDNS documentation](https://sing-box.sagernet.org/configuration/dns/server/mdns/)).
+Full custom configuration templates retain their own DNS and routing rules.
+
 Private-key contents are not copied into profiles. Only the local file path is
 saved. Passwords/passphrases follow existing profile-storage and backup behavior;
 they are excluded from SSH editor error messages. Paths must exist on the machine
