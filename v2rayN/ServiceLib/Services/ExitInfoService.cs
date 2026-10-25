@@ -174,7 +174,10 @@ public sealed class ExitInfoService
                 await _launchGate.WaitAsync(job.Cancel.Token);
                 try
                 {
-                    var launch = CoreManager.Instance.LoadCoreConfigSpeedtest(test);
+                    var nodeName = string.IsNullOrWhiteSpace(job.Node.Remarks) ? id : job.Node.Remarks;
+                    nodeName = nodeName.ReplaceLineEndings(" ").Replace('\t', ' ');
+                    var launch = CoreManager.Instance.LoadCoreConfigSpeedtest(test,
+                        $"[出口检测·临时内核][节点：{nodeName}] ");
                     try { process = await launch.WaitAsync(job.Cancel.Token); }
                     catch (OperationCanceledException)
                     {

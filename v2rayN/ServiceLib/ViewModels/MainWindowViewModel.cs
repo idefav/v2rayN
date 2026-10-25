@@ -240,7 +240,7 @@ public partial class MainWindowViewModel : MyReactiveObject
 
         ReloadCmd = ReactiveCommand.CreateFromTask(async () =>
         {
-            await Reload();
+            await Reload("用户手动重新加载");
         });
 
         RegionalPresetDefaultCmd = ReactiveCommand.CreateFromTask(async () =>
@@ -342,7 +342,7 @@ public partial class MainWindowViewModel : MyReactiveObject
         await ProfileExManager.Instance.Init();
         await CoreManager.Instance.Init(_config, UpdateHandler);
         await CertPemManager.Instance.Init(_config);
-        TaskManager.Instance.RegUpdateTask(_config, UpdateTaskHandler);
+        TaskManager.Instance.RegUpdateTask(_config, UpdateSubscriptionTaskHandler);
 
         if (_config.GuiItem.EnableStatistics || _config.GuiItem.DisplayRealTimeSpeed)
         {
@@ -350,7 +350,7 @@ public partial class MainWindowViewModel : MyReactiveObject
         }
         await RefreshServersDispatcherAsync();
 
-        await Reload();
+        await Reload("应用启动");
     }
 
     #endregion Init
@@ -367,28 +367,19 @@ public partial class MainWindowViewModel : MyReactiveObject
         await Task.CompletedTask;
     }
 
-    private async Task UpdateTaskHandler(bool success, string msg)
+    private Task UpdateSubscriptionTaskHandler(bool success, string msg) => UpdateTaskHandler(success, msg, true);
+
+    private Task UpdateTaskHandler(bool success, string msg) => UpdateTaskHandler(success, msg, false);
+
+    private async Task UpdateTaskHandler(bool success, string msg, bool subscriptionUpdate)
     {
         NoticeManager.Instance.SendMessageEx(msg);
         if (success)
         {
-            var indexIdOld = _config.IndexId;
             await RefreshServersDispatcherAsync();
-
-            // If indexId changed or subIndexId is empty, directly reload.
-            if (indexIdOld != _config.IndexId || _config.SubIndexId.IsNullOrEmpty())
-            {
-                await Reload();
-            }
-            else
-            {
-                // The activity config belongs to the current group.
-                var profile = await AppManager.Instance.GetProfileItem(_config.IndexId);
-                if (profile != null && profile.Subid == _config.SubIndexId)
-                {
-                    await Reload();
-                }
-            }
+            // Compare the whole effective config, including chains and routing-referenced nodes,
+            // rather than using the selected subscription group as a reload heuristic.
+            await Reload(subscriptionUpdate ? "订阅更新完成" : "资源更新完成", onlyIfChanged: subscriptionUpdate);
 
             if (_config.UiItem.EnableAutoAdjustMainLvColWidth)
             {
@@ -588,7 +579,7 @@ public partial class MainWindowViewModel : MyReactiveObject
 
     public async Task UpdateSubscriptionProcess(string subId, bool blProxy)
     {
-        await Task.Run(async () => await SubscriptionHandler.UpdateProcess(_config, subId, blProxy, UpdateTaskHandler));
+        await Task.Run(async () => await SubscriptionHandler.UpdateProcess(_config, subId, blProxy, UpdateSubscriptionTaskHandler));
     }
 
     #endregion Subscription
@@ -654,7 +645,7 @@ public partial class MainWindowViewModel : MyReactiveObject
             await StatusBarViewModel.RefreshRoutingsMenu();
         }
         if (section is "Hotkeys" or "Backup") return;
-        await Reload();
+        await Reload($"设置已修改：{section}");
     }
 
     private async Task ClearServerStatistics()
@@ -699,12 +690,12 @@ public partial class MainWindowViewModel : MyReactiveObject
         return port > 0 ? new(_config.IndexId, port, _config.SpeedTestItem.SpeedPingTestUrl, Interlocked.Read(ref _connectionRevision)) : null;
     }
 
-    public async Task Reload()
+    public async Task Reload(string reason = "用户操作或配置变更", bool onlyIfChanged = false)
     {
         Interlocked.Increment(ref _manualReloads);
         Interlocked.Increment(ref _connectionRevision);
         AppManager.Instance.ConnectionRecovery?.RequestCheck("configuration changed");
-        try { await ReloadCoreAsync(null, CancellationToken.None); }
+        try { await ReloadCoreAsync(null, CancellationToken.None, reason, onlyIfChanged); }
         finally
         {
             Interlocked.Decrement(ref _manualReloads);
@@ -714,11 +705,12 @@ public partial class MainWindowViewModel : MyReactiveObject
 
     internal async Task<bool> ReloadForRecoveryAsync(RecoveryContext expected, CancellationToken token)
     {
-        if (!await ReloadCoreAsync(expected, token)) return false;
+        if (!await ReloadCoreAsync(expected, token, "连接连续检测失败，自动恢复")) return false;
         return await RecoveryProbe.WaitForListenerAsync(expected.Port, token);
     }
 
-    private async Task<bool> ReloadCoreAsync(RecoveryContext? expected, CancellationToken token)
+    private async Task<bool> ReloadCoreAsync(RecoveryContext? expected, CancellationToken token,
+        string reason, bool onlyIfChanged = false)
     {
         return await _reloadCoordinator.RunAsync(
             () => !DesignMode && !AppManager.Instance.IsExiting && (expected == null || GetRecoveryContext() == expected), async () =>
@@ -757,12 +749,17 @@ public partial class MainWindowViewModel : MyReactiveObject
 
             // Finish an initiated reload transaction before another reload or shutdown can stop it.
             var proxyApplied = false;
+            var loadResult = CoreLoadResult.Failed;
             await Task.Run(async () =>
             {
-                await LoadCore(allResult.MainResult.Context, allResult.PreSocksResult?.Context);
+                loadResult = await CoreManager.Instance.LoadCore(allResult.MainResult.Context,
+                    allResult.PreSocksResult?.Context, onlyIfChanged, reason);
+                if (loadResult != CoreLoadResult.Started) return;
                 proxyApplied = await SysProxyHandler.UpdateSysProxy(_config, false, error => StatusBarViewModel.ConnectionError = error);
                 await Task.Delay(1000);
             });
+            if (loadResult == CoreLoadResult.Unchanged) return true;
+            if (loadResult == CoreLoadResult.Failed) return false;
             if (expected == null) RxSchedulers.MainThreadScheduler.Schedule(async () =>
             {
                 var result = await StatusBarViewModel.TestServerAvailability();
@@ -826,11 +823,6 @@ public partial class MainWindowViewModel : MyReactiveObject
     private void SetReloadEnabled(bool enabled)
     {
         RxSchedulers.MainThreadScheduler.Schedule(() => BlReloadEnabled = enabled);
-    }
-
-    private async Task LoadCore(CoreConfigContext? mainContext, CoreConfigContext? preContext)
-    {
-        await CoreManager.Instance.LoadCore(mainContext, preContext);
     }
 
     #endregion core job

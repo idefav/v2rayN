@@ -14,6 +14,7 @@ public class CoreManager
 
     private ProcessService? _processService;
     private ProcessService? _processPreService;
+    private EffectiveCoreConfig? _runningConfig;
     public bool IsCoreRunning
     {
         get
@@ -70,44 +71,84 @@ public class CoreManager
 
     /// <param name="mainContext">Resolved main context (with pre-socks ports already merged if applicable).</param>
     /// <param name="preContext">Optional pre-socks context passed to <see cref="CoreStartPreService"/>.</param>
-    public async Task LoadCore(CoreConfigContext? mainContext, CoreConfigContext? preContext)
+    public async Task<CoreLoadResult> LoadCore(CoreConfigContext? mainContext, CoreConfigContext? preContext,
+        bool onlyIfChanged = false, string reason = "用户操作或配置变更")
     {
         if (mainContext == null)
         {
             await UpdateFunc(false, ResUI.CheckServerSettings);
-            return;
+            return CoreLoadResult.Failed;
         }
 
         var node = mainContext.Node;
-        var fileName = Utils.GetBinConfigPath(Global.CoreConfigFileName);
-        var result = await CoreConfigHandler.GenerateClientConfig(mainContext, fileName);
-        if (result.Success != true)
+        // Generate candidates away from the files in use. A skipped reload must not touch them.
+        var fileName = Utils.GetBinConfigPath($"candidate-{Utils.GetGuid(false)}.json");
+        var preFileName = Utils.GetBinConfigPath($"candidate-pre-{Utils.GetGuid(false)}.json");
+        try
         {
-            await UpdateFunc(true, result.Msg);
-            return;
-        }
+            var result = await CoreConfigHandler.GenerateClientConfig(mainContext, fileName);
+            if (result.Success != true)
+            {
+                await UpdateFunc(true, result.Msg);
+                return CoreLoadResult.Failed;
+            }
 
-        await UpdateFunc(false, $"{node.GetSummary()}");
-        await UpdateFunc(false, $"{Utils.GetRuntimeInfo()}");
-        await UpdateFunc(false, string.Format(ResUI.StartService, DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss")));
-        await CoreStop();
-        await Task.Delay(100);
+            if (preContext != null)
+            {
+                var preResult = await CoreConfigHandler.GenerateClientConfig(preContext, preFileName);
+                if (!preResult.Success)
+                {
+                    await UpdateFunc(true, preResult.Msg);
+                    return CoreLoadResult.Failed;
+                }
+            }
+            var candidate = new EffectiveCoreConfig(
+                EffectiveCoreConfig.Fingerprint(await File.ReadAllTextAsync(fileName), node.ConfigType != EConfigType.Custom), mainContext.RunCoreType,
+                preContext == null ? null : EffectiveCoreConfig.Fingerprint(await File.ReadAllTextAsync(preFileName), preContext.Node.ConfigType != EConfigType.Custom),
+                preContext?.RunCoreType);
+            var changeReason = candidate.ReloadReason(_runningConfig, IsCoreRunning, _processPreService is { HasExited: false });
+            var nodeName = node.Remarks?.ReplaceLineEndings(" ").Replace('\t', ' ');
+            var reloadLog = onlyIfChanged && changeReason == null
+                ? $"[主代理][节点：{nodeName}] {reason}：有效配置未变化，跳过重载，保留现有连接。"
+                : $"[主代理重载][节点：{nodeName}] 原因：{reason}；{changeReason ?? "主动重载"}。";
+            Logging.SaveLog(reloadLog);
+            await UpdateFunc(false, reloadLog);
+            if (onlyIfChanged && changeReason == null) return CoreLoadResult.Unchanged;
 
-        if (Utils.IsWindows() && (mainContext?.IsTunEnabled == true || preContext?.IsTunEnabled == true))
-        {
+            File.Move(fileName, Utils.GetBinConfigPath(Global.CoreConfigFileName), true);
+            if (preContext != null) File.Move(preFileName, Utils.GetBinConfigPath(Global.CorePreConfigFileName), true);
+
+            await UpdateFunc(false, $"{node.GetSummary()}");
+            await UpdateFunc(false, $"{Utils.GetRuntimeInfo()}");
+            await UpdateFunc(false, string.Format(ResUI.StartService, DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss")));
+            await CoreStop();
             await Task.Delay(100);
-            await WindowsUtils.RemoveTunDevice();
+
+            if (Utils.IsWindows() && (mainContext.IsTunEnabled || preContext?.IsTunEnabled == true))
+            {
+                await Task.Delay(100);
+                await WindowsUtils.RemoveTunDevice();
+            }
+
+            await CoreStart(mainContext);
+            await WaitForProxyPort(preContext);
+            await CoreStartPreService(preContext);
+
+            AppManager.Instance.RunningCoreType = preContext?.RunCoreType ?? mainContext.RunCoreType;
+
+            if (_processService != null)
+            {
+                await UpdateFunc(true, $"{node.GetSummary()}");
+            }
+            if (!IsCoreRunning || preContext != null && _processPreService is not { HasExited: false })
+                return CoreLoadResult.Failed;
+            _runningConfig = candidate;
+            return CoreLoadResult.Started;
         }
-
-        await CoreStart(mainContext);
-        await WaitForProxyPort(preContext);
-        await CoreStartPreService(preContext);
-
-        AppManager.Instance.RunningCoreType = preContext?.RunCoreType ?? mainContext.RunCoreType;
-
-        if (_processService != null)
+        finally
         {
-            await UpdateFunc(true, $"{node.GetSummary()}");
+            File.Delete(fileName);
+            File.Delete(preFileName);
         }
     }
 
@@ -130,7 +171,7 @@ public class CoreManager
         return await RunProcess(coreInfo, fileName, true, false);
     }
 
-    public async Task<ProcessService?> LoadCoreConfigSpeedtest(ServerTestItem testItem)
+    public async Task<ProcessService?> LoadCoreConfigSpeedtest(ServerTestItem testItem, string? logPrefix = null)
     {
         var node = await AppManager.Instance.GetProfileItem(testItem.IndexId);
         if (node is null)
@@ -149,7 +190,7 @@ public class CoreManager
 
         var coreType = context.RunCoreType;
         var coreInfo = CoreInfoManager.Instance.GetCoreInfo(coreType);
-        var process = await RunProcess(coreInfo, fileName, true, false);
+        var process = await RunProcess(coreInfo, fileName, true, false, logPrefix: logPrefix);
         if (process != null) process.TemporaryConfigPath = configPath;
         else File.Delete(configPath);
         return process;
@@ -157,6 +198,7 @@ public class CoreManager
 
     public async Task CoreStop()
     {
+        _runningConfig = null;
         try
         {
             if (_linuxSudo)
@@ -207,18 +249,13 @@ public class CoreManager
         if (_processService is { HasExited: false } && preContext != null)
         {
             var preCoreType = preContext?.Node?.CoreType ?? ECoreType.sing_box;
-            var fileName = Utils.GetBinConfigPath(Global.CorePreConfigFileName);
-            var result = await CoreConfigHandler.GenerateClientConfig(preContext, fileName);
-            if (result.Success)
+            var coreInfo = CoreInfoManager.Instance.GetCoreInfo(preCoreType);
+            var proc = await RunProcess(coreInfo, Global.CorePreConfigFileName, true, true, preContext.IsTunEnabled);
+            if (proc is null)
             {
-                var coreInfo = CoreInfoManager.Instance.GetCoreInfo(preCoreType);
-                var proc = await RunProcess(coreInfo, Global.CorePreConfigFileName, true, true, preContext.IsTunEnabled);
-                if (proc is null)
-                {
-                    return;
-                }
-                _processPreService = proc;
+                return;
             }
+            _processPreService = proc;
         }
     }
 
@@ -313,12 +350,22 @@ public class CoreManager
             && isNonWindows;
     }
 
-    private async Task<ProcessService?> RunProcess(CoreInfo? coreInfo, string configPath, bool displayLog, bool mayNeedSudo, bool isTunLaunch = false)
+    private async Task<ProcessService?> RunProcess(CoreInfo? coreInfo, string configPath, bool displayLog, bool mayNeedSudo, bool isTunLaunch = false, string? logPrefix = null)
     {
+        // Keep the context on this process, since independent probes can run concurrently.
+        Func<bool, string, Task>? updateFunc = _updateFunc;
+        if (!string.IsNullOrEmpty(logPrefix))
+        {
+            var sink = updateFunc;
+            updateFunc = (notify, message) => sink?.Invoke(notify,
+                string.Join(Environment.NewLine, message.ReplaceLineEndings("\n").Split('\n')
+                    .Select(line => line.Length == 0 ? line : logPrefix + line))) ?? Task.CompletedTask;
+        }
+
         var fileName = CoreInfoManager.Instance.GetCoreExecFile(coreInfo, out var msg);
         if (fileName.IsNullOrEmpty())
         {
-            await UpdateFunc(false, msg);
+            if (updateFunc != null) await updateFunc(false, msg);
             return null;
         }
 
@@ -332,17 +379,17 @@ public class CoreManager
                 return await CoreAdminManager.Instance.RunProcessAsLinuxSudo(fileName, coreInfo, configPath);
             }
 
-            return await RunProcessNormal(fileName, coreInfo, configPath, displayLog);
+            return await RunProcessNormal(fileName, coreInfo, configPath, displayLog, updateFunc);
         }
         catch (Exception ex)
         {
             Logging.SaveLog(_tag, ex);
-            await UpdateFunc(mayNeedSudo, ex.Message);
+            if (updateFunc != null) await updateFunc(mayNeedSudo, ex.Message);
             return null;
         }
     }
 
-    private async Task<ProcessService?> RunProcessNormal(string fileName, CoreInfo? coreInfo, string configPath, bool displayLog)
+    private async Task<ProcessService?> RunProcessNormal(string fileName, CoreInfo? coreInfo, string configPath, bool displayLog, Func<bool, string, Task>? updateFunc)
     {
         var environmentVars = new Dictionary<string, string>();
         foreach (var kv in coreInfo.Environment)
@@ -357,7 +404,7 @@ public class CoreManager
             displayLog: displayLog,
             redirectInput: false,
             environmentVars: environmentVars,
-            updateFunc: _updateFunc
+            updateFunc: updateFunc
         );
 
         await procService.StartAsync();
