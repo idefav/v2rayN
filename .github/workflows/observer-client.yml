@@ -1,0 +1,67 @@
+name: Verify independent egress observer client
+
+on:
+  push:
+    branches: ['feature/precise-egress-observer']
+  pull_request:
+    paths:
+      - 'proxy-check/**'
+      - 'v2rayN/ServiceLib/**'
+      - 'v2rayN/ServiceLib.Tests/**'
+      - '.github/workflows/observer-client.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  worker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: proxy-check/go.mod
+      - name: Verify published SDK and protocol fixtures
+        working-directory: proxy-check
+        env:
+          GOWORK: 'off'
+          GOFLAGS: '-mod=readonly'
+        run: |
+          go mod download
+          go mod verify
+          go test -race ./...
+          go vet ./...
+      - name: Cross-build packaged workers
+        working-directory: proxy-check
+        env:
+          GOWORK: 'off'
+          GOFLAGS: '-mod=readonly'
+          CGO_ENABLED: '0'
+        run: |
+          mkdir -p dist
+          for platform in linux darwin windows; do
+            for arch in amd64 arm64; do
+              name="proxy-check-$platform-$arch"
+              if [ "$platform" = windows ]; then name="$name.exe"; fi
+              GOOS="$platform" GOARCH="$arch" go build -trimpath -o "dist/$name" .
+            done
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: observer-client-workers
+          path: proxy-check/dist/*
+  shared-service:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.x'
+      - name: Test shared service and report verification
+        run: dotnet test --project ./v2rayN/ServiceLib.Tests -c Release --results-directory ./TestResults -- --report-trx
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: observer-client-test-results
+          path: TestResults
