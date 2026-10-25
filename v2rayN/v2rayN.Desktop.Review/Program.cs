@@ -10,6 +10,7 @@ using Avalonia.Headless;
 using Avalonia.Interactivity;
 using Avalonia.Input;
 using Avalonia.Media.Imaging;
+using Avalonia.Platform;
 using Avalonia.Styling;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
@@ -62,7 +63,8 @@ internal static class Program
         SysProxyHandler.ChangesEnabled = false;
         Output = Path.GetFullPath(args.FirstOrDefault() ?? "ui-review");
         Directory.CreateDirectory(Output);
-        if (File.Exists(Path.Combine(Output, "failure.txt"))) File.Delete(Path.Combine(Output, "failure.txt"));
+        foreach (var previous in new[] { "failure.txt", "manifest.json" })
+            if (File.Exists(Path.Combine(Output, previous))) File.Delete(Path.Combine(Output, previous));
         Headless = args.Contains("--headless");
         ScreensOnly = args.Contains("--screens-only");
         Interactive = args.Contains("--interactive");
@@ -96,6 +98,21 @@ internal static class Program
         {
             var fixtureDatabase = Utils.GetConfigPath("guiNDB.db" + suffix);
             if (File.Exists(fixtureDatabase)) File.Delete(fixtureDatabase);
+        }
+        if (!Headless && OperatingSystem.IsMacOS())
+        {
+            try
+            {
+                MacNativeDisplayReadiness.WaitUntilReadyAsync(TimeSpan.FromSeconds(15),
+                    state => Console.Error.WriteLine($"Native review is waiting for an unlocked macOS display: {state}")).GetAwaiter().GetResult();
+            }
+            catch (TimeoutException ex)
+            {
+                File.WriteAllText(Path.Combine(Output, "failure.txt"), ex.Message);
+                Console.Error.WriteLine(ex.Message);
+                Environment.ExitCode = 1;
+                return;
+            }
         }
         var builder = AppBuilder.Configure<ReviewApp>();
         builder = Headless ? builder.UseSkia().UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }) : builder.UsePlatformDetect();
@@ -338,6 +355,9 @@ public class ReviewApp : v2rayN.Desktop.App
 
     private async Task ReviewAsync()
     {
+        if (!Program.Headless && OperatingSystem.IsMacOS())
+            Check(_main.IsVisible && _main.TryGetPlatformHandle() is IMacOSTopLevelPlatformHandle { NSWindow: not 0 },
+                "native macOS review owns a visible AppKit NSWindow; no headless substitution");
         // Await the actual startup and all refresh work it queued before seeding
         // fixture objects. A fixed delay races slow clean CI runners.
         await _vm.ProfilesViewModel.Initialization;

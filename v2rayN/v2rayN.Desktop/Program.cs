@@ -1,11 +1,13 @@
 using v2rayN.Desktop.Common;
 using v2rayN.Desktop.Manager;
+using ServiceLib.Services;
 
 namespace v2rayN.Desktop;
 
 internal class Program
 {
     public static EventWaitHandle ProgramStarted;
+    private static Mutex? _instanceMutex;
 
     // Initialization code. Don't use any Avalonia, third-party APIs or any
     // SynchronizationContext-reliant code before AppMain is called: things aren't initialized
@@ -19,8 +21,11 @@ internal class Program
             return;
         }
 
-        BuildAvaloniaApp()
-            .StartWithClassicDesktopLifetime(args);
+        try
+        {
+            BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
+        }
+        finally { _instanceMutex?.Dispose(); }
     }
 
     private static bool OnStartup(string[]? Args)
@@ -38,11 +43,25 @@ internal class Program
         }
         else
         {
-            _ = new Mutex(true, "v2rayN", out var bOnlyOneInstance);
+            _instanceMutex = new Mutex(true, "v2rayN", out var bOnlyOneInstance);
             if (!bOnlyOneInstance)
             {
                 return false;
             }
+        }
+
+        if (OperatingSystem.IsMacOS())
+        {
+            using var cancelled = new CancellationTokenSource();
+            ConsoleCancelEventHandler cancel = (_, e) => { e.Cancel = true; cancelled.Cancel(); };
+            Console.CancelKeyPress += cancel;
+            try
+            {
+                MacNativeDisplayReadiness.WaitUntilReadyAsync(Timeout.InfiniteTimeSpan,
+                    state => Console.Error.WriteLine($"Waiting for the macOS display session before starting native UI: {state}"), cancelled.Token).GetAwaiter().GetResult();
+            }
+            catch (OperationCanceledException) { return false; }
+            finally { Console.CancelKeyPress -= cancel; }
         }
 
         if (!AppManager.Instance.InitApp())

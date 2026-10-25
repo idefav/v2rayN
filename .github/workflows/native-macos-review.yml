@@ -1,0 +1,44 @@
+name: Native macOS window review
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.1xx
+      - name: Build isolated native review
+        run: dotnet build v2rayN/v2rayN.Desktop.Review -c Release -p:UsedAvaloniaProducts=
+      - name: Check actual AppKit windows without Headless
+        run: |
+          dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/native-review/zh-light --primer-only --language=zh-Hans --theme=light --width=1440
+          dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/native-review/en-dark --primer-only --language=en --theme=dark --width=600
+      - name: Verify native evidence
+        run: |
+          python3 - <<'PY'
+          import json,pathlib
+          for name in ['zh-light','en-dark']:
+              path=pathlib.Path('artifacts/native-review')/name
+              report=json.loads((path/'manifest.json').read_text())
+              assert report['renderer']=='native'
+              assert not (path/'failure.txt').exists()
+              assert any('AppKit NSWindow' in check for check in report['checks'])
+              assert len(report['screenshots'])>=17
+              print(name, len(report['checks']), 'native checks passed')
+          PY
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: native-macos-review
+          path: artifacts/native-review
+          if-no-files-found: error

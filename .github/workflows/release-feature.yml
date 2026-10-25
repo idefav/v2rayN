@@ -102,6 +102,10 @@ jobs:
             TestResults
             artifacts/preview-ui
 
+  native-ui:
+    needs: validate
+    uses: ./.github/workflows/native-macos-review.yml
+
   build:
     needs: validate
     strategy:
@@ -203,7 +207,7 @@ jobs:
           if-no-files-found: error
 
   release:
-    needs: [validate, test, package-zip, package-dmg]
+    needs: [validate, test, native-ui, package-zip, package-dmg]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -252,6 +256,7 @@ jobs:
           - 新增独立出口观察服务接入：验证服务端签名证据，分别展示通信、实际出口与预期比较；控制接口成功不等于各协议已验证。
           - 主工作区与代理检查采用统一 Primer 布局，支持中英文、浅深主题和窄窗；明确区分选中节点、运行节点与缓存出口。
           - 修复取消进度、通过筛选、观察端状态失效、停止内核说明及大字号关于窗口；补齐次级页面与动态页面设计，原生接入进度见设计覆盖清单。
+          - macOS 锁屏或显示会话不可用时延后原生 UI 初始化，避免启动阶段的 CoreVideo RenderTimer -6661；原生 AppKit 窗口双主题验收现为发布必需门禁。
           - SSH 节点新增默认关闭的 UDP over SSH 与允许 HTTP3 选项；使用 idefav/sing-box 固定提交构建专用核心，远端需要 OpenSSH UDP 扩展，失败不回退直连。
           - 核心清单与 SHA-256 校验优先选择随包专用核心，修复升级后用户目录旧核心不识别 udp_forwarding 导致重启失败。
           - macOS 安装盘保留可复制的拦截处理命令与安装说明。服务器独立端口部署、中继迁移、协议与排障记录见下方部署文档。
@@ -269,6 +274,7 @@ jobs:
           · [macOS 网络恢复说明](https://github.com/$GH_REPO/blob/$RELEASE_TAG/docs/macos-network-recovery.md)
           · [SSH UDP 服务部署与扩展记录](https://github.com/$GH_REPO/blob/$RELEASE_TAG/docs/ssh-udp-deployment.zh-Hans.md)
           · [Primer 页面设计与实施范围](https://github.com/$GH_REPO/blob/$RELEASE_TAG/docs/design/page-coverage.md)
+          · [macOS 原生启动与验收](https://github.com/$GH_REPO/blob/$RELEASE_TAG/docs/macos-native-rendering.zh-Hans.md)
           · [构建记录](https://github.com/$GH_REPO/actions/runs/$GITHUB_RUN_ID)
           EOF
           # A failed upload may leave a draft; never overwrite a published release.
