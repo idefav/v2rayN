@@ -3,7 +3,7 @@ module v2rayn/proxy-check
 go 1.26.0
 
 require (
-	github.com/idefav/egress-probe v0.2.0-rc.2
+	github.com/idefav/egress-probe v0.2.0-rc.3
 	github.com/quic-go/quic-go v0.60.0
 	golang.org/x/crypto v0.51.0
 	golang.org/x/net v0.55.0
