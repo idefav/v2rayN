@@ -1,0 +1,912 @@
+{
+  "schemaVersion": 1,
+  "product": "v2rayN",
+  "artifact": "page-designs.html",
+  "designSystem": "GitHub / Primer",
+  "demoOnly": true,
+  "originalArtifactsUnchanged": [
+    "index.html",
+    "design-spec.md",
+    "implementation-handoff.md",
+    "tests/prototype-check.cjs"
+  ],
+  "summary": {
+    "families": 9,
+    "routes": 27,
+    "protocols": 13,
+    "designedFamilies": 9,
+    "designStatus": "interactive-prototype",
+    "realClientImplementation": false
+  },
+  "families": [
+    {
+      "id": "subscriptions",
+      "name": "分组与订阅",
+      "status": "designed-interactive-demo",
+      "pages": [
+        {
+          "id": "subscriptions",
+          "name": "列表与更新",
+          "status": "designed-interactive-demo",
+          "template": "list",
+          "entry": "page-designs.html#subscriptions",
+          "states": [
+            "normal",
+            "empty",
+            "busy",
+            "error"
+          ],
+          "actions": [
+            "范围确认",
+            "直连/代理更新",
+            "启用/频率",
+            "失败重试",
+            "删除确认"
+          ]
+        },
+        {
+          "id": "subscription-edit",
+          "name": "添加/编辑",
+          "status": "designed-interactive-demo",
+          "template": "form",
+          "entry": "page-designs.html#subscription-edit",
+          "states": [
+            "normal",
+            "empty",
+            "busy",
+            "error",
+            "dirty",
+            "validation-error",
+            "discard",
+            "save-failure"
+          ],
+          "actions": [
+            "URL校验",
+            "更新间隔",
+            "过滤",
+            "前后置策略",
+            "保存/放弃"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "strategies-connections",
+      "name": "代理策略、代理链与连接",
+      "status": "designed-interactive-demo",
+      "pages": [
+        {
+          "id": "policies",
+          "name": "策略概览",
+          "status": "designed-interactive-demo",
+          "template": "list",
+          "entry": "page-designs.html#policies",
+          "states": [
+            "normal",
+            "empty",
+            "busy",
+            "error",
+            "unavailable"
+          ],
+          "actions": [
+            "单节点/API不可用",
+            "手动切换",
+            "自动延迟",
+            "故障转移"
+          ]
+        },
+        {
+          "id": "policy-edit",
+          "name": "策略组编辑",
+          "status": "designed-interactive-demo",
+          "template": "form",
+          "entry": "page-designs.html#policy-edit",
+          "states": [
+            "normal",
+            "empty",
+            "busy",
+            "error",
+            "dirty",
+            "validation-error",
+            "discard",
+            "save-failure"
+          ],
+          "actions": [
+            "类型语义",
+            "候选选择器",
+            "顺序",
+            "保存/放弃"
+          ]
+        },
+        {
+          "id": "chain-edit",
+          "name": "代理链编辑",
+          "status": "designed-interactive-demo",
+          "template": "form",
+          "entry": "page-designs.html#chain-edit",
+          "states": [
+            "normal",
+            "empty",
+            "busy",
+            "error",
+            "dirty",
+            "validation-error",
+            "discard",
+            "save-failure"
+          ],
+          "actions": [
+            "串联语义",
+            "选择器",
+            "上移/下移",
+            "路径预览"
+          ]
+        },
+        {
+          "id": "connections",
+          "name": "连接列表",
+          "status": "designed-interactive-demo",
+          "template": "list",
+          "entry": "page-designs.html#connections",
+          "states": [
+            "normal",
+            "empty",
+            "busy",
+            "error"
+          ],
+          "actions": [
+            "目标/类型/代理链/进程",
+            "筛选/自动刷新",
+            "详情抽屉",
+            "单条/全部关闭确认"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "routing",
+      "name": "路由与规则",
+      "status": "designed-interactive-demo",
+      "pages": [
+        {
+          "id": "routes",
+          "name": "规则集列表",
+          "status": "designed-interactive-demo",
+          "template": "list",
+          "entry": "page-designs.html#routes",
+          "states": [
+            "normal",
+            "empty",
+            "busy",
+            "error"
+          ],
+          "actions": [
+            "启用/默认",
+            "顺序",
+            "添加/演示导入",
+            "删除确认"
+          ]
+        },
+        {
+          "id": "ruleset-edit",
+          "name": "规则集编辑",
+          "status": "designed-interactive-demo",
+          "template": "form",
+          "entry": "page-designs.html#ruleset-edit",
+          "states": [
+            "normal",
+            "empty",
+            "busy",
+            "error",
+            "dirty",
+            "validation-error",
+            "discard",
+            "save-failure"
+          ],
+          "actions": [
+            "可视化/JSON",
+            "顺序/出站",
+            "保存/放弃/继续",
+            "规则导航"
+          ]
+        },
+        {
+          "id": "rule-edit",
+          "name": "单条规则编辑",
+          "status": "designed-interactive-demo",
+          "template": "form",
+          "entry": "page-designs.html#rule-edit",
+          "states": [
+            "normal",
+            "empty",
+            "busy",
+            "error",
+            "dirty",
+            "validation-error",
+            "discard",
+            "save-failure"
+          ],
+          "actions": [
+            "域名/IP/端口/进程",
+            "AND语义",
+            "出站",
+            "语法/字段校验"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "dns-templates",
+      "name": "DNS 与配置模板",
+      "status": "designed-interactive-demo",
+      "pages": [
+        {
+          "id": "dns",
+          "name": "DNS设置",
+          "status": "designed-interactive-demo",
+          "template": "form",
+          "entry": "page-designs.html#dns",
+          "states": [
+            "normal",
+            "empty",
+            "busy",
+            "error",
+            "dirty",
+            "validation-error",
+            "discard",
+            "save-failure"
+          ],
+          "actions": [
+            "基础/直连/远程/TUN",
+            "上游与目标分离",
+            "Xray/sing-box",
+            "JSON默认值覆盖确认"
+          ]
+        },
+        {
+          "id": "template",
+          "name": "配置模板",
+          "status": "designed-interactive-demo",
+          "template": "form",
+          "entry": "page-designs.html#template",
+          "states": [
+            "normal",
+            "empty",
+            "busy",
+            "error",
+            "dirty",
+            "validation-error",
+            "discard",
+            "save-failure"
+          ],
+          "actions": [
+            "完整模板范围",
+            "双内核JSON",
+            "格式化/语法位置",
+            "未保存保护"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "node-editors",
+      "name": "通用节点与自定义配置",
+      "status": "designed-interactive-demo",
+      "pages": [
+        {
+          "id": "node-editor",
+          "name": "协议字段编辑",
+          "status": "designed-interactive-demo",
+          "template": "form",
+          "entry": "page-designs.html#node-editor/SSH",
+          "states": [
+            "normal",
+            "empty",
+            "busy",
+            "error",
+            "dirty",
+            "validation-error",
+            "discard",
+            "save-failure"
+          ],
+          "actions": [
+            "13种协议",
+            "认证/传输/TLS变体",
+            "SSH人工固定/信任失效",
+            "分阶段测试/取消"
+          ]
+        },
+        {
+          "id": "custom-config",
+          "name": "完整自定义配置",
+          "status": "designed-interactive-demo",
+          "template": "form",
+          "entry": "page-designs.html#custom-config",
+          "states": [
+            "normal",
+            "empty",
+            "busy",
+            "error",
+            "dirty",
+            "validation-error",
+            "discard",
+            "save-failure"
+          ],
+          "actions": [
+            "完整对象范围",
+            "Xray/sing-box",
+            "JSON校验/默认值确认"
+          ]
+        },
+        {
+          "id": "custom-outbound",
+          "name": "单出站对象",
+          "status": "designed-interactive-demo",
+          "template": "form",
+          "entry": "page-designs.html#custom-outbound",
+          "states": [
+            "normal",
+            "empty",
+            "busy",
+            "error",
+            "dirty",
+            "validation-error",
+            "discard",
+            "save-failure"
+          ],
+          "actions": [
+            "单对象范围",
+            "Xray/sing-box",
+            "JSON校验/保存"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ssh-deployment",
+      "name": "SSH 密钥部署",
+      "status": "designed-interactive-demo",
+      "pages": [
+        {
+          "id": "ssh-deploy",
+          "name": "六步向导",
+          "status": "designed-interactive-demo",
+          "template": "wizard",
+          "entry": "page-designs.html#ssh-deploy",
+          "states": [
+            "normal",
+            "empty",
+            "busy",
+            "error"
+          ],
+          "actions": [
+            "单一SSH目标",
+            "指纹人工核对",
+            "密钥引用",
+            "公钥授权预览",
+            "部署/验证模拟",
+            "失败恢复"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "settings-maintenance",
+      "name": "设置与维护",
+      "status": "designed-interactive-demo",
+      "pages": [
+        {
+          "id": "settings-core",
+          "name": "核心设置",
+          "status": "designed-interactive-demo",
+          "template": "form",
+          "entry": "page-designs.html#settings-core",
+          "states": [
+            "normal",
+            "empty",
+            "busy",
+            "error",
+            "dirty",
+            "validation-error",
+            "discard",
+            "save-failure"
+          ],
+          "actions": [
+            "内核/端口/API",
+            "能力依赖",
+            "固定保存条"
+          ]
+        },
+        {
+          "id": "settings-app",
+          "name": "应用设置",
+          "status": "designed-interactive-demo",
+          "template": "form",
+          "entry": "page-designs.html#settings-app",
+          "states": [
+            "normal",
+            "empty",
+            "busy",
+            "error",
+            "dirty",
+            "validation-error",
+            "discard",
+            "save-failure"
+          ],
+          "actions": [
+            "外观/字号",
+            "语言需重启说明",
+            "Windows快捷键/macOS/Linux不可用"
+          ]
+        },
+        {
+          "id": "settings-proxy",
+          "name": "系统代理设置",
+          "status": "designed-interactive-demo",
+          "template": "form",
+          "entry": "page-designs.html#settings-proxy",
+          "states": [
+            "normal",
+            "empty",
+            "busy",
+            "error",
+            "dirty",
+            "validation-error",
+            "discard",
+            "save-failure"
+          ],
+          "actions": [
+            "接管方式/类型",
+            "绕过/PAC",
+            "不即时应用系统"
+          ]
+        },
+        {
+          "id": "settings-tun",
+          "name": "TUN设置",
+          "status": "designed-interactive-demo",
+          "template": "form",
+          "entry": "page-designs.html#settings-tun",
+          "states": [
+            "normal",
+            "empty",
+            "busy",
+            "error",
+            "unavailable",
+            "dirty",
+            "validation-error",
+            "discard",
+            "save-failure"
+          ],
+          "actions": [
+            "栈/MTU/DNS/路由",
+            "权限依赖",
+            "sudo预览"
+          ]
+        },
+        {
+          "id": "settings-kernel",
+          "name": "内核管理",
+          "status": "designed-interactive-demo",
+          "template": "form",
+          "entry": "page-designs.html#settings-kernel",
+          "states": [
+            "normal",
+            "empty",
+            "busy",
+            "error",
+            "unavailable",
+            "dirty",
+            "validation-error",
+            "discard",
+            "save-failure"
+          ],
+          "actions": [
+            "接口/遮盖凭证",
+            "超时/能力",
+            "重启影响确认"
+          ]
+        },
+        {
+          "id": "application-tools",
+          "name": "应用工具与区域预设",
+          "status": "designed-interactive-demo",
+          "template": "maintenance",
+          "entry": "page-designs.html#application-tools",
+          "states": ["normal", "busy", "error", "unavailable", "confirmation"],
+          "actions": ["应用目录预览", "清空统计范围确认", "Windows提权与UWP限制", "区域预设覆盖确认", "失败与重试"]
+        },
+        {
+          "id": "backup",
+          "name": "备份恢复",
+          "status": "designed-interactive-demo",
+          "template": "maintenance",
+          "entry": "page-designs.html#backup",
+          "states": [
+            "normal",
+            "empty",
+            "busy",
+            "error"
+          ],
+          "actions": [
+            "本地/WebDAV",
+            "凭证遮盖",
+            "加载→校验",
+            "覆盖范围/排除凭证",
+            "失败重试"
+          ]
+        },
+        {
+          "id": "updates",
+          "name": "更新工作区",
+          "status": "designed-interactive-demo",
+          "template": "maintenance",
+          "entry": "page-designs.html#updates",
+          "states": [
+            "normal",
+            "empty",
+            "busy",
+            "error"
+          ],
+          "actions": [
+            "客户端/内核分离",
+            "当前/可用版本",
+            "平台架构",
+            "下载进度/失败重试",
+            "不提供安装"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "logging",
+      "name": "完整日志",
+      "status": "designed-interactive-demo",
+      "pages": [
+        {
+          "id": "logs",
+          "name": "完整日志页",
+          "status": "designed-interactive-demo",
+          "template": "list",
+          "entry": "page-designs.html#logs",
+          "states": [
+            "normal",
+            "empty",
+            "busy",
+            "error"
+          ],
+          "actions": [
+            "级别/文本筛选",
+            "暂停/跟随",
+            "复制/清空/导出预览",
+            "错误详情"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "shared-components",
+      "name": "目录与通用组件",
+      "status": "designed-interactive-demo",
+      "pages": [
+        {
+          "id": "catalog",
+          "name": "页面设计目录",
+          "status": "designed-interactive-demo",
+          "template": "catalog",
+          "entry": "page-designs.html#catalog",
+          "states": [
+            "populated-directory"
+          ],
+          "actions": [
+            "全部页面入口",
+            "可深链接",
+            "页面族说明"
+          ]
+        },
+        {
+          "id": "about",
+          "name": "关于与帮助",
+          "status": "designed-interactive-demo",
+          "template": "dialog",
+          "entry": "page-designs.html#about",
+          "states": ["normal", "dialog", "long-content", "focus"],
+          "actions": ["构建与平台信息", "独立内容滚动", "固定关闭按钮", "更新入口", "Escape与焦点恢复"]
+        },
+        {
+          "id": "gallery",
+          "name": "交互组件画廊",
+          "status": "designed-interactive-demo",
+          "template": "gallery",
+          "entry": "page-designs.html#gallery",
+          "states": [
+            "confirmation",
+            "masked",
+            "revealed-after-confirmation",
+            "error",
+            "progress",
+            "empty",
+            "disabled",
+            "focus"
+          ],
+          "actions": [
+            "删除确认",
+            "未保存三选项",
+            "身份固定",
+            "分享范围/二维码",
+            "sudo不存密码",
+            "Toast/错误/进度/空态/焦点"
+          ]
+        }
+      ]
+    }
+  ],
+  "variants": [
+    {
+      "page": "policies",
+      "type": "policy",
+      "values": [
+        "single",
+        "manual",
+        "latency",
+        "failover"
+      ],
+      "status": "designed-interactive-demo",
+      "entries": [
+        "page-designs.html#policies/single",
+        "page-designs.html#policies/manual",
+        "page-designs.html#policies/latency",
+        "page-designs.html#policies/failover"
+      ]
+    },
+    {
+      "page": "node-editor",
+      "type": "protocol",
+      "values": [
+        "SSH",
+        "VLESS",
+        "VMess",
+        "Shadowsocks",
+        "Trojan",
+        "Hysteria2",
+        "TUIC",
+        "WireGuard",
+        "SOCKS",
+        "HTTP",
+        "AnyTLS",
+        "Naive",
+        "MASQUE"
+      ],
+      "status": "designed-interactive-demo",
+      "entries": [
+        "page-designs.html#node-editor/SSH",
+        "page-designs.html#node-editor/VLESS",
+        "page-designs.html#node-editor/VMess",
+        "page-designs.html#node-editor/Shadowsocks",
+        "page-designs.html#node-editor/Trojan",
+        "page-designs.html#node-editor/Hysteria2",
+        "page-designs.html#node-editor/TUIC",
+        "page-designs.html#node-editor/WireGuard",
+        "page-designs.html#node-editor/SOCKS",
+        "page-designs.html#node-editor/HTTP",
+        "page-designs.html#node-editor/AnyTLS",
+        "page-designs.html#node-editor/Naive",
+        "page-designs.html#node-editor/MASQUE"
+      ]
+    },
+    {
+      "page": "ruleset-edit",
+      "type": "editor-mode",
+      "values": [
+        "visual",
+        "json"
+      ],
+      "status": "designed-interactive-demo",
+      "entries": [
+        "page-designs.html#ruleset-edit/visual",
+        "page-designs.html#ruleset-edit/json"
+      ]
+    },
+    {
+      "page": "dns",
+      "type": "kernel-json",
+      "values": [
+        "sing-box",
+        "Xray"
+      ],
+      "status": "designed-interactive-demo",
+      "entries": [
+        "page-designs.html#dns/sing-box",
+        "page-designs.html#dns/Xray"
+      ]
+    },
+    {
+      "page": "template",
+      "type": "kernel-json",
+      "values": [
+        "sing-box",
+        "Xray"
+      ],
+      "status": "designed-interactive-demo",
+      "entries": [
+        "page-designs.html#template/sing-box",
+        "page-designs.html#template/Xray"
+      ]
+    },
+    {
+      "page": "custom-config",
+      "type": "kernel-json",
+      "values": [
+        "sing-box",
+        "Xray"
+      ],
+      "status": "designed-interactive-demo",
+      "entries": [
+        "page-designs.html#custom-config/sing-box",
+        "page-designs.html#custom-config/Xray"
+      ]
+    },
+    {
+      "page": "custom-outbound",
+      "type": "kernel-json",
+      "values": [
+        "sing-box",
+        "Xray"
+      ],
+      "status": "designed-interactive-demo",
+      "entries": [
+        "page-designs.html#custom-outbound/sing-box",
+        "page-designs.html#custom-outbound/Xray"
+      ]
+    },
+    {
+      "page": "backup",
+      "type": "storage-mode",
+      "values": [
+        "local",
+        "webdav"
+      ],
+      "entry": "页面内标签；无真实文件/WebDAV访问",
+      "status": "designed-interactive-demo",
+      "entries": [
+        "page-designs.html#backup/local",
+        "page-designs.html#backup/webdav"
+      ]
+    },
+    {
+      "page": "updates",
+      "type": "artifact",
+      "values": [
+        "client",
+        "kernel"
+      ],
+      "entry": "页面内客户端/内核标签",
+      "status": "designed-interactive-demo",
+      "entries": [
+        "page-designs.html#updates/client",
+        "page-designs.html#updates/kernel"
+      ]
+    },
+    {
+      "page": "ssh-deploy",
+      "type": "step",
+      "values": [
+        "target",
+        "identity",
+        "key",
+        "authorization",
+        "deploy-verify",
+        "result-recovery"
+      ],
+      "entry": "六步向导；复查可用?step=0..5",
+      "status": "designed-interactive-demo",
+      "entries": [
+        "page-designs.html#ssh-deploy?step=0",
+        "page-designs.html#ssh-deploy?step=1",
+        "page-designs.html#ssh-deploy?step=2",
+        "page-designs.html#ssh-deploy?step=3",
+        "page-designs.html#ssh-deploy?step=4",
+        "page-designs.html#ssh-deploy?step=5"
+      ]
+    },
+    {
+      "page": "node-editor/SSH",
+      "type": "authentication",
+      "values": [
+        "key",
+        "password"
+      ],
+      "entry": "认证类型下拉",
+      "status": "designed-interactive-demo",
+      "entries": [
+        "page-designs.html#node-editor/SSH?auth=key",
+        "page-designs.html#node-editor/SSH?auth=password"
+      ]
+    },
+    {
+      "page": "settings-app",
+      "type": "platform",
+      "values": [
+        "Windows",
+        "macOS",
+        "Linux"
+      ],
+      "entry": "顶部平台预览",
+      "status": "designed-interactive-demo",
+      "entries": [
+        "page-designs.html#settings-app?platform=Windows",
+        "page-designs.html#settings-app?platform=macOS",
+        "page-designs.html#settings-app?platform=Linux"
+      ]
+    }
+  ],
+  "notCovered": [
+    {
+      "type": "implementation-boundary",
+      "item": "真实网络、订阅、文件导入、私钥、备份、关闭连接、系统修改、下载、安装",
+      "reason": "用户禁止；只设计本地模拟流程，不是遗漏的生产实现承诺"
+    },
+    {
+      "type": "prototype-limitation",
+      "item": "DNS/模板表单与双内核JSON自动互转、完整内核语义校验",
+      "reason": "明确为独立演示草稿；只验证JSON语法与对象根"
+    },
+    {
+      "type": "prototype-limitation",
+      "item": "复杂过滤表达式实际执行、路由条件全量语法及策略引擎计算",
+      "reason": "字段及流程可评审；不执行用户代码或真实策略决策"
+    },
+    {
+      "type": "verification-gap",
+      "item": "二维码物理扫码、屏幕阅读器全遍历、真实Avalonia三平台/DPI",
+      "reason": "本地QR编码及校验可测；真实设备与原生辅助技术未验证"
+    },
+    {
+      "type": "verification-gap",
+      "item": "所有页面×所有状态×所有宽度的像素级穷举",
+      "reason": "脚本覆盖所有路由/语言/主题/状态；渲染聚焦12个代表性长表单、JSON错误、覆盖确认与SSH向导组合"
+    }
+  ],
+  "verification": {
+    "secondaryTest": "tests/secondary-pages-check.cjs",
+    "secondaryAssertions": 35,
+    "originalTest": "tests/prototype-check.cjs",
+    "originalAssertions": 32,
+    "totalAssertions": 67,
+    "scriptStatus": "passed",
+    "visualFixture": "tests/secondary-visual-review.html",
+    "visualCapture": "../../../artifacts/secondary-primer-design-20261025/secondary-visual-review-final.jpg",
+    "visualCases": 12,
+    "visualStatus": "post-fix-rendered-and-reviewed",
+    "visualScope": [
+      "long SSH form",
+      "JSON syntax error",
+      "restore overwrite confirmation",
+      "SSH wizard"
+    ],
+    "visualWidths": [
+      1440,
+      760,
+      600
+    ],
+    "visualLanguages": [
+      "zh",
+      "en"
+    ],
+    "visualThemes": [
+      "light",
+      "dark"
+    ],
+    "fixes": [
+      "Removed inherited main-workspace two-column CSS",
+      "Constrained secondary workspace to one column",
+      "Prevented JSON editor and main children from flex shrink",
+      "Collapsed return link uses an accessible icon"
+    ],
+    "additionalVisualCases": [
+      "../../../artifacts/secondary-primer-followup-20261025/tools-scope-zh-600.jpg",
+      "../../../artifacts/secondary-primer-followup-20261025/about-en-dark-600.jpg"
+    ],
+    "nativeCoverageTest": "tests/native-coverage-check.cjs",
+    "captureNote": "The original twelve representative cases were rendered after fixes. A later audit added application-tools and about; their narrow-window dialogs were separately rendered and reviewed. This does not claim exhaustive pixel coverage or native-client implementation."
+  }
+}
