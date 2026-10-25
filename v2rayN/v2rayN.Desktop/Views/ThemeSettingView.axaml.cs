@@ -21,10 +21,10 @@ public partial class ThemeSettingView : ReactiveUserControl<ThemeSettingViewMode
         })
         {
             var preview = new Grid { ColumnDefinitions = new ColumnDefinitions("40,*"), Height = 80 };
-            preview.Children.Add(new Border { Background = new SolidColorBrush(Color.Parse(dark ? "#1B222D" : "#F3F5F8")), CornerRadius = new CornerRadius(6, 0, 0, 6) });
-            var page = new Border { Background = new SolidColorBrush(Color.Parse(dark ? "#202733" : "#FFFFFF")), Padding = new Thickness(10), CornerRadius = new CornerRadius(0, 6, 6, 0) };
+            preview.Children.Add(new Border { Background = new SolidColorBrush(Color.Parse(dark ? "#161B22" : "#F6F8FA")), CornerRadius = new CornerRadius(6, 0, 0, 6) });
+            var page = new Border { Background = new SolidColorBrush(Color.Parse(dark ? "#0D1117" : "#FFFFFF")), Padding = new Thickness(10), CornerRadius = new CornerRadius(0, 6, 6, 0) };
             Grid.SetColumn(page, 1);
-            page.Child = new StackPanel { Spacing = 8, Children = { new Border { Background = new SolidColorBrush(Color.Parse("#1677FF")), Width = 72, Height = 8, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left }, new Border { Background = new SolidColorBrush(Color.Parse(dark ? "#364152" : "#E8EBEF")), Height = 24 } } };
+            page.Child = new StackPanel { Spacing = 8, Children = { new Border { Background = new SolidColorBrush(Color.Parse(dark ? "#2F81F7" : "#0969DA")), Width = 72, Height = 8, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left }, new Border { Background = new SolidColorBrush(Color.Parse(dark ? "#30363D" : "#D0D7DE")), Height = 24 } } };
             preview.Children.Add(page);
             var choice = new Button { Width = 192, Padding = new Thickness(8), Margin = new Thickness(0, 0, 12, 8), Content = new StackPanel { Spacing = 8, Children = { preview, new TextBlock { Text = label, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center } } } };
             choice.Click += (_, _) => ViewModel.CurrentTheme = theme;

@@ -5,19 +5,17 @@
              x:Class="v2rayN.Desktop.Views.ServerWorkspaceView" x:DataType="vms:ProfilesViewModel">
     <Grid x:Name="workspace" ColumnDefinitions="*">
         <ContentControl x:Name="profiles" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
-        <Border x:Name="inspector" Width="360" HorizontalAlignment="Right" IsVisible="False"
-                Background="{DynamicResource WorkspaceSurface}" BorderBrush="{DynamicResource WorkspaceBorder}" BorderThickness="1,0,0,0" Padding="24,16">
+        <Border x:Name="inspector" Width="284" HorizontalAlignment="Right" IsVisible="False"
+                Background="{DynamicResource WorkspaceSurface}" BorderBrush="{DynamicResource WorkspaceBorder}" BorderThickness="1" CornerRadius="0,6,6,0" Padding="16">
             <DockPanel>
                 <DockPanel DockPanel.Dock="Top" Margin="0,0,0,20">
                     <Button x:Name="btnCloseDetails" DockPanel.Dock="Right" Content="×" ToolTip.Tip="{x:Static ws:WorkspaceText.Close}" />
-                    <TextBlock Classes="sectionTitle" Text="{x:Static ws:WorkspaceText.Details}" VerticalAlignment="Center" />
+                    <StackPanel Spacing="4"><TextBlock Text="{x:Static ws:WorkspaceText.Details}" FontWeight="SemiBold"/><TextBlock Classes="muted caption" Text="{x:Static ws:WorkspaceText.SelectedNode}"/></StackPanel>
                 </DockPanel>
                 <StackPanel x:Name="detailActions" DockPanel.Dock="Bottom" Spacing="8" Margin="0,16,0,0">
-                    <Grid ColumnDefinitions="*,8,*">
-                        <Button Content="{x:Static resx:ResUI.menuEditServer}" Command="{Binding EditServerCmd}" HorizontalAlignment="Stretch" />
-                        <Button Grid.Column="2" Content="{x:Static resx:ResUI.menuSetDefaultServer}" Command="{Binding SetDefaultServerCmd}" Classes="primary" HorizontalAlignment="Stretch" />
-                    </Grid>
-                    <Grid ColumnDefinitions="*,8,*">
+                    <TextBlock Text="{x:Static ws:WorkspaceText.SelectionHint}" Classes="muted caption" TextWrapping="Wrap"/>
+                    <Button x:Name="btnApplySelected" Content="{x:Static resx:ResUI.menuSetDefaultServer}" Command="{Binding SetDefaultServerCmd}" Classes="primary" HorizontalAlignment="Stretch" />
+                    <Button Content="{x:Static resx:ResUI.menuEditServer}" Command="{Binding EditServerCmd}" HorizontalAlignment="Stretch" />
                         <Button Content="{x:Static ws:WorkspaceText.TestSelected}" HorizontalAlignment="Stretch">
                             <Button.Flyout>
                                 <MenuFlyout>
@@ -27,15 +25,17 @@
                                 </MenuFlyout>
                             </Button.Flyout>
                         </Button>
-                        <Button x:Name="btnSshKey" Grid.Column="2" Content="{x:Static resx:SshStrings.SetupKey}" HorizontalAlignment="Stretch" />
-                    </Grid>
+                        <Button x:Name="btnSshKey" Content="{x:Static resx:SshStrings.SetupKey}" HorizontalAlignment="Stretch" />
                 </StackPanel>
                 <ScrollViewer>
                     <StackPanel Spacing="16">
                         <TextBlock x:Name="txtEmpty" Classes="muted" Text="{x:Static ws:WorkspaceText.Empty}" TextWrapping="Wrap" />
                         <StackPanel x:Name="details" Spacing="16">
                             <TextBlock Text="{Binding SelectedProfile.Remarks}" Classes="sectionTitle" TextWrapping="Wrap" />
-                            <TextBlock Text="{Binding SelectedProfile.ConfigType}" Foreground="{DynamicResource WorkspaceAccent}" />
+                            <TextBlock Text="{Binding SelectedProfile.ConfigType}" Classes="muted caption" />
+                            <Border BorderBrush="{DynamicResource WorkspaceBorder}" BorderThickness="0,1,0,0" Padding="0,12,0,0">
+                                <StackPanel Spacing="6"><TextBlock x:Name="pathLabel" FontWeight="SemiBold"/><SelectableTextBlock x:Name="txtConnectionPath" TextWrapping="Wrap" Classes="muted caption"/></StackPanel>
+                            </Border>
                             <TextBlock Classes="sectionTitle" Text="{x:Static ws:WorkspaceText.Basic}" />
                             <Grid ColumnDefinitions="90,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto">
                                 <TextBlock Text="{x:Static resx:ResUI.LvAddress}" Classes="muted" Margin="0,0,8,12" />
@@ -49,6 +49,11 @@
                                 <TextBlock Grid.Row="4" Text="{x:Static ws:WorkspaceText.Authentication}" Classes="muted" Margin="0,0,8,0" />
                                 <TextBlock x:Name="txtAuthentication" Grid.Row="4" Grid.Column="1" TextWrapping="Wrap" />
                             </Grid>
+                            <StackPanel x:Name="sshDetails" Spacing="6" IsVisible="False">
+                                <TextBlock x:Name="hostKeyLabel" FontWeight="SemiBold"/>
+                                <SelectableTextBlock x:Name="txtHostKey" Classes="muted caption" TextWrapping="Wrap"/>
+                                <TextBlock x:Name="txtSshCapabilities" Classes="muted caption" TextWrapping="Wrap"/>
+                            </StackPanel>
                             <Border BorderBrush="{DynamicResource WorkspaceBorder}" BorderThickness="0,1,0,0" Padding="0,16,0,0">
                                 <Grid ColumnDefinitions="90,*" RowDefinitions="Auto,Auto,Auto">
                                     <TextBlock Text="{x:Static resx:ResUI.LvTestDelay}" Classes="muted" Margin="0,0,8,12" />

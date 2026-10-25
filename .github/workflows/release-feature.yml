@@ -60,6 +60,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
+        with:
+          submodules: recursive
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 10.0.1xx
@@ -82,11 +84,23 @@ jobs:
           echo 'SSH_SETUP_DOCKER_IMAGE=v2rayn-ssh-test' >> "$GITHUB_ENV"
       - name: Run unit and SSH integration tests
         run: dotnet test --project ./v2rayN/ServiceLib.Tests -c Release --results-directory ./TestResults -- --report-trx
+      - name: Verify Primer designs and native page coverage
+        run: |
+          node docs/design/main-primer-opendesign/tests/prototype-check.cjs
+          node docs/design/main-primer-opendesign/tests/secondary-pages-check.cjs
+          node docs/design/main-primer-opendesign/tests/native-coverage-check.cjs
+      - name: Review desktop controls with Skia
+        run: |
+          dotnet build v2rayN/v2rayN.Desktop.Review -c Release -p:UsedAvaloniaProducts=
+          dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/preview-ui/zh-light --primer-only --headless --language=zh-Hans --theme=light --width=1440
+          dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/preview-ui/en-dark --primer-only --headless --language=en --theme=dark --width=600
       - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: preview-test-results
-          path: TestResults
+          path: |
+            TestResults
+            artifacts/preview-ui
 
   build:
     needs: validate
@@ -235,6 +249,9 @@ jobs:
           - 自动恢复包含事件合并、重启限频及退出取消；适用于关闭 TUN、自动配置系统代理且未使用自定义代理脚本的配置。
           - 修复局域网 .local 域名解析：macOS 使用系统 mDNS，连接在全局模式下也走局域网直连，兼容末尾句点，避免公共 DNS 返回 NXDOMAIN 刷屏。
           - 新增 Avalonia“代理检查”：区分系统路径、HTTP CONNECT、SOCKS5 与普通套接字，验证 TCP/TLS、DNS、STUN 普通 UDP、真实 HTTP3 和 IPv4/IPv6；支持预期出口、基线及 JSON 报告。
+          - 新增独立出口观察服务接入：验证服务端签名证据，分别展示通信、实际出口与预期比较；控制接口成功不等于各协议已验证。
+          - 主工作区与代理检查采用统一 Primer 布局，支持中英文、浅深主题和窄窗；明确区分选中节点、运行节点与缓存出口。
+          - 修复取消进度、通过筛选、观察端状态失效、停止内核说明及大字号关于窗口；补齐次级页面与动态页面设计，原生接入进度见设计覆盖清单。
           - SSH 节点新增默认关闭的 UDP over SSH 与允许 HTTP3 选项；使用 idefav/sing-box 固定提交构建专用核心，远端需要 OpenSSH UDP 扩展，失败不回退直连。
           - 核心清单与 SHA-256 校验优先选择随包专用核心，修复升级后用户目录旧核心不识别 udp_forwarding 导致重启失败。
           - macOS 安装盘保留可复制的拦截处理命令与安装说明。服务器独立端口部署、中继迁移、协议与排障记录见下方部署文档。
@@ -251,6 +268,7 @@ jobs:
           · [UI 与出口检测说明](https://github.com/$GH_REPO/blob/$RELEASE_TAG/docs/exit-info-preview.zh-Hans.md)
           · [macOS 网络恢复说明](https://github.com/$GH_REPO/blob/$RELEASE_TAG/docs/macos-network-recovery.md)
           · [SSH UDP 服务部署与扩展记录](https://github.com/$GH_REPO/blob/$RELEASE_TAG/docs/ssh-udp-deployment.zh-Hans.md)
+          · [Primer 页面设计与实施范围](https://github.com/$GH_REPO/blob/$RELEASE_TAG/docs/design/page-coverage.md)
           · [构建记录](https://github.com/$GH_REPO/actions/runs/$GITHUB_RUN_ID)
           EOF
           # A failed upload may leave a draft; never overwrite a published release.

@@ -5,6 +5,11 @@ namespace ServiceLib.ViewModels;
 public partial class ProxyCheckViewModel : MyReactiveObject, IDisposable
 {
     private CancellationTokenSource? _cancel;
+    private CancellationTokenSource? _observerCancel;
+    private readonly Func<ProxyCheckOptions, CancellationToken, Task<IAsyncDisposable>> _connectObserver;
+    private bool _disposed;
+    private bool _starting;
+    private int _observerSettingsVersion;
     private readonly IDisposable _exit;
     private ProxyCheckReport? _report;
     private ProxyCheckReport? _baseline;
@@ -13,6 +18,8 @@ public partial class ProxyCheckViewModel : MyReactiveObject, IDisposable
     [Reactive] public partial string ObserverProfileJson { get; set; } = "";
     [Reactive] public partial string ObserverCredential { get; set; } = "";
     [Reactive] public partial string ObserverStatus { get; set; } = "";
+    [Reactive] public partial bool IsTestingObserver { get; set; }
+    [Reactive] public partial string ObserverConnectionState { get; set; } = "unverified";
     public ObservableCollection<DiagnosticResult> Results { get; } = [];
     [Reactive] public partial bool IsRunning { get; set; }
     [Reactive] public partial bool CanStart { get; set; } = true;
@@ -33,8 +40,12 @@ public partial class ProxyCheckViewModel : MyReactiveObject, IDisposable
     [Reactive] public partial string Http3Timeout { get; set; } = "10";
     private static string T(string zh, string en) => ProxyCheckText.T(zh, en);
 
-    public ProxyCheckViewModel()
+    public ProxyCheckViewModel() : this(async (options, ct) => await ObserverSession.OpenAsync(options, ct)) { }
+
+    internal ProxyCheckViewModel(Func<ProxyCheckOptions, CancellationToken, Task<IAsyncDisposable>> connectObserver)
     {
+        _connectObserver = connectObserver;
+        InitializePresentation();
         _exit = AppEvents.AppExitRequested.AsObservable().Subscribe(_ => Cancel());
         try
         {
@@ -61,13 +72,24 @@ public partial class ProxyCheckViewModel : MyReactiveObject, IDisposable
 
     public async Task RefreshEnvironmentAsync()
     {
-        try { EnvironmentText = await ProxyCheckService.DescribeEnvironmentAsync(); }
+        try
+        {
+            EnvironmentText = await ProxyCheckService.DescribeEnvironmentAsync();
+            var config = AppManager.Instance.Config;
+            NodeName = (await AppManager.Instance.GetProfileItem(config.IndexId))?.Remarks ?? "—";
+            CoreName = ProxyCheckService.DescribeRunningCore();
+            RoutingName = (await AppManager.Instance.GetRoutingItem(config.RoutingBasicItem.RoutingIndexId))?.Remarks ?? "—";
+            CaptureMode = FormatCaptureMode(config.TunModeItem.EnableTun, config.SystemProxyItem.SysProxyType);
+            LocalEntry = $"127.0.0.1:{AppManager.Instance.GetLocalPort(EInboundProtocol.socks)}";
+        }
         catch (Exception ex) { Summary = ex.Message; }
     }
 
     public async Task StartAsync(bool retry = false)
     {
-        if (IsRunning) return;
+        if (_disposed || _starting || IsRunning || IsTestingObserver) return;
+        _starting = true; CanStart = CanRetry = false; _cancel = new();
+        var generation = Interlocked.Increment(ref _generation);
         try
         {
             var options = new ProxyCheckOptions
@@ -85,21 +107,22 @@ public partial class ProxyCheckViewModel : MyReactiveObject, IDisposable
             }
             ProxyCheckService.Validate(options);
             ISet<string>? ids = retry ? Results.Where(r => r.State is "failed" or "cancelled").Select(r => r.Id).ToHashSet() : null;
-            var runtime = retry ? await ProxyCheckService.RuntimeStateAsync(CancellationToken.None) : "";
+            var runtime = retry ? await ProxyCheckService.RuntimeStateAsync(_cancel.Token) : "";
             if (retry && (ids?.Count == 0 || _report?.Fingerprint != ProxyCheckService.Fingerprint() || _report.OptionsFingerprint != ProxyCheckService.OptionsFingerprint(options)
                 || runtime.Length > 0 && _report.RuntimeState.Length > 0 && runtime != _report.RuntimeState))
             {
                 Summary = T("没有可重试项目，或运行配置已变化；请开始完整检查。", "No failed checks to retry, or configuration changed. Start a full check."); return;
             }
+            _cancel.Token.ThrowIfCancellationRequested();
             AtomicSave(Utils.GetConfigPath("proxy-check-options.json"), JsonSerializer.Serialize(options, ProxyCheckService.Json));
-            IsRunning = true; CanStart = CanExport = CanRetry = false; _cancel = new();
+            IsRunning = true; CanExport = false;
+            LastChecked = DateTimeOffset.Now.ToString("g");
             if (!retry) { Results.Clear(); _report = null; }
-            EnvironmentText = await ProxyCheckService.DescribeEnvironmentAsync();
+            await RefreshEnvironmentAsync();
             Summary = T("正在检查；出口判断仅适用于当前探测目标。", "Checking; egress conclusions apply only to the probed targets.");
-            var generation = Interlocked.Increment(ref _generation);
             var progress = new Progress<DiagnosticResult>(row =>
             {
-                if (!IsRunning || generation != _generation) return;
+                if (_disposed || !IsRunning || generation != _generation) return;
                 var old = Results.FirstOrDefault(r => r.Id == row.Id);
                 if (old == null) Results.Add(row); else Results[Results.IndexOf(old)] = row;
             });
@@ -114,13 +137,18 @@ public partial class ProxyCheckViewModel : MyReactiveObject, IDisposable
                 if (old == null) Results.Add(row); else Results[Results.IndexOf(old)] = row;
             }
             Summary = report.Completion == "configuration-changed" ? T("运行配置已变化，检查已取消。请重新检查。", "Configuration changed. Checks cancelled; run again.")
-                : $"{(report.Completion == "cancelled" ? T("已取消", "Cancelled") : T("已完成", "Completed"))}: {report.Results.Count(r => r.Connectivity == "passed")}/{report.Results.Count} {T("通信正常", "reachable")} · {report.Results.Count(r => r.State == "failed")} {T("失败", "failed")} · {report.Results.Count(r => r.State == "unknown")} {T("无法判定", "inconclusive")}";
+                : $"{(report.Completion == "cancelled" ? T("已取消", "Cancelled") : T("已完成", "Completed"))}: {ReachableCount} {T("项流量检查通信正常", "traffic checks reachable")} · {report.Results.Count(r => r.State == "failed")} {T("失败", "failed")} · {report.Results.Count(r => r.State == "unknown")} {T("无法判定", "inconclusive")}";
         }
+        catch (OperationCanceledException) when (_cancel?.IsCancellationRequested == true) { Summary = T("检查已取消。", "Checks cancelled."); }
         catch (Exception ex) { Summary = ex.Message; }
-        finally { _cancel?.Dispose(); _cancel = null; IsRunning = false; CanStart = true; CanExport = _report != null; CanRetry = Results.Any(r => r.State is "failed" or "cancelled"); }
+        finally { _cancel?.Dispose(); _cancel = null; _starting = false; IsRunning = false; CanStart = !_disposed; CanExport = _report != null && !_disposed; CanRetry = !_disposed && Results.Any(r => r.State is "failed" or "cancelled"); }
     }
 
-    public void Cancel() => _cancel?.Cancel();
+    public void Cancel()
+    {
+        _cancel?.Cancel();
+        _observerCancel?.Cancel();
+    }
     public string ExportReport()
     {
         if (_report == null || IsRunning) throw new InvalidOperationException(T("请先完成一次检查。", "Complete a check first."));
@@ -160,15 +188,39 @@ public partial class ProxyCheckViewModel : MyReactiveObject, IDisposable
     }
     public async Task TestObserverAsync()
     {
-        if (IsRunning) return;
+        if (_disposed || _starting || IsRunning || IsTestingObserver) return;
+        IsTestingObserver = true; CanStart = CanRetry = false;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var version = _observerSettingsVersion;
+        var connecting = false;
         try
         {
             var profile = ReadObserver() ?? throw new ArgumentException(T("请先启用受控服务。", "Enable the observer first."));
-            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
-            await using var session = await ObserverSession.OpenAsync(new() { Observer = profile, ObserverCredential = ObserverCredential }, timeout.Token);
+            version = _observerSettingsVersion;
+            if (ObserverCredential.Length < 32) throw new ArgumentException(T("请填写至少 32 字符的服务凭证。", "Provide an observer credential of at least 32 characters."));
+            _observerCancel = timeout;
+            connecting = true;
+            ObserverConnectionState = "testing";
+            await using var session = await _connectObserver(new() { Observer = profile, ObserverCredential = ObserverCredential }, timeout.Token);
+            timeout.Token.ThrowIfCancellationRequested();
+            if (_disposed || version != _observerSettingsVersion) return;
+            ObserverConnectionState = "passed";
             ObserverStatus += "\n" + T("控制接口连接成功；各协议端口将在完整检查时单独验证。凭证仅保存在内存。", "Control connection works; protocol ports are checked separately in a full run. Credential is memory only.");
         }
-        catch (Exception ex) { ObserverStatus = ex.Message; }
+        catch (OperationCanceledException) when (timeout.IsCancellationRequested)
+        {
+            if (!_disposed && version == _observerSettingsVersion) { ObserverConnectionState = "unverified"; ObserverStatus = T("控制接口测试已取消或超时。", "Control connection test cancelled or timed out."); }
+        }
+        catch (Exception ex)
+        {
+            if (!_disposed && version == _observerSettingsVersion) { ObserverConnectionState = connecting ? "failed" : "invalid"; ObserverStatus = ex.Message; }
+        }
+        finally { _observerCancel = null; IsTestingObserver = false; CanStart = !_disposed; CanRetry = !_disposed && Results.Any(r => r.State is "failed" or "cancelled"); }
     }
-    public void Dispose() { Cancel(); ObserverCredential = ""; _exit.Dispose(); }
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true; Cancel(); _exit.Dispose(); _presentation?.Dispose(); _observerSettings?.Dispose();
+        Results.CollectionChanged -= ResultsChanged; ObserverCredential = ""; CanStart = CanRetry = CanExport = false;
+    }
 }

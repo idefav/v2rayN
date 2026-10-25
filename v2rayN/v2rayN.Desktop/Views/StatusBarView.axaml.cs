@@ -10,7 +10,7 @@ public partial class StatusBarView : ReactiveUserControl<StatusBarViewModel>
     private readonly Config _config;
     private readonly DispatcherTimer _coreTimer = new() { Interval = TimeSpan.FromSeconds(1) };
     private bool _reloading;
-    private bool? _lastCoreState;
+    private string? _coreBrushKey;
     private IDisposable? _coreBrush;
     private string? _exitNode;
     private ExitInfoItem? _exitResult;
@@ -74,6 +74,8 @@ public partial class StatusBarView : ReactiveUserControl<StatusBarViewModel>
                 }).DisposeWith(disposables);
             this.WhenAnyValue(v => v.ViewModel!.IsChangingConnection, v => v.ViewModel!.ConnectionError)
                 .ObserveOn(RxSchedulers.MainThreadScheduler).Subscribe(_ => UpdateControls()).DisposeWith(disposables);
+            this.WhenAnyValue(v => v.ViewModel!.SystemProxySelected, v => v.ViewModel!.EnableTun, v => v.ViewModel!.SelectedRouting)
+                .ObserveOn(RxSchedulers.MainThreadScheduler).Subscribe(_ => UpdateRuntimeMetadata()).DisposeWith(disposables);
             this.Bind(ViewModel, vm => vm.EnableTun, v => v.togEnableTun.IsChecked).DisposeWith(disposables);
             this.Bind(ViewModel, vm => vm.SystemProxySelected, v => v.cmbSystemProxy.SelectedIndex).DisposeWith(disposables);
             this.Bind(ViewModel, vm => vm.SelectedRouting, v => v.cmbRoutings2.SelectedItem).DisposeWith(disposables);
@@ -112,6 +114,7 @@ public partial class StatusBarView : ReactiveUserControl<StatusBarViewModel>
         connectionFields.IsEnabled = !_reloading && ViewModel?.IsChangingConnection != true;
         txtConnectionError.Text = ViewModel?.ConnectionError;
         txtConnectionError.IsVisible = !string.IsNullOrWhiteSpace(txtConnectionError.Text);
+        UpdateCoreState();
     }
 
     private void RefreshIcon()
@@ -133,18 +136,42 @@ public partial class StatusBarView : ReactiveUserControl<StatusBarViewModel>
             RecoveryState.Failed => WorkspaceText.T("连接异常", "Connection unavailable"),
             _ => string.Empty,
         };
+        var connectionFailed = !string.IsNullOrWhiteSpace(ViewModel?.ConnectionError);
+        if (connectionFailed) txtRecoveryState.Text = WorkspaceText.T("配置应用失败", "Configuration failed");
+        txtRecoveryState.Classes.Set("error", connectionFailed || recovery?.State == RecoveryState.Failed);
         txtRecoveryState.IsVisible = !string.IsNullOrEmpty(txtRecoveryState.Text);
-        ToolTip.SetTip(txtRecoveryState, recovery?.Error);
+        ToolTip.SetTip(txtRecoveryState, connectionFailed ? ViewModel?.ConnectionError : recovery?.Error);
         UpdateExitSummary();
         var running = CoreManager.Instance.IsCoreRunning;
-        txtCoreState.Text = running ? WorkspaceText.Running : WorkspaceText.Stopped;
-        if (_lastCoreState != running)
+        var applying = _reloading || ViewModel?.IsChangingConnection == true;
+        txtCoreState.Text = applying
+            ? WorkspaceText.T("正在应用…", "Applying…") : running ? WorkspaceText.Running : WorkspaceText.Stopped;
+        txtRuntimeCaption.Text = running ? WorkspaceText.T("当前运行配置", "Running configuration") : WorkspaceText.T("已选活动配置", "Configured active profile");
+        var brushKey = applying ? "WorkspaceWarning" : running ? "WorkspaceSuccess" : "WorkspaceMuted";
+        if (_coreBrushKey != brushKey)
         {
-            _lastCoreState = running;
+            _coreBrushKey = brushKey;
             _coreBrush?.Dispose();
-            _coreBrush = txtCoreState.Bind(TextBlock.ForegroundProperty, new Avalonia.Markup.Xaml.MarkupExtensions.DynamicResourceExtension(running ? "WorkspaceSuccess" : "WorkspaceMuted"));
+            _coreBrush = txtCoreState.Bind(TextBlock.ForegroundProperty, new Avalonia.Markup.Xaml.MarkupExtensions.DynamicResourceExtension(brushKey));
         }
         if (!running || !_config.GuiItem.DisplayRealTimeSpeed) { txtDownload.Text = "↓ —"; txtUpload.Text = "↑ —"; }
+        UpdateRuntimeMetadata();
+    }
+
+    private void UpdateRuntimeMetadata()
+    {
+        var core = AppManager.Instance.RunningCoreType;
+        txtCoreName.Text = WorkspaceText.T("内核：", "Core: ") + (CoreManager.Instance.IsCoreRunning && Enum.IsDefined(core)
+            ? core == ECoreType.sing_box ? "sing-box" : core.ToString() : WorkspaceText.T("未运行", "Stopped"));
+        txtProxyMode.Text = WorkspaceText.T("系统代理：", "System proxy: ") + (_config.SystemProxyItem.SysProxyType switch
+        {
+            ESysProxyType.ForcedChange => WorkspaceText.T("自动配置", "Automatic"),
+            ESysProxyType.ForcedClear => WorkspaceText.T("自动清除", "Clear"),
+            ESysProxyType.Unchanged => WorkspaceText.T("保持现状", "Unchanged"),
+            ESysProxyType.Pac => "PAC", _ => "—"
+        });
+        txtTunMode.Text = "TUN: " + (_config.TunModeItem.EnableTun ? WorkspaceText.T("开启", "On") : WorkspaceText.T("关闭", "Off"));
+        txtRoutingMode.Text = WorkspaceText.T("路由：", "Routing: ") + (ViewModel?.SelectedRouting?.Remarks ?? "—");
     }
 
     private void UpdateExitSummary()
@@ -164,8 +191,9 @@ public partial class StatusBarView : ReactiveUserControl<StatusBarViewModel>
 
     public void SetCompact(bool compact)
     {
-        txtRunningServerDisplay.MaxWidth = compact ? 180 : 360;
+        txtRunningServerDisplay.MaxWidth = double.PositiveInfinity;
         transferSummary.IsVisible = !compact;
+        cachedExitRow.IsVisible = !compact;
     }
 
     private async Task<string?> PasswordInputAsync()

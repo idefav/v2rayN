@@ -62,6 +62,23 @@ public partial class MainWindow
         if (_workspaceInitialized || ViewModel == null) return;
         _workspaceInitialized = true;
         _appearance = new ThemeSettingView();
+        TablePresentation.TextIconButton(btnAppearance, WorkspaceText.T("外观与语言", "Appearance and language"),
+            "M12,3 L12,1 M12,23 L12,21 M3,12 L1,12 M23,12 L21,12 M5,5 L3,3 M21,21 L19,19 M5,19 L3,21 M21,3 L19,5 M18,12 A6,6 0 1 1 6,12 A6,6 0 1 1 18,12", true);
+        btnAppearance.Margin = Utils.IsWindows() ? new Thickness(0, 0, 128, 0) : new Thickness(0);
+        var appearanceMenu = new MenuFlyout();
+        appearanceMenu.Popup.ShouldUseOverlayLayer = true;
+        appearanceMenu.Closed += (_, _) => btnAppearance.Focus();
+        foreach (var (theme, label) in new[] { (nameof(ETheme.Light), WorkspaceText.T("浅色", "Light")), (nameof(ETheme.Dark), WorkspaceText.T("深色", "Dark")), (nameof(ETheme.FollowSystem), WorkspaceText.T("跟随系统", "Follow system")) })
+        {
+            var choice = new MenuItem { Header = label };
+            choice.Click += (_, _) => { if (_appearance.ViewModel != null) _appearance.ViewModel.CurrentTheme = theme; };
+            appearanceMenu.Items.Add(choice);
+        }
+        appearanceMenu.Items.Add(new Separator());
+        var appearanceSettings = new MenuItem { Header = WorkspaceText.T("外观与语言设置…", "Appearance and language settings…") };
+        appearanceSettings.Click += async (_, _) => await OpenSettingsAsync("Appearance");
+        appearanceMenu.Items.Add(appearanceSettings);
+        btnAppearance.Flyout = appearanceMenu;
         _logs = (MsgView)SimpleViewLocator.Instance.Build(ViewModel.MsgViewModel);
         _logs.ViewModel = ViewModel.MsgViewModel;
         _logs.SetCompact(true);
@@ -92,7 +109,7 @@ public partial class MainWindow
             var label = new TextBlock { Text = entry.Title, VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.Wrap };
             var item = new ListBoxItem
             {
-                Tag = entry, Padding = new Thickness(10), Margin = new Thickness(0, 2),
+                Tag = entry, Padding = new Thickness(10), Margin = new Thickness(0, 2), MinHeight = 44,
                 Content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12, Children = { icon, label } }
             };
             ToolTip.SetTip(item, entry.Title);
@@ -143,17 +160,7 @@ public partial class MainWindow
         var about = new MenuItem { Header = WorkspaceText.T("关于 v2rayN", "About v2rayN") };
         about.Click += async (_, _) =>
         {
-            var close = new Button { Content = WorkspaceText.Close, HorizontalAlignment = HorizontalAlignment.Right, IsCancel = true };
-            var body = new StackPanel { Margin = new Thickness(24), Spacing = 16, Children =
-            {
-                new TextBlock { Text = "v2rayN", FontSize = 24, FontWeight = FontWeight.SemiBold },
-                new SelectableTextBlock { Text = Utils.GetVersion(), TextWrapping = TextWrapping.Wrap },
-                new TextBlock { Text = System.Runtime.InteropServices.RuntimeInformation.OSDescription, TextWrapping = TextWrapping.Wrap },
-                new TextBlock { Text = "Avalonia · .NET " + Environment.Version, TextWrapping = TextWrapping.Wrap }, close
-            } };
-            var window = new Window { Title = about.Header.ToString(), Width = 480, Height = 280, MinWidth = 380, MinHeight = 240,
-                WindowStartupLocation = WindowStartupLocation.CenterOwner, ShowInTaskbar = false, Content = body, Icon = Icon };
-            close.Click += (_, _) => window.Close();
+            var window = CreateAboutWindow();
             await window.ShowDialog(this);
         };
         flyout.Items.Add(about);
@@ -170,6 +177,27 @@ public partial class MainWindow
             flyout.Items.Add(item);
         }
         flyout.ShowAt(btnHelp);
+    }
+
+    private Window CreateAboutWindow()
+    {
+        var close = new Button { Name = "btnAboutClose", Content = WorkspaceText.Close, HorizontalAlignment = HorizontalAlignment.Right, IsCancel = true };
+        var body = new StackPanel { Spacing = 16, Children =
+        {
+            new TextBlock { Text = "v2rayN", FontSize = 24, FontWeight = FontWeight.SemiBold },
+            new SelectableTextBlock { Text = Utils.GetVersion(), TextWrapping = TextWrapping.Wrap },
+            new TextBlock { Text = System.Runtime.InteropServices.RuntimeInformation.OSDescription, TextWrapping = TextWrapping.Wrap },
+            new TextBlock { Text = "Avalonia · .NET " + Environment.Version, TextWrapping = TextWrapping.Wrap }
+        } };
+        var content = new DockPanel { Margin = new Thickness(24) };
+        close.Margin = new Thickness(0, 16, 0, 0);
+        DockPanel.SetDock(close, Dock.Bottom);
+        content.Children.Add(close);
+        content.Children.Add(new ScrollViewer { Content = body, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled });
+        var window = new Window { Title = WorkspaceText.T("关于 v2rayN", "About v2rayN"), Width = 480, Height = 280, MinWidth = 380, MinHeight = 240,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner, ShowInTaskbar = false, Content = content, Icon = Icon };
+        close.Click += (_, _) => window.Close();
+        return window;
     }
 
     public async Task NavigateAsync(string key)
@@ -454,8 +482,8 @@ public partial class MainWindow
 
     private void ResizeWorkspace()
     {
-        var compact = Bounds.Width < 1000;
-        var sidebarWidth = 232 + Math.Max(0, AppManager.Instance.Config.UiItem.CurrentFontSize - 14) * 6;
+        var compact = Bounds.Width <= 900;
+        var sidebarWidth = 196 + Math.Max(0, AppManager.Instance.Config.UiItem.CurrentFontSize - 14) * 6;
         shellGrid.ColumnDefinitions[0].Width = new GridLength(compact ? 64 : sidebarWidth);
         brandLabel.IsVisible = !compact;
         txtVersion.IsVisible = !compact;
@@ -478,7 +506,7 @@ public partial class MainWindow
         drawerLogs.Content = _currentPage == "Servers" && _logExpanded ? _logs : null;
         drawerLogs.Height = Math.Max(80, Math.Min(200, Bounds.Height * 0.25));
         if (contentStatusBarView.Content is StatusBarView status)
-            status.SetCompact(Bounds.Width < 1000 || Bounds.Height < 800 || FontSize > 18 && Bounds.Height < 1100);
+            status.SetCompact(Bounds.Width <= 900 || Bounds.Height < 700 || FontSize > 18 && Bounds.Height < 1100);
         btnToggleLogs.Content = "×";
         _servers?.SetCompact(compact);
         if (_settingsWorkspace != null)

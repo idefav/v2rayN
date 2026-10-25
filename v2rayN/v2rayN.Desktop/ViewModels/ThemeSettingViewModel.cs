@@ -103,11 +103,11 @@ public partial class ThemeSettingViewModel : MyReactiveObject
 
         if (Application.Current is not { } app) return;
         app.Resources["WorkspaceFontSize"] = size;
-        app.Resources["WorkspaceTitleSize"] = size * 20 / 14;
+        app.Resources["WorkspaceTitleSize"] = size * 24 / 14;
         app.Resources["WorkspaceSectionSize"] = size * 16 / 14;
         app.Resources["WorkspaceCaptionSize"] = size * 12 / 14;
         app.Resources["WorkspaceMetricSize"] = size * 22 / 14;
-        app.Resources["WorkspaceRowHeight"] = Math.Max(48, size * 3.4);
+        app.Resources["WorkspaceRowHeight"] = Math.Max(53, size * 3.8);
     }
 
     private void ModifyFontFamily()

@@ -3,8 +3,9 @@
     xmlns:resx="clr-namespace:ServiceLib.Resx;assembly=ServiceLib"
     xmlns:vms="clr-namespace:ServiceLib.ViewModels;assembly=ServiceLib"
     xmlns:ws="clr-namespace:v2rayN.Desktop.Common" x:DataType="vms:StatusBarViewModel">
-    <Border Background="{DynamicResource WorkspaceSidebar}" CornerRadius="8" Padding="12,8">
-        <DockPanel>
+    <Border x:Name="summaryCard" Background="{DynamicResource WorkspaceSurface}" BorderBrush="{DynamicResource WorkspaceBorder}" BorderThickness="1" CornerRadius="6">
+        <Grid RowDefinitions="Auto,Auto">
+        <DockPanel Margin="16,12">
             <Button x:Name="btnConnectionControls" DockPanel.Dock="Right" Content="{x:Static ws:WorkspaceText.ConnectionControls}" Margin="12,0,0,0">
                 <Button.Flyout>
                     <Flyout Placement="BottomEdgeAlignedRight">
@@ -38,24 +39,39 @@
                                     <TextBlock x:Name="txtSpeedDirectDisplay" Classes="muted" TextWrapping="Wrap" />
                                 </StackPanel>
                                 <TextBlock Text="{x:Static ws:WorkspaceText.ConnectionImmediate}" Classes="muted" TextWrapping="Wrap"/>
-                                <TextBlock x:Name="txtConnectionError" Foreground="Red" TextWrapping="Wrap" IsVisible="False" />
+                                <TextBlock x:Name="txtConnectionError" Classes="error" TextWrapping="Wrap" IsVisible="False" />
                                 <Button x:Name="btnAvailability" Content="{x:Static resx:ResUI.menuRealPingServer}" />
                             </StackPanel>
                         </ScrollViewer>
                     </Flyout>
                 </Button.Flyout>
             </Button>
-            <WrapPanel x:Name="overview" VerticalAlignment="Center">
-                <TextBlock x:Name="txtCoreState" VerticalAlignment="Center" FontWeight="SemiBold" Margin="0,4,16,4" />
-                <TextBlock x:Name="txtRecoveryState" VerticalAlignment="Center" Margin="0,4,16,4" IsVisible="False" />
-                <TextBlock x:Name="txtRunningServerDisplay" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="360" Margin="0,4,16,4" />
-                <ContentControl x:Name="exitSummary" MaxWidth="280" VerticalAlignment="Center" Margin="0,4,16,4" />
-                <TextBlock x:Name="txtRunningInfoDisplay" VerticalAlignment="Center" Classes="muted" Margin="0,4,16,4" />
-                <StackPanel x:Name="transferSummary" VerticalAlignment="Center" Orientation="Horizontal" Spacing="16" Margin="0,4">
-                    <TextBlock x:Name="txtDownload" Text="↓ —" Classes="muted" />
-                    <TextBlock x:Name="txtUpload" Text="↑ —" Classes="muted" />
-                </StackPanel>
-            </WrapPanel>
+            <StackPanel x:Name="transferSummary" DockPanel.Dock="Right" VerticalAlignment="Center" Spacing="4" Margin="16,0,8,0">
+                <TextBlock x:Name="txtDownload" Text="↓ —" Classes="caption" />
+                <TextBlock x:Name="txtUpload" Text="↑ —" Classes="caption" />
+            </StackPanel>
+            <StackPanel Spacing="6">
+                <WrapPanel x:Name="overview">
+                    <TextBlock x:Name="txtCoreState" FontWeight="SemiBold" Classes="caption" Margin="0,0,12,0" />
+                    <TextBlock x:Name="txtRecoveryState" Classes="caption" Margin="0,0,12,0" IsVisible="False" TextWrapping="Wrap" />
+                    <TextBlock x:Name="txtRuntimeCaption" Classes="muted caption" />
+                </WrapPanel>
+                <TextBlock x:Name="txtRunningServerDisplay" FontWeight="SemiBold" FontSize="16" TextTrimming="CharacterEllipsis" />
+                <WrapPanel x:Name="cachedExitRow">
+                    <TextBlock Text="{x:Static ws:WorkspaceText.CachedExit}" Classes="muted caption" VerticalAlignment="Center" Margin="0,0,4,0" />
+                    <ContentControl x:Name="exitSummary" MaxWidth="220" VerticalAlignment="Center" Margin="0,0,12,0" />
+                    <TextBlock x:Name="txtRunningInfoDisplay" Classes="muted caption" VerticalAlignment="Center" />
+                </WrapPanel>
+            </StackPanel>
         </DockPanel>
+        <Border Grid.Row="1" Background="{DynamicResource WorkspaceSidebar}" BorderBrush="{DynamicResource WorkspaceBorder}" BorderThickness="0,1,0,0" CornerRadius="0,0,6,6" Padding="16,8">
+            <WrapPanel x:Name="runtimeMetadata">
+                <TextBlock x:Name="txtCoreName" Classes="muted caption" Margin="0,0,16,2" TextWrapping="Wrap" />
+                <TextBlock x:Name="txtProxyMode" Classes="muted caption" Margin="0,0,16,2" TextWrapping="Wrap" />
+                <TextBlock x:Name="txtTunMode" Classes="muted caption" Margin="0,0,16,2" />
+                <TextBlock x:Name="txtRoutingMode" Classes="muted caption" TextWrapping="Wrap" />
+            </WrapPanel>
+        </Border>
+        </Grid>
     </Border>
 </UserControl>

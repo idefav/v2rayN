@@ -18,6 +18,8 @@ public partial class ServerWorkspaceView : ReactiveUserControl<ProfilesViewModel
     public ServerWorkspaceView()
     {
         InitializeComponent();
+        pathLabel.Text = WorkspaceText.T("连接端点", "Connection endpoint");
+        hostKeyLabel.Text = WorkspaceText.T("SSH 主机密钥与扩展配置", "SSH host key and extensions");
         var exitDetails = new TextBlock { TextWrapping = TextWrapping.Wrap };
         var checkExit = new Button { Content = WorkspaceText.T("检测出口", "Check exit") };
         var copyExit = new Button { Content = WorkspaceText.T("复制出口 IP", "Copy exit IP") };
@@ -81,6 +83,13 @@ public partial class ServerWorkspaceView : ReactiveUserControl<ProfilesViewModel
                     txtIp.Text = string.IsNullOrWhiteSpace(selected?.IpInfo) || selected.IpInfo == Global.None ? "—" : selected.IpInfo;
                     txtUsername.Text = "—";
                     txtAuthentication.Text = "—";
+                    var endpoint = selected?.Address ?? "";
+                    if (endpoint.Contains(':') && !endpoint.StartsWith('[')) endpoint = "[" + endpoint + "]";
+                    txtConnectionPath.Text = selected == null ? "—" : selected.ConfigType.IsComplexType()
+                        ? WorkspaceText.T("由代理链或策略组配置决定", "Defined by the proxy chain or policy group")
+                        : $"{WorkspaceText.T("本地客户端", "Local client")} → {endpoint}:{selected.Port}";
+                    sshDetails.IsVisible = false;
+                    txtHostKey.Text = txtSshCapabilities.Text = "";
                 }).DisposeWith(disposables);
             this.WhenAnyValue(v => v.ViewModel!.SelectedProfile)
                 .Select(selected => Signal.FromAsync(async () => selected?.IndexId.IsNotEmpty() == true
@@ -92,7 +101,20 @@ public partial class ServerWorkspaceView : ReactiveUserControl<ProfilesViewModel
                     if (item == null || item.IndexId != ViewModel?.SelectedProfile?.IndexId) return;
                     txtUsername.Text = string.IsNullOrWhiteSpace(item.Username) ? "—" : item.Username;
                     if (item.ConfigType == EConfigType.SSH)
+                    {
+                        var extra = item.GetProtocolExtra();
                         txtAuthentication.Text = item.GetProtocolExtra().SshPrivateKeyAuth == true ? SshStrings.PrivateKeyAuth : SshStrings.LoginPassword;
+                        sshDetails.IsVisible = true;
+                        try
+                        {
+                            var key = ServiceLib.Services.SshProfileService.ParseHostKey(extra.SshHostKey ?? "", extra.SshHostKeyAlgorithm);
+                            var pinned = string.Equals(extra.SshTrustedAddress, item.Address, StringComparison.OrdinalIgnoreCase) && extra.SshTrustedPort == item.Port;
+                            txtHostKey.Text = (pinned ? WorkspaceText.T("已固定到此端点", "Pinned to this endpoint") : WorkspaceText.T("端点信任未匹配", "Endpoint trust does not match")) + "\n" + key.Fingerprint;
+                        }
+                        catch (FormatException) { txtHostKey.Text = WorkspaceText.T("未配置有效主机密钥", "No valid host key configured"); }
+                        txtSshCapabilities.Text = "UDP: " + (extra.SshUdpForwarding == true ? WorkspaceText.T("已配置扩展", "Extension configured") : WorkspaceText.T("未启用", "Off"))
+                            + " · HTTP3: " + (extra.SshAllowHttp3 == true ? WorkspaceText.T("已配置放行", "Allowed in configuration") : WorkspaceText.T("未启用", "Off"));
+                    }
                 }).DisposeWith(disposables);
         });
     }
@@ -101,7 +123,6 @@ public partial class ServerWorkspaceView : ReactiveUserControl<ProfilesViewModel
     {
         _profilesView?.SetCompact(compact);
         UpdateDrawerLayout();
-        inspector.Width = Math.Min(360, Math.Max(240, Bounds.Width));
         inspector.IsVisible = _drawerOpen;
     }
 
@@ -115,7 +136,6 @@ public partial class ServerWorkspaceView : ReactiveUserControl<ProfilesViewModel
     {
         _drawerOpen = true;
         inspector.IsVisible = true;
-        inspector.Width = Math.Min(360, Math.Max(240, Bounds.Width));
         UpdateDrawerLayout();
         DetailsOpened?.Invoke(this, EventArgs.Empty);
         btnCloseDetails.Focus();
@@ -133,9 +153,10 @@ public partial class ServerWorkspaceView : ReactiveUserControl<ProfilesViewModel
 
     private void UpdateDrawerLayout()
     {
+        var wide = (TopLevel.GetTopLevel(this)?.Bounds.Width ?? Bounds.Width) >= 1191;
+        inspector.Width = Math.Min(Bounds.Width, AppManager.Instance.Config.UiItem.CurrentFontSize > 18 ? 360 : wide ? 284 : 320);
         if (_profilesView != null)
-            _profilesView.Margin = _drawerOpen && (TopLevel.GetTopLevel(this)?.Bounds.Width ?? Bounds.Width) >= 1200
-                ? new Thickness(0, 0, Math.Min(360, Bounds.Width), 0) : new Thickness(0);
+            _profilesView.Margin = _drawerOpen && wide ? new Thickness(0, 0, inspector.Width, 0) : new Thickness(0);
     }
 
     private static string Metric(string? value, string unit, string empty)

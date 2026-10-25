@@ -92,10 +92,17 @@ public sealed partial class ProxyCheckService
         var node = await AppManager.Instance.GetProfileItem(config.IndexId);
         var routing = await AppManager.Instance.GetRoutingItem(config.RoutingBasicItem.RoutingIndexId);
         var runtime = await RuntimeStateAsync(CancellationToken.None);
-        return $"{T("节点", "Node")}: {node?.Remarks ?? "—"} · {T("内核", "Core")}: {AppManager.Instance.RunningCoreType}\n"
+        return $"{T("节点", "Node")}: {node?.Remarks ?? "—"} · {T("内核", "Core")}: {DescribeRunningCore()}\n"
             + $"{T("路由", "Routing")}: {routing?.Remarks ?? "—"} · {T("运行模式", "Runtime mode")}: {(runtime.Length > 0 ? runtime.Split('|')[0] : T("未读取", "Unavailable"))} · TUN: {config.TunModeItem.EnableTun} · {T("系统代理配置", "Configured system proxy")}: {config.SystemProxyItem.SysProxyType}\n"
             + $"{T("本地入口", "Local ingress")}: 127.0.0.1:{AppManager.Instance.GetLocalPort(EInboundProtocol.socks)}\n"
             + T("系统实际代理将按每个 URL 读取；普通套接字仍可能被 TUN 接管。", "Actual system proxy is resolved per URL; ordinary sockets may still traverse a TUN.");
+    }
+
+    internal static string DescribeRunningCore()
+    {
+        if (!CoreManager.Instance.IsCoreRunning) return T("未运行", "Not running");
+        var core = AppManager.Instance.RunningCoreType;
+        return !Enum.IsDefined(core) ? T("未知", "Unknown") : core == ECoreType.sing_box ? "sing-box" : core.ToString();
     }
 
     internal static async Task<string> RuntimeStateAsync(CancellationToken ct)

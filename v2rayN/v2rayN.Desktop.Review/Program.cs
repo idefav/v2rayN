@@ -47,6 +47,7 @@ internal static class Program
     public static bool RecoveryOnly;
     public static bool ProxyCheckOnly;
     public static bool ProxyCheckLive;
+    public static bool PrimerOnly;
     public static bool SshUdpOnly;
     public static bool LegacyColumns;
     public static string Language = "zh-Hans";
@@ -69,6 +70,7 @@ internal static class Program
         RecoveryOnly = args.Contains("--recovery-only");
         ProxyCheckOnly = args.Contains("--proxy-check-only");
         ProxyCheckLive = args.Contains("--proxy-check-live");
+        PrimerOnly = args.Contains("--primer-only");
         SshUdpOnly = args.Contains("--ssh-udp-only");
         LegacyColumns = args.Contains("--legacy-columns");
         foreach (var argument in args.Skip(1))
@@ -205,6 +207,19 @@ public class ReviewApp : v2rayN.Desktop.App
         await Task.Delay(250);
         var page = _main.GetLogicalDescendants().OfType<ProxyCheckView>().Single();
         var model = page.Model;
+        if (!Program.ProxyCheckLive)
+        {
+            var previousCore = AppManager.Instance.RunningCoreType;
+            try
+            {
+                AppManager.Instance.RunningCoreType = ECoreType.Xray;
+                await model.RefreshEnvironmentAsync();
+                Check(model.CoreName == ProxyCheckText.T("未运行", "Not running")
+                    && model.EnvironmentText.Contains(ProxyCheckText.T("内核", "Core") + ": " + model.CoreName),
+                    "a remembered core type cannot masquerade as a running core in check headers or reports");
+            }
+            finally { AppManager.Instance.RunningCoreType = previousCore; }
+        }
         if (Program.ProxyCheckLive)
         {
             AppManager.Instance.Config.Inbound.First(i => i.Protocol == "socks").LocalPort = 10808;
@@ -234,30 +249,81 @@ public class ReviewApp : v2rayN.Desktop.App
             AppManager.Instance.Config.Inbound.First(i => i.Protocol == "socks").LocalPort--;
             return;
         }
-        model.EnvironmentText = "UI fixture · sing-box · SOCKS5 127.0.0.1:10808 · TUN disabled\nActual network checks are not run in this review.";
+        model.EnvironmentText = "UI fixture · no core launched · SOCKS5 127.0.0.1:10808 · TUN disabled\nActual network checks are not run in this review.";
+        model.NodeName = "Example node · UI fixture";
+        model.LocalEntry = "127.0.0.1:10808";
         foreach (var state in new[] { "idle", "running", "partial", "complete", "cancelled" })
         {
             model.Results.Clear();
             model.IsRunning = state == "running"; model.CanStart = !model.IsRunning;
             model.CanExport = state is "partial" or "complete" or "cancelled"; model.CanRetry = state is "partial" or "cancelled";
             model.Summary = "Fixture · " + state;
+            model.LastChecked = state == "idle" ? "—" : "10:30 · UI fixture";
             if (state != "idle")
-                foreach (var (id, group) in new[] { ("tcp", "TCP/TLS"), ("dns", "DNS"), ("udp", "UDP"), ("h3", "QUIC/HTTP3"), ("ipv6", "IPv6") })
+                foreach (var (id, group) in new[] { ("capture", ProxyCheckText.T("网络接管", "Network capture")), ("tcp", "TCP/TLS"), ("dns", "DNS"), ("udp", "UDP"), ("h3", "QUIC/HTTP3"), ("ipv6", "IPv6") })
                 {
-                    var rowState = state == "running" ? "running" : state == "cancelled" ? "cancelled" : state == "complete" ? "passed" : state == "partial" && id == "udp" ? "failed" : "unknown";
+                    var rowState = state == "running" ? "running" : state == "cancelled" ? "cancelled" : id == "ipv6" ? "skipped" : state == "partial" && id == "udp" ? "failed" : "passed";
+                    var observed = rowState is "passed" or "failed";
                     model.Results.Add(new ServiceLib.Models.Dto.ProxyDiagnosticResult
                     {
-                        Id = id, Group = group, Name = id, State = rowState, Connectivity = rowState == "unknown" ? "passed" : rowState,
-                        Path = "SOCKS5", Target = "www.cloudflare.com:443", Family = "IPv4", Attempts = 3,
-                        Successes = rowState is "unknown" or "passed" ? 3 : 0, Elapsed = 42, Egress = "203.0.113.19", EgressState = rowState == "passed" ? "passed" : "unknown",
+                        Id = id, Group = group, Name = id, State = rowState, Connectivity = rowState == "failed" ? "passed" : rowState,
+                        Path = id == "dns" ? "System resolver" : "SOCKS5", Target = "api.check.example.net:443", Family = id == "ipv6" ? "IPv6" : "IPv4", Attempts = observed ? 3 : 0,
+                        Successes = observed ? 3 : 0, Elapsed = observed ? 42 : 0, Egress = observed && id != "capture" ? "198.51.100.7" : "",
+                        ObservationType = id == "capture" ? "not-applicable" : id == "dns" ? "recursive-resolver" : "unavailable",
+                        EgressState = id is "capture" or "dns" or "ipv6" ? "not-applicable" : !observed ? "unknown" : rowState == "failed" ? "failed" : "passed",
+                        Expected = !observed || id is "capture" or "dns" ? "" : rowState == "failed" ? "203.0.113.0/24" : "198.51.100.7",
                         Evidence = "Fixture data; matched transaction; actual network untested."
                     });
                 }
             await CaptureAsync("proxy-check-" + state, "Proxy check · " + state, _main);
             Check(page.GetLogicalDescendants().OfType<Button>().Single(b => b.Name == "start").IsEnabled == !model.IsRunning, "proxy check start enabled: " + state);
             Check(page.GetLogicalDescendants().OfType<Button>().Single(b => b.Name == "cancel").IsEnabled == model.IsRunning, "proxy check cancel enabled: " + state);
+            if (state == "complete")
+            {
+                var row = model.ResultGroups.SelectMany(group => group.Rows).Single(row => row.Source.Id == "capture");
+                Check(!row.IsCommunicationPassed && row.Communication == ProxyCheckText.T("已核对（非通信）", "Checked (not traffic)"),
+                    "configuration capability checks cannot claim successful network traffic");
+                var capability = page.GetVisualDescendants().OfType<ProxyCheckGrid>().First(grid => grid.LayoutKind == "results");
+                var scroll = page.FindControl<ScrollViewer>("pageScroll")!;
+                if (capability.TranslatePoint(default, scroll) is { } origin) scroll.Offset += new Vector(0, origin.Y - 60);
+                await CaptureAsync("proxy-check-capability", "Capability is not traffic · UI fixture", _main);
+                scroll.Offset = default;
+            }
         }
         model.IsRunning = false; model.CanStart = true;
+        await Task.Delay(100);
+        var resultLayouts = page.GetVisualDescendants().OfType<ProxyCheckGrid>().Where(g => g.LayoutKind == "results").ToArray();
+        Check(resultLayouts.Length == model.Results.Count && resultLayouts.All(g => g.Bounds.Width > 0 && g.Children.All(c => c.Bounds.X >= -1 && c.Bounds.Right <= g.Bounds.Width + 1)),
+            "all six result fields remain within their row bounds");
+        Check(resultLayouts.All(g => g.RowDefinitions.Count == (page.Bounds.Width < 960 ? 3 : 1)),
+            "result fields reflow for the current viewport width");
+        var compactLabels = resultLayouts.First().GetVisualDescendants().OfType<TextBlock>().Where(text => text.Classes.Contains("compact-label")).ToArray();
+        Check(compactLabels.Length == 4 && compactLabels.All(text => text.IsVisible == (page.Bounds.Width < 960)),
+            "compact diagnostic cards label communication, path, observed exit and expectation explicitly");
+        var firstResult = resultLayouts.First().TranslatePoint(default, page.FindControl<ScrollViewer>("pageScroll")!);
+        if (firstResult != null) page.FindControl<ScrollViewer>("pageScroll")!.Offset += new Vector(0, firstResult.Value.Y - 60);
+        await CaptureAsync("proxy-check-results", "Result row layout · UI fixture", _main);
+        page.FindControl<ScrollViewer>("pageScroll")!.Offset = default;
+        await Task.Delay(100);
+        var baselineButton = page.FindControl<Button>("baselineMenu")!;
+        baselineButton.Flyout!.ShowAt(baselineButton);
+        await Task.Delay(100);
+        Check(page.FindControl<Button>("saveBaseline")!.DataContext == model && page.FindControl<Button>("saveBaseline")!.IsEnabled == model.CanExport,
+            "baseline flyout inherits the check model and command availability");
+        baselineButton.Flyout.Hide();
+
+        var normalHeight = _main.Height;
+        _main.Height = Math.Max(_main.MinHeight, 600);
+        await Task.Delay(100);
+        page.FindControl<Button>("settingsButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        await CaptureAsync("proxy-check-options-jump", "Check options navigation", _main);
+        var optionsScroll = page.FindControl<ScrollViewer>("pageScroll")!;
+        var optionsPosition = page.FindControl<Expander>("advanced")!.TranslatePoint(default, optionsScroll);
+        Check(page.FindControl<Expander>("advanced")!.Bounds.Height > optionsScroll.Bounds.Height,
+            "navigation fixture exercises options content taller than the viewport");
+        Check(optionsPosition is { Y: >= -1 } point && point.Y + 36 <= optionsScroll.Bounds.Height,
+            "check options navigation keeps its header visible even when the expanded content is taller than the viewport");
+        _main.Height = normalHeight;
         page.FindControl<Expander>("advanced")!.IsExpanded = true;
         await CaptureAsync("proxy-check-advanced", "Proxy check · advanced", _main);
         page.FindControl<Expander>("advanced")!.IsExpanded = false;
@@ -337,6 +403,14 @@ public class ReviewApp : v2rayN.Desktop.App
         {
             await CheckProxyPageAsync();
             File.WriteAllText(Path.Combine(Program.Output, "manifest.json"), JsonSerializer.Serialize(new { fixtureData = true, Program.Language, Program.Theme, screenshots = _shots, checks = _checks }, new JsonSerializerOptions { WriteIndented = true }));
+            return;
+        }
+        if (Program.PrimerOnly)
+        {
+            await CheckPrimerWorkspaceAsync();
+            await CheckProxyPageAsync();
+            File.WriteAllText(Path.Combine(Program.Output, "manifest.json"), JsonSerializer.Serialize(new { fixtureData = true, renderer = Program.Headless ? "Avalonia.Headless + Skia" : "native", Program.Language, Program.Theme, Program.Width, Program.FontSize, screenshots = _shots, checks = _checks }, new JsonSerializerOptions { WriteIndented = true }));
+            Console.WriteLine($"Reviewed {_shots.Count} Primer screens; {_checks.Count} scenarios passed.");
             return;
         }
         await CheckExitPresentationAsync();
@@ -701,6 +775,9 @@ public class ReviewApp : v2rayN.Desktop.App
         _vm.ClashProxiesViewModel.LoadState = "ready";
         await Task.Delay(100);
         await CaptureAsync("exit-policy", "自动策略与候选节点", _main);
+        var expectedActive = _vm.ProfilesViewModel.ProfileItems.Single(node => node.ConfigType == EConfigType.VLESS).Remarks;
+        Check(_vm.ClashProxiesViewModel.ProxyDetails.Single(node => node.Name == expectedActive).IsActive,
+            "rendering a read-only proxy status never writes the display label back into active state");
         Check(!view.FindControl<Button>("btnActivateProxy")!.IsVisible, "automatic strategy does not offer manual activation");
         var manual = new ClashProxyModel { Name = "手动选择", Type = "Selector", Now = "日本 · 东京" };
         _vm.ClashProxiesViewModel.ProxyGroups.Add(manual);
@@ -713,6 +790,123 @@ public class ReviewApp : v2rayN.Desktop.App
         _vm.ClashProxiesViewModel.LoadState = "unavailable";
         _vm.ClashProxiesViewModel.ProxyGroups.Clear(); _vm.ClashProxiesViewModel.ProxyDetails.Clear();
         await _main.NavigateAsync("Servers");
+    }
+
+    private async Task CheckPrimerWorkspaceAsync()
+    {
+        await _main.NavigateAsync("Servers");
+        var workspace = _main.GetLogicalDescendants().OfType<ServerWorkspaceView>().Single();
+        var profiles = _main.GetLogicalDescendants().OfType<ProfilesView>().Single();
+        var status = _main.GetLogicalDescendants().OfType<StatusBarView>().Single();
+        var table = profiles.FindControl<DataGrid>("lstProfiles")!;
+        var activeId = AppManager.Instance.Config.IndexId;
+        var active = _vm.ProfilesViewModel.ProfileItems.Single(node => node.IndexId == activeId);
+        var selected = _vm.ProfilesViewModel.ProfileItems.First(node => node.IndexId != activeId);
+        var cache = (System.Collections.Concurrent.ConcurrentDictionary<string, ExitInfoItem>)typeof(ExitInfoService).GetField("_cache", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(ExitInfoService.Instance)!;
+        foreach (var node in _vm.ProfilesViewModel.ProfileItems)
+        {
+            node.SpeedVal = node == active ? "18.6" : "8.4";
+            node.ExitInfo = new ExitInfoItem { IndexId = node.IndexId, Ip = node == active ? "203.0.113.21" : "198.51.100.7", State = "success", CountryCode = node == active ? "SG" : "JP", CheckedAt = DateTime.UtcNow.AddMinutes(-3), Source = "https://lookup.example.net" };
+            cache[node.IndexId] = node.ExitInfo;
+        }
+        _vm.BlReloadEnabled = true;
+        _vm.StatusBarViewModel.RunningServerDisplay = "[SSH] " + active.Remarks;
+        table.SelectedItem = selected;
+        await Task.Delay(1150);
+        await CaptureAsync("primer-main", "Primer · isolated fixture · no core launched", _main);
+        var appearanceButton = _main.FindControl<Button>("btnAppearance")!;
+        appearanceButton.Flyout!.ShowAt(appearanceButton);
+        await Task.Delay(100);
+        Check(appearanceButton.Flyout.IsOpen && ((MenuFlyout)appearanceButton.Flyout).Items.OfType<MenuItem>().Count() == 4,
+            "the title bar exposes light, dark, system theme and appearance settings");
+        appearanceButton.Flyout.Hide();
+        var about = (Window)typeof(MainWindow).GetMethod("CreateAboutWindow", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(_main, null)!;
+        about.FontSize = 24;
+        about.Width = 420;
+        about.Height = 240;
+        var aboutClosed = about.ShowDialog(_main);
+        await Task.Delay(150);
+        var aboutClose = about.GetLogicalDescendants().OfType<Button>().Single(control => control.Name == "btnAboutClose");
+        var closePosition = aboutClose.TranslatePoint(default, about)!.Value;
+        Check(aboutClose.IsEffectivelyVisible && closePosition.Y >= 0 && closePosition.Y + aboutClose.Bounds.Height <= about.ClientSize.Height + 1,
+            "the about dialog keeps Close visible at minimum height with enlarged text");
+        Check(about.GetLogicalDescendants().OfType<ScrollViewer>().Any(view => view.Extent.Height > view.Viewport.Height),
+            "long about information scrolls independently of the fixed Close action");
+        await CaptureAsync("primer-about-large-text", "About · 24px text · minimum height", about);
+        aboutClose.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        await aboutClosed;
+        var expectedSidebar = Program.Width <= 900 ? 64 : 196 + Math.Max(0, Program.FontSize - 14) * 6;
+        Check(_main.FindControl<Grid>("shellGrid")!.ColumnDefinitions[0].Width.Value == expectedSidebar,
+            "Primer navigation uses the documented desktop and compact widths");
+        Check(!CoreManager.Instance.IsCoreRunning && status.FindControl<TextBlock>("txtCoreName")!.Text!.Contains(WorkspaceText.T("未运行", "Stopped")),
+            "configured profiles never masquerade as a running core in the summary");
+        Check(table.SelectedItem == selected && active.IsActive && AppManager.Instance.Config.IndexId == activeId,
+            "selecting another row leaves the active profile and runtime configuration unchanged");
+        Check(active.SpeedVal == "18.6" && selected.SpeedVal == "8.4",
+            "formatting read-only speed cells never writes a converted value back into the model");
+        Check(table.GetVisualDescendants().OfType<DataGridColumnHeader>()
+            .SelectMany(header => header.GetVisualDescendants().OfType<TextBlock>()).Any(text => text.Text == WorkspaceText.Node && text.IsEffectivelyVisible && text.Bounds.Width > 0),
+            "the server-name header is rendered after adaptive column reflow");
+        File.WriteAllText(Path.Combine(Program.Output, "header-layout.json"), JsonSerializer.Serialize(table.GetVisualDescendants().OfType<DataGridColumnHeader>()
+            .SelectMany(header => header.GetVisualDescendants().OfType<TextBlock>().Select(text => new { header = header.Content?.ToString(), text.Text, foreground = text.Foreground?.ToString(), text.Opacity, text.Bounds, position = text.TranslatePoint(default, _main), text.IsEffectivelyVisible })), new JsonSerializerOptions { WriteIndented = true }));
+        Check(status.FindControl<TextBlock>("txtProxyMode")!.Text!.Contains(WorkspaceText.T("系统代理", "System proxy"))
+            && !status.FindControl<TextBlock>("txtProxyMode")!.Text!.Contains("Forced"),
+            "runtime metadata uses localized proxy modes rather than enum identifiers");
+        Check(!table.Columns.Single(column => column.Tag?.ToString() == "ExitLocation").IsVisible
+            || profiles.GetVisualDescendants().OfType<TextBlock>().Any(text => text.IsEffectivelyVisible && text.Text?.StartsWith(WorkspaceText.T("缓存 · ", "Cached · ")) == true),
+            "visible node exit information carries a cache timestamp");
+        foreach (var control in new Control[] { status.FindControl<Border>("summaryCard")!, profiles.FindControl<WrapPanel>("filterToolbar")!, profiles.FindControl<WrapPanel>("nodeToolbar")!, _main.FindControl<Button>("btnDiagnosticLogs")! })
+        {
+            var origin = control.TranslatePoint(default, _main)!.Value;
+            Check(origin.X >= -1 && origin.X + control.Bounds.Width <= _main.ClientSize.Width + 1 && origin.Y + control.Bounds.Height <= _main.ClientSize.Height + 1,
+                $"Primer {control.Name} remains inside the {Program.Width}px window");
+        }
+        status.SetReloading(true);
+        Check(!status.FindControl<StackPanel>("connectionFields")!.IsEnabled
+            && status.FindControl<TextBlock>("txtCoreState")!.Text == WorkspaceText.T("正在应用…", "Applying…"),
+            "application progress disables duplicate connection actions and has explicit feedback");
+        await CaptureAsync("primer-applying", "Applying · UI fixture only", _main);
+        status.SetReloading(false);
+        workspace.OpenDetails();
+        await CaptureAsync("primer-details", "Selected profile details · isolated fixture", _main);
+        Check(workspace.IsDetailsOpen && AppManager.Instance.Config.IndexId == activeId
+            && ReferenceEquals(workspace.FindControl<Button>("btnApplySelected")!.Command, _vm.ProfilesViewModel.SetDefaultServerCmd),
+            "details preserve an explicit apply command without applying selection");
+        var inspector = workspace.FindControl<Border>("inspector")!;
+        var apply = workspace.FindControl<Button>("btnApplySelected")!;
+        var applyOrigin = apply.TranslatePoint(default, inspector)!.Value;
+        Check(applyOrigin.X >= 0 && applyOrigin.X + apply.Bounds.Width <= inspector.Bounds.Width + 1
+            && applyOrigin.Y + apply.Bounds.Height <= inspector.Bounds.Height + 1,
+            "the selected-profile apply action fits the responsive detail panel");
+        workspace.CloseDetails();
+        table.SelectedItem = active;
+        workspace.OpenDetails();
+        await Task.Delay(150);
+        Check(workspace.FindControl<StackPanel>("sshDetails")!.IsVisible
+            && workspace.FindControl<SelectableTextBlock>("txtHostKey")!.Text == WorkspaceText.T("未配置有效主机密钥", "No valid host key configured"),
+            "missing SSH host keys are shown as unconfigured, never pre-trusted");
+        workspace.CloseDetails();
+        _vm.StatusBarViewModel.ConnectionError = "Fixture: application failed; previous configuration retained";
+        await Task.Delay(100);
+        var button = status.FindControl<Button>("btnConnectionControls")!;
+        button.Flyout!.ShowAt(button);
+        await CaptureAsync("primer-connection-error", "Connection controls · failure fixture", _main);
+        Check(status.FindControl<TextBlock>("txtConnectionError")!.IsEffectivelyVisible
+            && status.FindControl<StackPanel>("connectionFields")!.IsEnabled
+            && status.FindControl<TextBlock>("txtRecoveryState")!.Text == WorkspaceText.T("配置应用失败", "Configuration failed"),
+            "connection failures retain a visible explanation and allow retry");
+        status.CloseConnectionControls();
+        _vm.StatusBarViewModel.ConnectionError = null;
+        _main.FindControl<Button>("btnDiagnosticLogs")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        await CaptureAsync("primer-logs", "Diagnostic log drawer · isolated fixture", _main);
+        Check(_main.FindControl<Border>("logDrawer")!.IsEffectivelyVisible && !workspace.IsDetailsOpen,
+            "diagnostics use the existing log drawer without covering node details");
+        _main.FindControl<Button>("btnToggleLogs")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        var nodes = _vm.ProfilesViewModel.ProfileItems.ToArray();
+        _vm.ProfilesViewModel.ProfileItems.Clear(); profiles.RefreshServersBiz();
+        await CaptureAsync("primer-empty", "No saved profiles · isolated fixture", _main);
+        Check(profiles.FindControl<StackPanel>("emptyState")!.IsEffectivelyVisible, "Primer empty state keeps import and add controls reachable");
+        _vm.ProfilesViewModel.ProfileItems.ReplaceRange(nodes); profiles.RefreshServersBiz();
     }
 
     private async Task CheckPrimaryWorkflowAsync()
@@ -979,7 +1173,7 @@ public class ReviewApp : v2rayN.Desktop.App
         Check(table.SelectedItems.Count == 0, "clear selection exits the batch toolbar");
         table.SelectedItem = _vm.ProfilesViewModel.ProfileItems[0];
         Check(!servers.IsDetailsOpen && !_main.FindControl<Border>("logDrawer")!.IsVisible, "home starts with detail and log panels closed");
-        Check(table.Bounds.Height >= _main.ClientSize.Height * .65 || Program.Width < 1000 || Program.FontSize > 14, "home table occupies at least 65% height with default layout");
+        Check(table.Bounds.Height >= _main.ClientSize.Height * .5 || Program.Width < 1000 || Program.FontSize > 14, "home table retains at least half the window height alongside the runtime summary and toolbars");
         Check(ReferenceEquals(profiles.FindControl<Button>("menuMixedTestServer")!.Command, _vm.ProfilesViewModel.RealPingServerCmd), "toolbar testing uses selected servers, not the full group");
         Check(profiles.FindControl<Button>("btnAddServers")!.Flyout is MenuFlyout { Items.Count: > 10 }, "add-server menu preserves protocol and advanced commands");
         var addFlyout = (MenuFlyout)profiles.FindControl<Button>("btnAddServers")!.Flyout!;
@@ -1011,7 +1205,7 @@ public class ReviewApp : v2rayN.Desktop.App
         var savedSpeed = metricProfile.SpeedVal;
         metricProfile.DelayVal = "12.5"; metricProfile.SpeedVal = "8.4";
         await Task.Delay(100);
-        Check(servers.FindControl<TextBlock>("txtLatency")!.Text == "12.5 ms" && servers.FindControl<TextBlock>("txtSpeed")!.Text == "8.4 MB/s", "detail metrics update with explicit measurement units");
+        Check(servers.FindControl<TextBlock>("txtLatency")!.Text == "12.5 ms" && servers.FindControl<TextBlock>("txtSpeed")!.Text == "8.4 MB/s", $"detail metrics update with explicit measurement units (latency={servers.FindControl<TextBlock>("txtLatency")!.Text}, speed={servers.FindControl<TextBlock>("txtSpeed")!.Text}, sampled={metricProfile.IndexId}, selected={_vm.ProfilesViewModel.SelectedProfile?.IndexId}, current={_vm.ProfilesViewModel.SelectedProfile?.DelayVal}/{_vm.ProfilesViewModel.SelectedProfile?.SpeedVal})");
         metricProfile.DelayVal = metricProfile.SpeedVal = "[Fixture] timed out";
         await Task.Delay(100);
         Check(servers.FindControl<TextBlock>("txtLatency")!.Text == "[Fixture] timed out" && servers.FindControl<TextBlock>("txtSpeed")!.Text == "[Fixture] timed out", "detail metric failures remain errors without measurement units");

@@ -1,5 +1,4 @@
 using ServiceLib.ViewModels;
-using ReactiveUI.Builder;
 using ReactiveUI.Primitives.Signals;
 
 namespace ServiceLib.Tests.CoreConfig.Singbox;
@@ -7,10 +6,6 @@ namespace ServiceLib.Tests.CoreConfig.Singbox;
 [NotInParallel]
 public class SshTests
 {
-    static SshTests()
-    {
-        ReactiveUI.Builder.RxAppBuilder.CreateReactiveUIBuilder().WithCoreServices().BuildApp();
-    }
     public const string TestKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 
     public static ProfileItem Node()

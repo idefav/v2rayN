@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "views": {
+    "MainWindow.axaml": "index.html",
+    "StatusBarView.axaml": "index.html",
+    "ProfilesView.axaml": "index.html",
+    "ServerWorkspaceView.axaml": "index.html",
+    "ProxyCheckView.axaml": "index.html",
+    "SubSettingWindow.axaml": "page-designs.html#subscriptions",
+    "SubEditWindow.axaml": "page-designs.html#subscription-edit",
+    "ClashProxiesView.axaml": "page-designs.html#policies",
+    "ClashConnectionsView.axaml": "page-designs.html#connections",
+    "RoutingSettingWindow.axaml": "page-designs.html#routes",
+    "RoutingRuleSettingWindow.axaml": "page-designs.html#ruleset-edit",
+    "RoutingRuleDetailsWindow.axaml": "page-designs.html#rule-edit",
+    "DNSSettingWindow.axaml": "page-designs.html#dns",
+    "FullConfigTemplateWindow.axaml": "page-designs.html#template",
+    "AddServerWindow.axaml": "page-designs.html#node-editor/VLESS",
+    "AddSshServerWindow.axaml": "page-designs.html#node-editor/SSH",
+    "AddServer2Window.axaml": "page-designs.html#custom-config",
+    "AddGroupServerWindow.axaml": "page-designs.html#policy-edit",
+    "ProfilesSelectWindow.axaml": "page-designs.html#chain-edit",
+    "SshKeySetupWindow.axaml": "page-designs.html#ssh-deploy",
+    "OptionSettingWindow.axaml": "page-designs.html#settings-core",
+    "ThemeSettingView.axaml": "page-designs.html#settings-app",
+    "GlobalHotkeySettingWindow.axaml": "page-designs.html#settings-app",
+    "BackupAndRestoreView.axaml": "page-designs.html#backup",
+    "CheckUpdateView.axaml": "page-designs.html#updates",
+    "MsgView.axaml": "page-designs.html#logs",
+    "MessageBoxDialog.axaml": "page-designs.html#gallery",
+    "QrcodeView.axaml": "page-designs.html#gallery",
+    "SudoPasswordInputView.axaml": "page-designs.html#gallery",
+    "JsonEditor.axaml": "page-designs.html#template"
+  },
+  "dynamicPages": {
+    "CreateAboutWindow": "page-designs.html#about",
+    "BuildApplicationTools": "page-designs.html#application-tools"
+  }
+}

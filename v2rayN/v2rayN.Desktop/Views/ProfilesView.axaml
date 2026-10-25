@@ -21,18 +21,23 @@
         <conv:ActiveStatusConverter x:Key="ActiveStatusConverter" />
         <conv:UnknownTextConverter x:Key="UnknownTextConverter" />
     </UserControl.Resources>
+    <Border x:Name="nodeSurface" Background="{DynamicResource WorkspaceSurface}" BorderBrush="{DynamicResource WorkspaceBorder}" BorderThickness="1" CornerRadius="6">
     <Grid>
         <DockPanel>
-            <WrapPanel x:Name="nodeToolbar" DockPanel.Dock="Top" Margin="0,0,0,12">
+            <Border DockPanel.Dock="Top" Background="{DynamicResource WorkspaceSidebar}" BorderBrush="{DynamicResource WorkspaceBorder}" BorderThickness="0,0,0,1" CornerRadius="6,6,0,0" Padding="12,10,12,6">
+            <StackPanel Spacing="6">
+            <WrapPanel x:Name="filterToolbar">
                 <TextBox x:Name="txtServerFilter" Width="220" Margin="0,0,8,4" VerticalContentAlignment="Center"
                     PlaceholderText="{x:Static ws:WorkspaceText.Search}" />
                 <ComboBox x:Name="cmbGroupFilter" Width="160" Margin="0,0,8,4"
                     ItemsSource="{Binding SubItems}" DisplayMemberBinding="{Binding Remarks}" ToolTip.Tip="{x:Static resx:ResUI.LvSubscription}" />
                 <ComboBox x:Name="cmbProtocolFilter" Width="120" Margin="0,0,8,4" />
+            </WrapPanel>
+            <WrapPanel x:Name="nodeToolbar">
                 <TextBlock x:Name="txtSelectedCount" VerticalAlignment="Center" Margin="0,0,12,4" IsVisible="False" />
                 <StackPanel Orientation="Horizontal" Margin="0,0,8,4">
-                <Button x:Name="menuMixedTestServer" Content="{x:Static ws:WorkspaceText.TestSelected}" CornerRadius="8,0,0,8" />
-                <Button x:Name="btnTestScope" CornerRadius="0,8,8,0" BorderThickness="0,1,1,1" Width="36" Padding="8" ToolTip.Tip="{x:Static ws:WorkspaceText.TestGroup}">
+                <Button x:Name="menuMixedTestServer" Content="{x:Static ws:WorkspaceText.TestSelected}" CornerRadius="6,0,0,6" />
+                <Button x:Name="btnTestScope" CornerRadius="0,6,6,0" BorderThickness="0,1,1,1" Width="36" Padding="8" ToolTip.Tip="{x:Static ws:WorkspaceText.TestGroup}">
                     <Button.Content><Path Width="12" Height="8" Stretch="Uniform" Data="M2,4 L8,10 L14,4" Stroke="{DynamicResource WorkspaceText}" StrokeThickness="1.5" /></Button.Content>
                     <Button.Flyout><MenuFlyout>
                         <MenuItem x:Name="btnFastRealPing" Header="{x:Static ws:WorkspaceText.TestGroup}" />
@@ -40,7 +45,7 @@
                 </Button>
                 </StackPanel>
                 <Button x:Name="btnImportServers" Content="{x:Static ws:WorkspaceText.Import}" Margin="0,0,8,4" />
-                <Button x:Name="btnAddServers" Content="{x:Static ws:WorkspaceText.AddServer}" Classes="primary" Margin="0,0,8,4" />
+                <Button x:Name="btnAddServers" Content="{x:Static ws:WorkspaceText.AddServer}" Margin="0,0,8,4" />
                 <Button x:Name="btnBatchRemove" Content="{x:Static resx:ResUI.menuRemoveServer}" IsVisible="False" Margin="0,0,8,4" />
                 <Button x:Name="btnBatchExport" Content="{x:Static resx:ResUI.menuExport2ShareUrl}" IsVisible="False" Margin="0,0,8,4" />
                 <Button x:Name="btnClearSelection" Content="{x:Static ws:WorkspaceText.ClearSelection}" IsVisible="False" Margin="0,0,8,4" />
@@ -52,10 +57,14 @@
                     </MenuFlyout></Button.Flyout>
                 </Button>
             </WrapPanel>
-            <WrapPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
-                <TextBlock x:Name="txtProfileCount" Classes="muted" Margin="8,8,16,8" VerticalAlignment="Center" />
+            </StackPanel>
+            </Border>
+            <Border DockPanel.Dock="Bottom" Background="{DynamicResource WorkspaceSidebar}" BorderBrush="{DynamicResource WorkspaceBorder}" BorderThickness="0,1,0,0" CornerRadius="0,0,6,6" Padding="12,4">
+            <WrapPanel>
+                <TextBlock x:Name="txtProfileCount" Classes="muted caption" Margin="0,6,16,6" VerticalAlignment="Center" />
                 <Button x:Name="btnAllServers" Content="{x:Static ws:WorkspaceText.AllServers}" />
             </WrapPanel>
+            </Border>
             <DataGrid
                 x:Name="lstProfiles"
                 AutoGenerateColumns="False"
@@ -172,17 +181,14 @@
                         Header="{x:Static ws:WorkspaceText.Protocol}"
                         Tag="ConfigType" />
 
-                    <DataGridTemplateColumn Width="260" SortMemberPath="Remarks" Tag="Remarks">
-                        <DataGridTemplateColumn.Header>
-                            <TextBlock Text="{x:Static ws:WorkspaceText.Node}" />
-                        </DataGridTemplateColumn.Header>
+                    <DataGridTemplateColumn Width="260" SortMemberPath="Remarks" Tag="Remarks" Header="{x:Static ws:WorkspaceText.Node}">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
                                 <DockPanel Margin="{StaticResource MarginLr8}" VerticalAlignment="Center">
                                         <Label x:Name="activeBadge" DockPanel.Dock="Right" VerticalAlignment="Center"
                                         Margin="{StaticResource MarginLr4}"
-                                        Classes="Blue nodeStatus"
-                                        Content="{x:Static resx:ResUI.TipActiveServer}"
+                                        Classes="nodeStatus activeStatus"
+                                        Content="{x:Static ws:WorkspaceText.ActiveBadge}" FontSize="12" Padding="6,1" MinWidth="0" ToolTip.Tip="{x:Static ws:WorkspaceText.ActiveConfiguration}"
                                         Theme="{DynamicResource TagLabel}">
                                             <Label.IsVisible><MultiBinding Converter="{x:Static ac:BoolConverters.And}">
                                                 <Binding Path="IsActive" /><Binding ElementName="Root" Path="InlineActiveBadge" />
@@ -222,10 +228,7 @@
                         Binding="{Binding SubRemarks}"
                         Header="{x:Static resx:ResUI.LvSubscription}"
                         Tag="SubRemarks" />
-                    <DataGridTemplateColumn SortMemberPath="Delay" Tag="DelayVal">
-                        <DataGridTemplateColumn.Header>
-                            <TextBlock Text="{x:Static ws:WorkspaceText.Latency}" />
-                        </DataGridTemplateColumn.Header>
+                    <DataGridTemplateColumn SortMemberPath="Delay" Tag="DelayVal" Header="{x:Static ws:WorkspaceText.Latency}">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
                                 <TextBlock
@@ -250,22 +253,19 @@
                         IsVisible="False">
                         <DataGridTemplateColumn.CellTemplate><DataTemplate>
                             <Grid Margin="8,0" VerticalAlignment="Center">
-                                <Label x:Name="activeStatusBadge" Content="{x:Static resx:ResUI.TipActiveServer}" IsVisible="{Binding IsActive}"
-                                    Classes="Blue nodeStatus" Theme="{DynamicResource TagLabel}" HorizontalAlignment="Left" VerticalAlignment="Center" />
+                                <Label x:Name="activeStatusBadge" Content="{x:Static ws:WorkspaceText.ActiveConfiguration}" IsVisible="{Binding IsActive}"
+                                    Classes="nodeStatus activeStatus" Theme="{DynamicResource TagLabel}" HorizontalAlignment="Left" VerticalAlignment="Center" />
                                 <Label Content="{x:Static ws:WorkspaceText.Inactive}" IsVisible="{Binding !IsActive}" Classes="nodeStatus" Theme="{DynamicResource TagLabel}" HorizontalAlignment="Left" VerticalAlignment="Center" />
                             </Grid>
                         </DataTemplate></DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
                     <DataGridTextColumn
                         Width="100"
-                        Binding="{Binding SpeedVal}"
+                        Binding="{Binding SpeedVal, Mode=OneWay, Converter={StaticResource UnknownTextConverter}}"
                         Header="{x:Static resx:ResUI.LvTestSpeed}"
                         Tag="SpeedVal" />
 
-                    <DataGridTemplateColumn SortMemberPath="IpInfo" Tag="IpInfo">
-                        <DataGridTemplateColumn.Header>
-                            <TextBlock Text="{x:Static resx:ResUI.LvTestIpInfo}" />
-                        </DataGridTemplateColumn.Header>
+                    <DataGridTemplateColumn SortMemberPath="IpInfo" Tag="IpInfo" Header="{x:Static resx:ResUI.LvTestIpInfo}">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
                                 <SelectableTextBlock
@@ -310,4 +310,5 @@
             </WrapPanel>
         </StackPanel>
     </Grid>
+    </Border>
 </UserControl>

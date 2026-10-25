@@ -19,10 +19,10 @@ public class DelayColorConverter : IValueConverter, IMultiValueConverter
         var dark = theme == ThemeVariant.Dark;
         var color = delay switch
         {
-            < 0 => dark ? "#FF8B8B" : "#C83232",
-            0 => dark ? "#A5B2C6" : "#667386",
-            <= 500 => dark ? "#8EDFB2" : "#137C45",
-            _ => dark ? "#FFD28D" : "#9A5B08"
+            < 0 => dark ? "#FF7B72" : "#CF222E",
+            0 => dark ? "#A0A9B4" : "#656D76",
+            <= 500 => dark ? "#7EE787" : "#1A7F37",
+            _ => dark ? "#D29922" : "#9A6700"
         };
         return new SolidColorBrush(Avalonia.Media.Color.Parse(color));
     }

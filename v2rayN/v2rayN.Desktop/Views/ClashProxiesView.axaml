@@ -56,7 +56,7 @@
       <MenuItem x:Name="menuProxiesSelectActivity" Header="{x:Static resx:ResUI.menuProxiesSelectActivity}" InputGesture="Enter"/>
      </ContextMenu></DataGrid.ContextMenu>
      <DataGrid.Columns>
-      <DataGridTextColumn Binding="{Binding IsActive, Converter={StaticResource ActiveStatusConverter}}" Width="80" />
+      <DataGridTextColumn Binding="{Binding IsActive, Mode=OneWay, Converter={StaticResource ActiveStatusConverter}}" Width="80" />
       <DataGridTextColumn Header="{x:Static resx:ResUI.LvRemarks}" Binding="{Binding Name}" Width="2*" MinWidth="140"/>
       <DataGridTextColumn Header="{x:Static resx:ResUI.LvServiceType}" Binding="{Binding Type}" Width="*" MinWidth="80"/>
       <DataGridTextColumn Header="{x:Static resx:ResUI.LvTestDelay}" Binding="{Binding DelayName, Mode=OneWay, Converter={StaticResource UnknownTextConverter}, ConverterParameter=test}" Width="*" MinWidth="100"/>

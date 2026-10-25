@@ -31,6 +31,16 @@ public static class WorkspaceText
     public static string TableSettings => T("表格设置", "Table settings");
     public static string Actions => T("操作", "Actions");
     public static string Node => T("节点", "Server");
+    public static string ActiveConfiguration => T("● 活动配置", "● Active profile");
+    public static string ActiveBadge => T("● 活动", "● Active");
+    public static string SelectedNode => T("当前选中", "Currently selected");
+    public static string SelectionHint => T("选择只用于查看详情，使用“设为活动服务器”应用节点。", "Selection only opens details. Use Set as active server to apply it.");
+    public static string CachedExit => T("上次检测（缓存）", "Last check (cached)");
+    public static string CachedExitHint => T("缓存信息不代表当前流量出口；请使用代理检查验证。", "Cached information does not prove the current traffic exit. Use Proxy checks to verify it.");
+    public static string CheckPath => T("检查路径", "Check path");
+    public static string Connectivity => T("通信结果", "Connectivity");
+    public static string ObservedExit => T("实际出口 / 证据", "Observed exit / evidence");
+    public static string ExpectedComparison => T("预期比较", "Expectation");
     public static string Protocol => T("协议", "Protocol");
     public static string Inactive => T("未使用", "Inactive");
     public static string ServerGroups => T("服务器分组", "Server groups");

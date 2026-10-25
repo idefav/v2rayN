@@ -301,7 +301,7 @@ public partial class ProfilesView : ReactiveUserControl<ProfilesViewModel>
         foreach (var column in lstProfiles.Columns.Where(column => column.Tag != null))
             column.MinWidth = column.Tag?.ToString() == "Actions" ? Math.Max(128, TablePresentation.RowActionWidth(lstProfiles, WorkspaceText.T("详情", "Details"), WorkspaceText.Edit))
                 : FontSize * (column.Tag?.ToString() switch
-                { "Remarks" => 16, "DelayVal" => 9, "SpeedVal" => 11, "ConfigType" or "Status" => 7, _ => 6 });
+                { "Remarks" => 14, "DelayVal" => 6, "SpeedVal" => 7, "ConfigType" => 6, "Status" => 9, _ => 6 });
     }
 
     private bool MatchProfile(object value)
@@ -640,14 +640,16 @@ public partial class ProfilesView : ReactiveUserControl<ProfilesViewModel>
             if (_config.UiItem.MainColumnItem.Count == 0)
             {
                 foreach (var column in lstProfiles.Columns)
-                    column.IsVisible = column.Tag == null || column.Tag.ToString() is "Remarks" or "ConfigType" or "DelayVal" or "Status" or "Actions" or "ExitLocation";
+                    column.IsVisible = column.Tag == null || column.Tag.ToString() is "Remarks" or "ConfigType" or "SubRemarks" or "DelayVal" or "SpeedVal" or "Status" or "Actions" or "ExitLocation";
                 var nameColumn = lstProfiles.Columns.First(c => c.Tag?.ToString() == "Remarks");
                 nameColumn.DisplayIndex = 1;
                 nameColumn.Width = new DataGridLength(1, DataGridLengthUnitType.Star);
                 lstProfiles.Columns.First(c => c.Tag == null).DisplayIndex = 0;
-                lstProfiles.Columns.First(c => c.Tag?.ToString() == "DelayVal").Width = new DataGridLength(140);
-                lstProfiles.Columns.First(c => c.Tag?.ToString() == "ConfigType").Width = new DataGridLength(140);
-                lstProfiles.Columns.First(c => c.Tag?.ToString() == "Status").Width = new DataGridLength(140);
+                var order = new[] { "Remarks", "ConfigType", "SubRemarks", "DelayVal", "SpeedVal", "ExitLocation", "Status" };
+                for (var index = 0; index < order.Length; index++)
+                    lstProfiles.Columns.First(c => c.Tag?.ToString() == order[index]).DisplayIndex = index + 1;
+                foreach (var (tag, width) in new[] { ("ConfigType", 84), ("SubRemarks", 112), ("DelayVal", 90), ("SpeedVal", 100), ("ExitLocation", 172), ("Status", 134) })
+                    lstProfiles.Columns.First(c => c.Tag?.ToString() == tag).Width = new DataGridLength(width);
             }
             var lvColumnItem = _config.UiItem.MainColumnItem.OrderBy(t => t.Index).ToList();
             var displayIndex = 1;
@@ -682,7 +684,7 @@ public partial class ProfilesView : ReactiveUserControl<ProfilesViewModel>
                     }
                 }
             }
-            if (!lvColumnItem.Any(c => c.Name == "ExitLocation"))
+            if (lvColumnItem.Count > 0 && !lvColumnItem.Any(c => c.Name == "ExitLocation"))
                 lstProfiles.Columns.First(c => c.Tag?.ToString() == "ExitLocation").DisplayIndex = lstProfiles.Columns.First(c => c.Tag?.ToString() == "Remarks").DisplayIndex + 1;
         }
         catch (Exception ex)

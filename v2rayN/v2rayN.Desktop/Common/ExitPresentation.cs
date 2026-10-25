@@ -36,7 +36,7 @@ public static class ExitPresentation
     {
         if (item == null) return State(null);
         var family = System.Net.IPAddress.TryParse(item.Ip, out var ip) ? ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork ? "IPv4" : "IPv6" : "—";
-        return $"{WorkspaceText.T("最近一次检测到的出口", "Last observed exit")}\nIP: {item.Ip ?? "—"} · {family}\n{WorkspaceText.T("地区：", "Location: ")}{Location(item)}\n{WorkspaceText.T("省/地区：", "Region: ")}{item.Region ?? "—"}\n{WorkspaceText.T("检测时间：", "Checked: ")}{(item.CheckedAt == default ? "—" : item.CheckedAt.ToLocalTime().ToString("g"))}\n{State(item)}{(item.CheckedAt != default && (item.State != "success" || DateTime.UtcNow - item.CheckedAt > TimeSpan.FromHours(24)) ? WorkspaceText.T(" · 旧结果", " · previous result") : "")}\n{item.Error}\n{WorkspaceText.T("来源：", "Source: ")}{item.Source ?? "—"}\n{WorkspaceText.T("地区由查询服务提供；多出口节点可能变化。", "Location is supplied by the lookup service; multi-exit servers may vary.")}";
+        return $"{WorkspaceText.T("最近一次检测到的出口", "Last observed exit")}\nIP: {item.Ip ?? "—"} · {family}\n{WorkspaceText.T("地区：", "Location: ")}{Location(item)}\n{WorkspaceText.T("省/地区：", "Region: ")}{item.Region ?? "—"}\n{WorkspaceText.T("检测时间：", "Checked: ")}{(item.CheckedAt == default ? "—" : item.CheckedAt.ToLocalTime().ToString("g"))}\n{State(item)}{(item.CheckedAt != default && (item.State != "success" || DateTime.UtcNow - item.CheckedAt > TimeSpan.FromHours(24)) ? WorkspaceText.T(" · 旧结果", " · previous result") : "")}\n{item.Error}\n{WorkspaceText.T("来源：", "Source: ")}{item.Source ?? "—"}\n{WorkspaceText.CachedExitHint}";
     }
     public static Control Cell(ExitInfoItem? item)
     {
@@ -53,6 +53,8 @@ public static class ExitPresentation
         var label = new TextBlock { Text = Location(item), VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
         var text = new StackPanel { Spacing = 2 };
         text.Children.Add(label);
+        if (item?.Ip != null)
+            text.Children.Add(new TextBlock { Text = WorkspaceText.T("缓存 · ", "Cached · ") + (item.CheckedAt == default ? "—" : item.CheckedAt.ToLocalTime().ToString("HH:mm")), Classes = { "muted", "caption" } });
         Grid.SetColumn(text, 2); panel.Children.Add(text);
         if (item?.Ip != null && item.State != "success") text.Children.Add(new TextBlock { Text = State(item) + WorkspaceText.T(" · 旧结果", " · previous"), Classes = { "muted" }, TextTrimming = TextTrimming.CharacterEllipsis });
         ToolTip.SetTip(panel, Details(item));

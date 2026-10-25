@@ -1,4 +1,5 @@
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 using ServiceLib.Models.Dto;
 
 namespace v2rayN.Desktop.Views;
@@ -15,6 +16,25 @@ public partial class ProxyCheckView : UserControl
         retry.Content = T("重试失败项", "Retry failed"); saveBaseline.Content = T("保存为基线", "Save as baseline");
         loadBaseline.Content = T("选择基线", "Choose baseline"); export.Content = T("导出报告", "Export report");
         advanced.Header = T("高级选项", "Advanced options");
+        pageHint.Text = T("通信、出口与预期，分开判断", "Connectivity, egress and expectations — evaluated separately");
+        baselineMenu.Content = T("基线 ▾", "Baseline ▾"); settingsButton.Content = T("检查选项", "Check options");
+        environmentLabel.Text = T("当前运行环境", "RUNNING ENVIRONMENT");
+        environmentDetails.Header = T("查看环境详情", "Environment details");
+        routingLabel.Text = T("路由模式", "Routing"); ingressLabel.Text = T("本地入口", "Local ingress");
+        observerCardLabel.Text = T("精确出口探测", "Egress observer"); configureObserver.Content = T("配置服务", "Configure");
+        observerCardHint.Text = T("签名观测只证明本次被测流量的出口。系统 DNS 单独标注递归解析器。", "Signed evidence applies to the probed flow. System DNS identifies recursive resolvers separately.");
+        overviewLabel.Text = T("本轮概览", "Run overview");
+        reachableLabel.Text = T("通信正常", "Reachable"); reachableHint.Text = T("真实流量检查", "Traffic checks");
+        matchedLabel.Text = T("出口匹配", "Egress matched"); matchedHint.Text = T("符合配置的预期", "Matches configured expectation");
+        attentionLabel.Text = T("需关注", "Needs attention"); attentionHint.Text = T("失败或证据不足", "Failed or insufficient evidence");
+        uncoveredLabel.Text = T("未覆盖", "Not covered"); uncoveredHint.Text = T("不支持或已跳过", "Unsupported or skipped");
+        resultsLabel.Text = T("检查结果", "Check results"); resultSearch.PlaceholderText = T("搜索目标、协议或出口", "Search target, protocol or egress");
+        targetColumn.Text = T("协议 / 目标", "Protocol / target"); pathColumn.Text = T("检查路径", "Path");
+        communicationColumn.Text = T("通信", "Connectivity"); egressColumn.Text = T("实际出口", "Observed egress");
+        comparisonColumn.Text = T("预期比较", "Expectation"); elapsedColumn.Text = T("耗时", "Time");
+        emptyTitle.Text = T("暂无可显示的结果", "No results to display");
+        emptyHint.Text = T("开始检查以获取真实证据；已有结果时可调整筛选或清空搜索。", "Start a check to collect evidence, or adjust the filter and clear your search.");
+        observerRawJson.Header = T("原始连接配置 JSON", "Raw profile JSON");
         observerSection.Header = T("独立出口探测服务", "Independent egress observer");
         enableObserver.Content = T("启用受控探测（IPv4）", "Use controlled observer (IPv4)");
         importObserver.Content = T("导入连接配置", "Import profile");
@@ -34,7 +54,15 @@ public partial class ProxyCheckView : UserControl
         export.Click += async (_, _) => await ExportAsync();
         testObserver.Click += async (_, _) => await Model.TestObserverAsync();
         importObserver.Click += async (_, _) => await ImportObserverAsync();
+        configureObserver.Click += (_, _) => ShowOptions(observerSection);
+        settingsButton.Click += (_, _) => ShowOptions(advanced);
+        SizeChanged += (_, _) => { var compact = Bounds.Width < 960; Classes.Set("compact", compact); ProxyCheckGrid.SetCompact(this, compact); };
         AttachedToVisualTree += async (_, _) => await Model.RefreshEnvironmentAsync();
+    }
+    private static void ShowOptions(Expander section)
+    {
+        section.IsExpanded = true;
+        Dispatcher.UIThread.Post(() => section.BringIntoView(), DispatcherPriority.Loaded);
     }
     private async Task ImportObserverAsync()
     {

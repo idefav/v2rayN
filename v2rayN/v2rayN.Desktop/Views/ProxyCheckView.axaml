@@ -1,82 +1,117 @@
-<UserControl xmlns="https://github.com/avaloniaui"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:vm="clr-namespace:ServiceLib.ViewModels;assembly=ServiceLib"
-             xmlns:dto="clr-namespace:ServiceLib.Models.Dto;assembly=ServiceLib"
-             x:Class="v2rayN.Desktop.Views.ProxyCheckView" x:DataType="vm:ProxyCheckViewModel">
-    <UserControl.Styles>
-        <Style Selector="Border.check-result"><Setter Property="BorderBrush" Value="{DynamicResource WorkspaceBorder}" /></Style>
-        <Style Selector="Border.check-result.failed"><Setter Property="BorderBrush" Value="#D85A5A" /></Style>
-        <Style Selector="Border.check-result.passed"><Setter Property="BorderBrush" Value="#308864" /></Style>
-    </UserControl.Styles>
-    <ScrollViewer>
-        <StackPanel Spacing="16" Margin="0,0,12,24">
-            <Border Background="{DynamicResource WorkspaceSidebar}" CornerRadius="12" Padding="18">
-                <SelectableTextBlock Text="{Binding EnvironmentText}" TextWrapping="Wrap" />
-            </Border>
-            <WrapPanel Orientation="Horizontal">
-                <Button x:Name="start" Classes="primary" Margin="0,0,8,8" IsEnabled="{Binding CanStart}" />
-                <Button x:Name="cancel" Margin="0,0,8,8" IsEnabled="{Binding IsRunning}" />
-                <Button x:Name="retry" Margin="0,0,8,8" IsEnabled="{Binding CanRetry}" />
-                <Button x:Name="saveBaseline" Margin="0,0,8,8" IsEnabled="{Binding CanExport}" />
-                <Button x:Name="loadBaseline" Margin="0,0,8,8" IsEnabled="{Binding CanStart}" />
-                <Button x:Name="export" Margin="0,0,8,8" IsEnabled="{Binding CanExport}" />
-            </WrapPanel>
-            <ProgressBar IsIndeterminate="True" IsVisible="{Binding IsRunning}" Height="3" />
-            <TextBlock Text="{Binding Summary}" TextWrapping="Wrap" />
-            <TextBlock Text="{Binding BaselineText}" TextWrapping="Wrap" Opacity="0.7" />
-            <Expander x:Name="observerSection" HorizontalAlignment="Stretch">
-                <StackPanel Spacing="10" IsEnabled="{Binding CanStart}" Margin="0,12,0,0">
-                    <CheckBox x:Name="enableObserver" IsChecked="{Binding UseObserver}" />
-                    <WrapPanel>
-                        <Button x:Name="importObserver" Margin="0,0,8,8" />
-                        <Button x:Name="testObserver" Margin="0,0,8,8" />
-                    </WrapPanel>
-                    <TextBox Text="{Binding ObserverProfileJson}" AcceptsReturn="True" MinHeight="100" MaxHeight="220" PlaceholderText="profile.json" />
-                    <TextBlock x:Name="observerCredentialLabel" TextWrapping="Wrap" />
-                    <TextBox x:Name="observerCredentialInput" Text="{Binding ObserverCredential}" PasswordChar="●" />
-                    <SelectableTextBlock Text="{Binding ObserverStatus}" TextWrapping="Wrap" />
-                </StackPanel>
-            </Expander>
-            <Expander x:Name="advanced" HorizontalAlignment="Stretch">
-                <StackPanel Spacing="10" IsEnabled="{Binding CanStart}" Margin="0,12,0,0">
-                    <TextBlock x:Name="expectedLabel" TextWrapping="Wrap" />
-                    <TextBox Text="{Binding ExpectedEgress}" PlaceholderText="203.0.113.10, 2001:db8::/32" />
-                    <TextBlock x:Name="rulesLabel" TextWrapping="Wrap" />
-                    <TextBox Text="{Binding TargetRules}" AcceptsReturn="True" MinHeight="70" PlaceholderText="www.cloudflare.com=203.0.113.0/24" />
-                    <TextBlock Text="HTTPS / HTTP3" />
-                    <TextBox Text="{Binding HttpsUrl}" />
-                    <TextBlock Text="HTTP" />
-                    <TextBox Text="{Binding HttpUrl}" />
-                    <TextBlock Text="STUN (host:port)" />
-                    <TextBox Text="{Binding StunTarget}" />
-                    <TextBlock x:Name="dnsLabel" />
-                    <TextBox Text="{Binding DnsTarget}" />
-                    <TextBlock x:Name="localDnsLabel" TextWrapping="Wrap" />
-                    <TextBox Text="{Binding LocalDnsTarget}" PlaceholderText="127.0.0.1:1053" />
-                    <WrapPanel>
-                        <StackPanel Margin="0,0,16,0"><TextBlock x:Name="samplesLabel" /><TextBox Text="{Binding Samples}" Width="90" /></StackPanel>
-                        <StackPanel Margin="0,0,16,0"><TextBlock x:Name="timeoutLabel" /><TextBox Text="{Binding Timeout}" Width="90" /></StackPanel>
-                        <StackPanel><TextBlock x:Name="h3TimeoutLabel" /><TextBox Text="{Binding Http3Timeout}" Width="90" /></StackPanel>
-                    </WrapPanel>
-                </StackPanel>
-            </Expander>
-            <ItemsControl ItemsSource="{Binding Results}">
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate x:DataType="dto:ProxyDiagnosticResult">
-                        <Border Classes="check-result" Classes.failed="{Binding IsFailed}" Classes.passed="{Binding IsPassed}" BorderThickness="1" CornerRadius="10" Padding="14" Margin="0,0,0,8">
-                            <StackPanel Spacing="6">
-                                <TextBlock Text="{Binding Label}" FontWeight="SemiBold" TextWrapping="Wrap" />
-                                <TextBlock Text="{Binding StatusLabel}" />
-                                <SelectableTextBlock Text="{Binding ExitLabel}" TextWrapping="Wrap" />
-                                <Expander Header="{Binding Target}" HorizontalAlignment="Stretch">
-                                    <SelectableTextBlock Text="{Binding Detail}" TextWrapping="Wrap" Margin="0,8,0,0" />
-                                </Expander>
-                            </StackPanel>
-                        </Border>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
-            <TextBlock x:Name="limits" TextWrapping="Wrap" Opacity="0.7" />
-        </StackPanel>
-    </ScrollViewer>
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ xmlns:vm="clr-namespace:ServiceLib.ViewModels;assembly=ServiceLib" xmlns:dto="clr-namespace:ServiceLib.Models.Dto;assembly=ServiceLib" xmlns:views="clr-namespace:v2rayN.Desktop.Views" xmlns:ws="clr-namespace:v2rayN.Desktop.Common"
+ x:Class="v2rayN.Desktop.Views.ProxyCheckView" x:DataType="vm:ProxyCheckViewModel">
+ <UserControl.Styles>
+  <Style Selector="Border.check-panel"><Setter Property="Background" Value="{DynamicResource WorkspaceSurface}"/><Setter Property="BorderBrush" Value="{DynamicResource WorkspaceBorder}"/><Setter Property="BorderThickness" Value="1"/><Setter Property="CornerRadius" Value="6"/></Style>
+  <Style Selector="TextBlock.check-caption, SelectableTextBlock.check-caption"><Setter Property="Foreground" Value="{DynamicResource WorkspaceMuted}"/><Setter Property="FontSize" Value="12"/></Style>
+  <Style Selector="TextBlock.check-metric"><Setter Property="FontSize" Value="22"/><Setter Property="FontWeight" Value="SemiBold"/></Style>
+  <Style Selector="TextBlock.check-mono"><Setter Property="FontFamily" Value="Menlo,Consolas,monospace"/></Style>
+  <Style Selector="TextBlock.check-success"><Setter Property="Foreground" Value="{DynamicResource WorkspaceSuccess}"/></Style>
+  <Style Selector="TextBlock.check-warning"><Setter Property="Foreground" Value="{DynamicResource WorkspaceWarning}"/></Style>
+  <Style Selector="TextBlock.check-error"><Setter Property="Foreground" Value="{DynamicResource WorkspaceDanger}"/></Style>
+  <Style Selector="TextBlock.check-accent"><Setter Property="Foreground" Value="{DynamicResource WorkspaceAccent}"/></Style>
+  <Style Selector="Border.check-chip"><Setter Property="Background" Value="{DynamicResource WorkspaceSidebar}"/><Setter Property="CornerRadius" Value="6"/><Setter Property="Padding" Value="8,4"/></Style>
+  <Style Selector="Expander.probe-row"><Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="Padding" Value="0"/></Style>
+  <Style Selector="Expander.probe-row.failed"><Setter Property="Background" Value="{DynamicResource WorkspaceSidebar}"/></Style>
+  <Style Selector="UserControl.compact Grid.list-columns"><Setter Property="IsVisible" Value="False"/></Style>
+  <Style Selector="TextBlock.compact-label"><Setter Property="IsVisible" Value="{Binding (views:ProxyCheckGrid.Compact), RelativeSource={RelativeSource Self}}"/></Style>
+ </UserControl.Styles>
+ <ScrollViewer x:Name="pageScroll">
+  <StackPanel Spacing="16" Margin="0,0,12,24">
+   <WrapPanel>
+    <Border Classes="check-chip" Margin="0,0,12,8"><TextBlock Text="{Binding CheckStatus}" FontSize="12"/></Border>
+    <TextBlock Text="{Binding LastChecked}" Classes="check-caption" VerticalAlignment="Center" Margin="0,0,16,8"/>
+    <TextBlock x:Name="pageHint" Classes="check-caption" TextWrapping="Wrap" Margin="0,0,0,8"/>
+   </WrapPanel>
+   <WrapPanel>
+    <Button x:Name="start" Classes="primary" Margin="0,0,8,8" IsEnabled="{Binding CanStart}" IsVisible="{Binding !IsBusy}"/>
+    <Button x:Name="cancel" Classes="primary" Margin="0,0,8,8" IsEnabled="{Binding IsBusy}" IsVisible="{Binding IsBusy}"/>
+    <Button x:Name="retry" Margin="0,0,8,8" IsEnabled="{Binding CanRetry}"/>
+    <Button x:Name="export" Margin="0,0,8,8" IsEnabled="{Binding CanExport}"/>
+    <Button x:Name="baselineMenu" Margin="0,0,8,8"><Button.Flyout><Flyout><StackPanel Spacing="8" MaxWidth="340">
+     <TextBlock Text="{Binding BaselineText}" Classes="check-caption" TextWrapping="Wrap"/>
+     <Button x:Name="saveBaseline" HorizontalAlignment="Stretch" IsEnabled="{Binding CanExport}"/>
+     <Button x:Name="loadBaseline" HorizontalAlignment="Stretch" IsEnabled="{Binding CanStart}"/>
+    </StackPanel></Flyout></Button.Flyout></Button>
+    <Button x:Name="settingsButton" Margin="0,0,0,8"/>
+   </WrapPanel>
+   <views:ProxyCheckGrid Classes="environment-grid" LayoutKind="environment">
+    <Border Classes="check-panel" Padding="20"><StackPanel Spacing="12">
+     <TextBlock x:Name="environmentLabel" Classes="check-caption"/>
+     <Grid ColumnDefinitions="*,Auto">
+      <StackPanel Spacing="4"><TextBlock Text="{Binding NodeName}" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap"/><TextBlock Text="{Binding CoreName}" Classes="check-caption"/></StackPanel>
+      <Border Grid.Column="1" Classes="check-chip" VerticalAlignment="Top" Margin="12,0,0,0"><TextBlock Text="{Binding CaptureMode}" FontSize="12" TextWrapping="Wrap" MaxWidth="240"/></Border>
+     </Grid>
+     <WrapPanel>
+      <StackPanel Margin="0,0,28,4" Spacing="4"><TextBlock x:Name="routingLabel" Classes="check-caption"/><TextBlock Text="{Binding RoutingName}" FontSize="13" TextWrapping="Wrap" MaxWidth="260"/></StackPanel>
+      <StackPanel Margin="0,0,0,4" Spacing="4"><TextBlock x:Name="ingressLabel" Classes="check-caption"/><SelectableTextBlock Text="{Binding LocalEntry}" FontSize="13"/></StackPanel>
+     </WrapPanel>
+     <Expander x:Name="environmentDetails" HorizontalAlignment="Stretch"><SelectableTextBlock Text="{Binding EnvironmentText}" Classes="check-caption" TextWrapping="Wrap" Margin="0,8,0,0"/></Expander>
+    </StackPanel></Border>
+    <Border Grid.Column="1" Classes="check-panel observer-card" Margin="12,0,0,0" Padding="20"><StackPanel Spacing="10">
+     <Grid ColumnDefinitions="*,Auto"><TextBlock x:Name="observerCardLabel" FontWeight="SemiBold" FontSize="14" TextWrapping="Wrap"/><Button x:Name="configureObserver" Grid.Column="1" Margin="8,0,0,0"/></Grid>
+     <TextBlock Text="{Binding ObserverHost}" FontSize="14" TextWrapping="Wrap"/>
+     <TextBlock Text="{Binding ObserverConnectionLabel}" Classes="check-caption"/>
+     <Border Classes="check-chip" HorizontalAlignment="Left"><TextBlock Text="{Binding ObserverCoverage}" FontSize="12" TextWrapping="Wrap"/></Border>
+     <TextBlock x:Name="observerCardHint" Classes="check-caption" TextWrapping="Wrap"/>
+    </StackPanel></Border>
+   </views:ProxyCheckGrid>
+   <Grid ColumnDefinitions="*,Auto"><TextBlock x:Name="overviewLabel" Classes="sectionTitle"/><TextBlock Text="{Binding ProgressLabel}" Grid.Column="1" Classes="check-caption" VerticalAlignment="Center" IsVisible="{Binding HasResults}"/></Grid>
+   <Border Classes="check-panel"><views:ProxyCheckGrid Classes="metrics-grid" LayoutKind="metrics">
+    <Border Padding="20,16"><StackPanel Spacing="6"><TextBlock x:Name="reachableLabel" Classes="check-caption"/><TextBlock Text="{Binding MetricReachable}" Classes="check-metric check-success"/><TextBlock x:Name="reachableHint" Classes="check-caption" TextWrapping="Wrap"/></StackPanel></Border>
+    <Border Grid.Column="1" Padding="20,16"><StackPanel Spacing="6"><TextBlock x:Name="matchedLabel" Classes="check-caption"/><TextBlock Text="{Binding MetricMatched}" Classes="check-metric check-accent"/><TextBlock x:Name="matchedHint" Classes="check-caption" TextWrapping="Wrap"/></StackPanel></Border>
+    <Border Grid.Column="2" Classes="metric-attention" Padding="20,16"><StackPanel Spacing="6"><TextBlock x:Name="attentionLabel" Classes="check-caption"/><TextBlock Text="{Binding MetricAttention}" Classes="check-metric check-warning"/><TextBlock x:Name="attentionHint" Classes="check-caption" TextWrapping="Wrap"/></StackPanel></Border>
+    <Border Grid.Column="3" Classes="metric-uncovered" Padding="20,16"><StackPanel Spacing="6"><TextBlock x:Name="uncoveredLabel" Classes="check-caption"/><TextBlock Text="{Binding MetricUncovered}" Classes="check-metric"/><TextBlock x:Name="uncoveredHint" Classes="check-caption" TextWrapping="Wrap"/></StackPanel></Border>
+   </views:ProxyCheckGrid></Border>
+   <ProgressBar Value="{Binding CompletionPercent}" Maximum="100" IsVisible="{Binding HasResults}" Height="4"/>
+   <TextBlock Text="{Binding Summary}" Classes="check-caption" TextWrapping="Wrap"/>
+   <Border Classes="check-panel"><StackPanel>
+    <Grid ColumnDefinitions="*,Auto" Margin="20,16,20,8"><TextBlock x:Name="resultsLabel" Classes="sectionTitle"/><TextBlock Text="{Binding VisibleCountLabel}" Grid.Column="1" Classes="check-caption" VerticalAlignment="Center"/></Grid>
+    <WrapPanel Margin="20,4,20,16">
+     <ComboBox x:Name="resultFilter" ItemsSource="{Binding ResultFilters}" SelectedIndex="{Binding SelectedFilter}" MinWidth="150" Margin="0,0,12,8"/>
+     <TextBox x:Name="resultSearch" Text="{Binding SearchText}" MinWidth="220" MaxWidth="360" Margin="0,0,0,8"/>
+    </WrapPanel>
+    <Grid Classes="list-columns" ColumnDefinitions="2*,1.05*,1*,1.25*,1.35*,60" Margin="20,0,50,12">
+     <TextBlock x:Name="targetColumn" Classes="check-caption"/><TextBlock x:Name="pathColumn" Grid.Column="1" Classes="check-caption"/><TextBlock x:Name="communicationColumn" Grid.Column="2" Classes="check-caption"/><TextBlock x:Name="egressColumn" Grid.Column="3" Classes="check-caption"/><TextBlock x:Name="comparisonColumn" Grid.Column="4" Classes="check-caption"/><TextBlock x:Name="elapsedColumn" Grid.Column="5" Classes="check-caption" HorizontalAlignment="Right"/>
+    </Grid>
+    <ItemsControl ItemsSource="{Binding ResultGroups}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="dto:ProxyCheckResultGroup"><StackPanel>
+     <Border Background="{DynamicResource WorkspaceSidebar}" Padding="20,9"><Grid ColumnDefinitions="Auto,Auto,*"><TextBlock Text="{Binding Name}" FontSize="12" FontWeight="SemiBold"/><TextBlock Text="{Binding CountLabel}" Grid.Column="1" Margin="8,0,0,0" Classes="check-caption"/><TextBlock Text="{Binding Summary}" Grid.Column="2" HorizontalAlignment="Right" Classes="check-caption"/></Grid></Border>
+     <ItemsControl ItemsSource="{Binding Rows}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="dto:ProxyCheckResultRow">
+      <Border BorderBrush="{DynamicResource WorkspaceBorder}" BorderThickness="0,0,0,1"><Expander Classes="probe-row" Classes.failed="{Binding IsFailed}" IsExpanded="{Binding IsExpanded, Mode=TwoWay}" HorizontalAlignment="Stretch">
+       <Expander.Header><views:ProxyCheckGrid Classes="result-line" HorizontalAlignment="Stretch" Margin="0,4">
+        <StackPanel Spacing="3" Margin="0,0,12,0"><TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="13" TextWrapping="Wrap"/><TextBlock Text="{Binding Target}" Classes="check-caption" TextWrapping="Wrap"/><TextBlock Text="{Binding Conclusion}" Classes="check-caption" Classes.check-error="{Binding IsFailed}" Classes.check-success="{Binding IsPassed}" TextWrapping="Wrap"/></StackPanel>
+        <StackPanel Classes="row-path" Grid.Column="1" Spacing="3" Margin="0,0,12,0"><TextBlock Text="{x:Static ws:WorkspaceText.CheckPath}" Classes="check-caption compact-label"/><TextBlock Text="{Binding Path}" FontSize="12" TextWrapping="Wrap"/><TextBlock Text="{Binding Family}" Classes="check-caption"/></StackPanel>
+        <StackPanel Classes="row-communication" Grid.Column="2" Spacing="3" Margin="0,0,12,0"><TextBlock Text="{x:Static ws:WorkspaceText.Connectivity}" Classes="check-caption compact-label"/><TextBlock Text="{Binding Communication}" Classes.check-error="{Binding IsCommunicationFailed}" Classes.check-success="{Binding IsCommunicationPassed}" FontSize="12"/><TextBlock Text="{Binding Sampling}" Classes="check-caption check-mono"/></StackPanel>
+        <StackPanel Classes="row-address" Grid.Column="3" Spacing="3" Margin="0,0,12,0"><TextBlock Text="{x:Static ws:WorkspaceText.ObservedExit}" Classes="check-caption compact-label"/><TextBlock Text="{Binding Address}" Classes="check-mono" FontSize="12" TextWrapping="Wrap"/><TextBlock Text="{Binding EvidenceKind}" Classes="check-caption" TextWrapping="Wrap"/></StackPanel>
+        <StackPanel Classes="row-comparison" Grid.Column="4" Spacing="3" Margin="0,0,12,0"><TextBlock Text="{x:Static ws:WorkspaceText.ExpectedComparison}" Classes="check-caption compact-label"/><TextBlock Text="{Binding Comparison}" Classes.check-error="{Binding HasComparisonFailure}" Classes.check-success="{Binding HasComparisonMatch}" FontSize="12" TextWrapping="Wrap"/><TextBlock Text="{Binding ExpectedLabel}" IsVisible="{Binding HasExpectation}" Classes="check-caption check-mono" TextWrapping="Wrap"/></StackPanel>
+        <TextBlock Classes="check-caption check-mono row-latency" Text="{Binding Elapsed}" Grid.Column="5" HorizontalAlignment="Right"/>
+       </views:ProxyCheckGrid></Expander.Header>
+       <Border Background="{DynamicResource WorkspaceSidebar}" Padding="20,16"><SelectableTextBlock Text="{Binding Detail}" TextWrapping="Wrap" FontSize="12"/></Border>
+      </Expander></Border>
+     </DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+    </StackPanel></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+    <StackPanel Margin="24,28" Spacing="8" IsVisible="{Binding !HasVisibleResults}"><TextBlock x:Name="emptyTitle" HorizontalAlignment="Center" FontWeight="SemiBold"/><TextBlock x:Name="emptyHint" Classes="check-caption" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="420"/></StackPanel>
+   </StackPanel></Border>
+   <Expander x:Name="observerSection" HorizontalAlignment="Stretch"><Border Classes="check-panel" Padding="20" Margin="0,8,0,0"><StackPanel Spacing="12" IsEnabled="{Binding CanStart}">
+    <CheckBox x:Name="enableObserver" IsChecked="{Binding UseObserver}"/>
+    <WrapPanel><Button x:Name="importObserver" Margin="0,0,8,8"/><Button x:Name="testObserver" Margin="0,0,0,8"/></WrapPanel>
+    <TextBlock Text="{Binding ObserverHost}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+    <TextBlock x:Name="observerCredentialLabel" Classes="check-caption" TextWrapping="Wrap"/>
+    <TextBox x:Name="observerCredentialInput" Text="{Binding ObserverCredential}" PasswordChar="●"/>
+    <SelectableTextBlock Text="{Binding ObserverStatus}" Classes="check-caption" TextWrapping="Wrap"/>
+    <Expander x:Name="observerRawJson" HorizontalAlignment="Stretch"><TextBox Text="{Binding ObserverProfileJson}" AcceptsReturn="True" MinHeight="120" MaxHeight="240" PlaceholderText="profile.json" Margin="0,8,0,0"/></Expander>
+   </StackPanel></Border></Expander>
+   <Expander x:Name="advanced" HorizontalAlignment="Stretch"><Border Classes="check-panel" Padding="20" Margin="0,8,0,0"><StackPanel Spacing="10" IsEnabled="{Binding CanStart}">
+    <TextBlock x:Name="expectedLabel" Classes="check-caption" TextWrapping="Wrap"/><TextBox Text="{Binding ExpectedEgress}" PlaceholderText="203.0.113.10, 2001:db8::/32"/>
+    <TextBlock x:Name="rulesLabel" Classes="check-caption" TextWrapping="Wrap"/><TextBox Text="{Binding TargetRules}" AcceptsReturn="True" MinHeight="70" PlaceholderText="example.net|https|socks=203.0.113.0/24"/>
+    <TextBlock Text="HTTPS / HTTP3" Classes="check-caption"/><TextBox Text="{Binding HttpsUrl}"/>
+    <TextBlock Text="HTTP" Classes="check-caption"/><TextBox Text="{Binding HttpUrl}"/>
+    <TextBlock Text="STUN (host:port)" Classes="check-caption"/><TextBox Text="{Binding StunTarget}"/>
+    <TextBlock x:Name="dnsLabel" Classes="check-caption"/><TextBox Text="{Binding DnsTarget}"/>
+    <TextBlock x:Name="localDnsLabel" Classes="check-caption" TextWrapping="Wrap"/><TextBox Text="{Binding LocalDnsTarget}" PlaceholderText="127.0.0.1:1053"/>
+    <WrapPanel><StackPanel Margin="0,0,16,0"><TextBlock x:Name="samplesLabel" Classes="check-caption"/><TextBox Text="{Binding Samples}" Width="90"/></StackPanel><StackPanel Margin="0,0,16,0"><TextBlock x:Name="timeoutLabel" Classes="check-caption"/><TextBox Text="{Binding Timeout}" Width="90"/></StackPanel><StackPanel><TextBlock x:Name="h3TimeoutLabel" Classes="check-caption"/><TextBox Text="{Binding Http3Timeout}" Width="90"/></StackPanel></WrapPanel>
+   </StackPanel></Border></Expander>
+   <TextBlock x:Name="limits" Classes="check-caption" TextWrapping="Wrap"/>
+  </StackPanel>
+ </ScrollViewer>
 </UserControl>

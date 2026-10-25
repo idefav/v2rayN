@@ -6,7 +6,7 @@ namespace ServiceLib.Tests.Services;
 public class ObserverTests
 {
     private static string Encode(byte[] data) => Convert.ToBase64String(data).TrimEnd('=').Replace('+', '-').Replace('/', '_');
-    private static ObserverProfile Profile(ECDsa key) => new()
+    internal static ObserverProfile Profile(ECDsa key) => new()
     {
         Version = 1, ServerId = "fixture", PublicKey = Encode(key.ExportSubjectPublicKeyInfo()), Domain = "check.example.net", Ipv4 = "203.0.113.10",
         HttpsUrl = "https://api.check.example.net/v1/echo", HttpUrl = "http://http.check.example.net/v1/echo", Http3Url = "https://h3.check.example.net/v1/echo",
