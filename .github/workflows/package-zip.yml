@@ -53,7 +53,12 @@ jobs:
       run: wget -nv -O v2rayN-$Target-$Arch.zip "https://github.com/2dust/v2rayN-core-bin/raw/refs/heads/master/v2rayN-$Target-$Arch.zip"
     
     - name: Package zip archive
-      run: 7z a -tZip v2rayN-$Target-$Arch.zip v2rayN-$Target-$Arch -mx1
+      run: |
+        if [[ "$Target" != windows && -f "v2rayN-$Target-$Arch/proxy-check" ]]; then
+          chmod +x "v2rayN-$Target-$Arch/proxy-check"
+          chmod -R +x "v2rayN-$Target-$Arch/bin"
+        fi
+        7z a -tZip v2rayN-$Target-$Arch.zip v2rayN-$Target-$Arch -mx1
 
     - name: Rename windows-desktop 
       if: inputs.target == 'windows-desktop'

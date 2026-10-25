@@ -45,6 +45,9 @@ internal static class Program
     public static bool Interactive;
     public static bool WorkflowOnly;
     public static bool RecoveryOnly;
+    public static bool ProxyCheckOnly;
+    public static bool ProxyCheckLive;
+    public static bool SshUdpOnly;
     public static bool LegacyColumns;
     public static string Language = "zh-Hans";
     public static string Theme = "Light";
@@ -64,6 +67,9 @@ internal static class Program
         Interactive = args.Contains("--interactive");
         WorkflowOnly = args.Contains("--workflow-only");
         RecoveryOnly = args.Contains("--recovery-only");
+        ProxyCheckOnly = args.Contains("--proxy-check-only");
+        ProxyCheckLive = args.Contains("--proxy-check-live");
+        SshUdpOnly = args.Contains("--ssh-udp-only");
         LegacyColumns = args.Contains("--legacy-columns");
         foreach (var argument in args.Skip(1))
         {
@@ -193,6 +199,69 @@ public class ReviewApp : v2rayN.Desktop.App
         AppManager.Instance.ConnectionRecovery = null;
     }
 
+    private async Task CheckProxyPageAsync()
+    {
+        await _main.NavigateAsync("ProxyCheck");
+        await Task.Delay(250);
+        var page = _main.GetLogicalDescendants().OfType<ProxyCheckView>().Single();
+        var model = page.Model;
+        if (Program.ProxyCheckLive)
+        {
+            AppManager.Instance.Config.Inbound.First(i => i.Protocol == "socks").LocalPort = 10808;
+            model.Samples = "1"; model.Timeout = "3"; model.Http3Timeout = "5";
+            await model.StartAsync();
+            File.WriteAllText(Path.Combine(Program.Output, "live-proxy-report.json"), model.ExportReport());
+            await CaptureAsync("proxy-check-live", "Live local ingress probes; isolated UI configuration", _main);
+            Check(model.Results.Count > 30, "live check completed all probe categories");
+            Check(model.Results.All(r => r.State is not ("pending" or "running")), "live check has no unfinished rows");
+            model.SaveBaseline();
+            model.ImportBaseline(model.ExportReport());
+            Check(model.BaselineText.Length > 0, "live baseline round trip");
+            var count = model.Results.Count;
+            await model.StartAsync(true);
+            Check(model.Results.Count == count, "retry retains successful and unsupported rows");
+            File.WriteAllText(Path.Combine(Program.Output, "live-retry-report.json"), model.ExportReport());
+            var cancelled = model.StartAsync();
+            await Task.Delay(150); model.Cancel(); await cancelled;
+            Check(model.Results.Any(r => r.State == "cancelled"), "user cancellation terminates outstanding checks");
+            File.WriteAllText(Path.Combine(Program.Output, "live-cancel-report.json"), model.ExportReport());
+            var changed = model.StartAsync();
+            await Task.Delay(150);
+            AppManager.Instance.Config.Inbound.First(i => i.Protocol == "socks").LocalPort++;
+            await changed;
+            Check(JsonDocument.Parse(model.ExportReport()).RootElement.GetProperty("completion").GetString() == "configuration-changed", "running configuration change cancels checks");
+            File.WriteAllText(Path.Combine(Program.Output, "live-config-change-report.json"), model.ExportReport());
+            AppManager.Instance.Config.Inbound.First(i => i.Protocol == "socks").LocalPort--;
+            return;
+        }
+        model.EnvironmentText = "UI fixture · sing-box · SOCKS5 127.0.0.1:10808 · TUN disabled\nActual network checks are not run in this review.";
+        foreach (var state in new[] { "idle", "running", "partial", "complete", "cancelled" })
+        {
+            model.Results.Clear();
+            model.IsRunning = state == "running"; model.CanStart = !model.IsRunning;
+            model.CanExport = state is "partial" or "complete" or "cancelled"; model.CanRetry = state is "partial" or "cancelled";
+            model.Summary = "Fixture · " + state;
+            if (state != "idle")
+                foreach (var (id, group) in new[] { ("tcp", "TCP/TLS"), ("dns", "DNS"), ("udp", "UDP"), ("h3", "QUIC/HTTP3"), ("ipv6", "IPv6") })
+                {
+                    var rowState = state == "running" ? "running" : state == "cancelled" ? "cancelled" : state == "complete" ? "passed" : state == "partial" && id == "udp" ? "failed" : "unknown";
+                    model.Results.Add(new ServiceLib.Models.Dto.ProxyDiagnosticResult
+                    {
+                        Id = id, Group = group, Name = id, State = rowState, Connectivity = rowState == "unknown" ? "passed" : rowState,
+                        Path = "SOCKS5", Target = "www.cloudflare.com:443", Family = "IPv4", Attempts = 3,
+                        Successes = rowState is "unknown" or "passed" ? 3 : 0, Elapsed = 42, Egress = "203.0.113.19", EgressState = rowState == "passed" ? "passed" : "unknown",
+                        Evidence = "Fixture data; matched transaction; actual network untested."
+                    });
+                }
+            await CaptureAsync("proxy-check-" + state, "Proxy check · " + state, _main);
+            Check(page.GetLogicalDescendants().OfType<Button>().Single(b => b.Name == "start").IsEnabled == !model.IsRunning, "proxy check start enabled: " + state);
+            Check(page.GetLogicalDescendants().OfType<Button>().Single(b => b.Name == "cancel").IsEnabled == model.IsRunning, "proxy check cancel enabled: " + state);
+        }
+        model.IsRunning = false; model.CanStart = true;
+        page.FindControl<Expander>("advanced")!.IsExpanded = true;
+        await CaptureAsync("proxy-check-advanced", "Proxy check · advanced", _main);
+    }
+
     private async Task ReviewAsync()
     {
         await Task.WhenAll(Enumerable.Range(0, 8).Select(_ => ConfigHandler.InitBuiltinRouting(AppManager.Instance.Config)));
@@ -238,6 +307,30 @@ public class ReviewApp : v2rayN.Desktop.App
         _vm.ProfilesViewModel.SelectedProfiles = [_vm.ProfilesViewModel.SelectedProfile];
         _main.GetLogicalDescendants().OfType<ProfilesView>().Single().RefreshServersBiz();
         AppEvents.SendMsgViewRequested.Publish("[UI review] Isolated fixture configuration loaded.\n[UI review] Core launch disabled; network status remains untested.\n");
+        if (Program.SshUdpOnly)
+        {
+            var editor = new AddSshServerWindow { ViewModel = new AddSshServerViewModel(Profile(EConfigType.SSH)) { UdpForwarding = true, AllowHttp3 = true } };
+            editor.Show(_main);
+            await Task.Delay(250);
+            var advanced = editor.GetLogicalDescendants().OfType<Expander>().Single();
+            advanced.IsExpanded = true;
+            await Task.Delay(250);
+            var scroll = editor.GetLogicalDescendants().OfType<ScrollViewer>().First();
+            scroll.Offset = new Vector(0, scroll.Extent.Height);
+            await Task.Delay(250);
+            Check(editor.FindControl<CheckBox>("chkUdpForwarding")!.IsChecked == true, "SSH UDP option reflects enabled model");
+            Check(editor.FindControl<CheckBox>("chkAllowHttp3")!.IsChecked == true, "HTTP3 option reflects enabled model");
+            await CaptureAsync("ssh-udp-options", "SSH UDP / HTTP3", editor);
+            editor.Close();
+            File.WriteAllText(Path.Combine(Program.Output, "manifest.json"), JsonSerializer.Serialize(new { fixtureData = true, Program.Language, Program.Theme, screenshots = _shots, checks = _checks }, new JsonSerializerOptions { WriteIndented = true }));
+            return;
+        }
+        if (Program.ProxyCheckOnly)
+        {
+            await CheckProxyPageAsync();
+            File.WriteAllText(Path.Combine(Program.Output, "manifest.json"), JsonSerializer.Serialize(new { fixtureData = true, Program.Language, Program.Theme, screenshots = _shots, checks = _checks }, new JsonSerializerOptions { WriteIndented = true }));
+            return;
+        }
         await CheckExitPresentationAsync();
         if (Program.RecoveryOnly)
         {

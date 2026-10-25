@@ -2,6 +2,9 @@ namespace ServiceLib.Resx;
 
 public static class SshStrings
 {
+    public static string UdpForwarding => ProxyCheckText.T("UDP over SSH（需要专用核心与远端 UDP 扩展）", "UDP over SSH (requires the bundled core and remote UDP extension)");
+    public static string AllowHttp3 => ProxyCheckText.T("允许 HTTP3：忽略当前规则集的默认“阻断udp443”规则", "Allow HTTP3: skip the routing set's default UDP 443 block");
+    public static string UdpNotice => ProxyCheckText.T("默认关闭。开启后通过 SSH 传输 UDP，失败不会回退直连。允许 HTTP3 只跳过未附加目标条件的内置 UDP 443 拦截；其他自定义拒绝规则保留。", "Disabled by default. UDP travels over SSH with no direct fallback. HTTP3 bypasses only the unqualified built-in UDP 443 block; other custom reject rules are preserved.");
     private static string Get(string name) => ResUI.ResourceManager.GetString("Ssh" + name, ResUI.Culture) ?? name;
     public static string TestConnection => Get(nameof(TestConnection));
     public static string StopTest => Get(nameof(StopTest));

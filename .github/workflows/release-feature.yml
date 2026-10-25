@@ -142,6 +142,7 @@ jobs:
           cp -R publish/. "$root/"
           if [[ "$platform" != windows ]]; then
             chmod +x "$root/v2rayN" "$root/AmazTool"
+            chmod +x "$root/proxy-check"
             chmod -R +x "$root/bin"
           fi
           mkdir dist
@@ -231,6 +232,10 @@ jobs:
           - macOS 启动、休眠唤醒与网络变化后自动检查当前连接；先修复系统代理，连续两轮检测失败才重启内核。
           - 自动恢复包含事件合并、重启限频及退出取消；适用于关闭 TUN、自动配置系统代理且未使用自定义代理脚本的配置。
           - 修复局域网 .local 域名解析：macOS 使用系统 mDNS，连接在全局模式下也走局域网直连，兼容末尾句点，避免公共 DNS 返回 NXDOMAIN 刷屏。
+          - 新增 Avalonia“代理检查”：区分系统路径、HTTP CONNECT、SOCKS5 与普通套接字，验证 TCP/TLS、DNS、STUN 普通 UDP、真实 HTTP3 和 IPv4/IPv6；支持预期出口、基线及 JSON 报告。
+          - SSH 节点新增默认关闭的 UDP over SSH 与允许 HTTP3 选项；使用 idefav/sing-box 固定提交构建专用核心，远端需要 OpenSSH UDP 扩展，失败不回退直连。
+          - 核心清单与 SHA-256 校验优先选择随包专用核心，修复升级后用户目录旧核心不识别 udp_forwarding 导致重启失败。
+          - macOS 安装盘保留可复制的拦截处理命令与安装说明。服务器独立端口部署、中继迁移、协议与排障记录见下方部署文档。
           - Windows WPF / Avalonia、Linux、macOS：x64 / arm64 ZIP；macOS 另有 DMG。
           - 安装包包含运行时及代理核心；\`SHA256SUMS\` 用于校验下载文件。
           - 此版本未配置 GPG 发布签名，macOS 包未经 Apple 开发者签名及公证。
@@ -243,6 +248,7 @@ jobs:
           [SSH 使用说明](https://github.com/$GH_REPO/blob/$RELEASE_TAG/docs/ssh-key-setup.zh-Hans.md)
           · [UI 与出口检测说明](https://github.com/$GH_REPO/blob/$RELEASE_TAG/docs/exit-info-preview.zh-Hans.md)
           · [macOS 网络恢复说明](https://github.com/$GH_REPO/blob/$RELEASE_TAG/docs/macos-network-recovery.md)
+          · [SSH UDP 服务部署与扩展记录](https://github.com/$GH_REPO/blob/$RELEASE_TAG/docs/ssh-udp-deployment.zh-Hans.md)
           · [构建记录](https://github.com/$GH_REPO/actions/runs/$GITHUB_RUN_ID)
           EOF
           # A failed upload may leave a draft; never overwrite a published release.

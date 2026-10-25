@@ -130,6 +130,7 @@ public class Outbound4Sbox : BaseServer4Sbox
 {
     public string? user { get; set; }
     public string? private_key_path { get; set; }
+    public bool? udp_forwarding { get; set; }
     public string? private_key_passphrase { get; set; }
     public List<string>? host_key { get; set; }
     public List<string>? host_key_algorithms { get; set; }

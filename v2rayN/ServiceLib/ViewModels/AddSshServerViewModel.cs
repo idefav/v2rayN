@@ -13,6 +13,8 @@ public partial class AddSshServerViewModel : MyReactiveObject, ICloseable
     [Reactive] public partial string Username { get; set; }
     [Reactive] public partial string Password { get; set; }
     [Reactive] public partial bool PrivateKeyAuth { get; set; }
+    [Reactive] public partial bool UdpForwarding { get; set; }
+    [Reactive] public partial bool AllowHttp3 { get; set; }
     [Reactive] public partial string PrivateKeyPath { get; set; }
     [Reactive] public partial string Passphrase { get; set; }
     [Reactive] public partial string HostKey { get; set; }
@@ -51,6 +53,8 @@ public partial class AddSshServerViewModel : MyReactiveObject, ICloseable
         Username = item.Username;
         Password = item.Password;
         PrivateKeyAuth = extra.SshPrivateKeyAuth ?? false;
+        UdpForwarding = extra.SshUdpForwarding ?? false;
+        AllowHttp3 = extra.SshAllowHttp3 ?? false;
         PrivateKeyPath = extra.SshPrivateKeyPath ?? "";
         Passphrase = extra.SshPrivateKeyPassphrase ?? "";
         HostKey = extra.SshHostKey ?? "";
@@ -70,6 +74,7 @@ public partial class AddSshServerViewModel : MyReactiveObject, ICloseable
         this.WhenAnyValue(x => x.Address, x => x.Port, x => x.Username).Subscribe(_ => InvalidateTest());
         this.WhenAnyValue(x => x.Password, x => x.PrivateKeyAuth, x => x.PrivateKeyPath).Subscribe(_ => InvalidateTest());
         this.WhenAnyValue(x => x.Passphrase, x => x.HostKey).Subscribe(_ => InvalidateTest());
+        this.WhenAnyValue(x => x.UdpForwarding, x => x.AllowHttp3).Subscribe(_ => InvalidateTest());
         TestCmd = ReactiveCommand.CreateFromTask(() => RunAsync(TestConnectionAsync));
         StopTestCmd = ReactiveCommand.Create(() => { if (IsTesting) _operation?.Cancel(); });
         SaveCmd = ReactiveCommand.CreateFromTask(() => RunAsync(SaveAsync));
@@ -238,6 +243,8 @@ public partial class AddSshServerViewModel : MyReactiveObject, ICloseable
         source.SetProtocolExtra(source.GetProtocolExtra() with
         {
             SshPrivateKeyAuth = PrivateKeyAuth,
+            SshUdpForwarding = UdpForwarding,
+            SshAllowHttp3 = UdpForwarding && AllowHttp3,
             SshPrivateKeyPath = PrivateKeyAuth ? PrivateKeyPath : null,
             SshPrivateKeyPassphrase = PrivateKeyAuth ? Passphrase : null,
             SshHostKey = _trustedKey?.PublicKey,

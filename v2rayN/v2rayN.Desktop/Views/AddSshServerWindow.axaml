@@ -60,7 +60,11 @@
      </StackPanel>
     </Border>
     <Expander Header="{x:Static ws:WorkspaceText.Advanced}" HorizontalAlignment="Stretch">
-     <TextBlock Classes="muted" Text="{x:Static resx:SshStrings.TcpOnly}" TextWrapping="Wrap"/>
+     <StackPanel Spacing="8">
+      <CheckBox x:Name="chkUdpForwarding" Content="{x:Static resx:SshStrings.UdpForwarding}" />
+      <CheckBox x:Name="chkAllowHttp3" Content="{x:Static resx:SshStrings.AllowHttp3}" IsEnabled="{Binding UdpForwarding}" />
+      <TextBlock Classes="muted" Text="{x:Static resx:SshStrings.UdpNotice}" TextWrapping="Wrap"/>
+     </StackPanel>
     </Expander>
    </StackPanel>
   </ScrollViewer>

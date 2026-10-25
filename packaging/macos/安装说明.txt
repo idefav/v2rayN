@@ -1,0 +1,41 @@
+v2rayN 本地测试包安装说明
+
+1. 退出正在运行的旧版 v2rayN。
+2. 将安装盘中的 v2rayN 拖入 Applications（应用程序）。
+3. 从“应用程序”打开 v2rayN，进入左侧“代理检查”。
+
+如果 macOS 提示“无法验证开发者”或“应用已损坏”
+
+本地测试包使用 ad-hoc 签名，尚未进行 Apple 公证。确认安装包来自本次交付且 SHA-256 校验一致后，打开“终端”，复制执行以下命令，再重新打开应用：
+
+xattr -dr com.apple.quarantine "/Applications/v2rayN.app"
+
+该命令只删除这个 App 的下载隔离标记，不会关闭系统 Gatekeeper 或 SIP。
+请先把 App 拖入 Applications，再执行命令；如果安装到了其他目录，请把路径替换为那个 App 的实际位置。
+如明确出现 Permission denied，可对同一路径执行：
+
+sudo xattr -dr com.apple.quarantine "/Applications/v2rayN.app"
+
+系统会要求当前 Mac 管理员密码，输入时终端不会显示字符。不要把执行范围扩大到整个 Applications 或其他目录。
+
+也可在尝试打开后，到“系统设置 → 隐私与安全性”中选择“仍要打开”。
+如果系统提示包含恶意软件或“会损坏电脑”，请停止，不要用上述命令绕过；重新获取安装包并反馈。
+
+校验与诊断
+
+下载目录中的 SHA256SUMS 可用下列命令校验：
+shasum -a 256 -c SHA256SUMS
+
+查看当前安装 App 的签名和隔离属性：
+codesign --verify --deep --strict --verbose=2 "/Applications/v2rayN.app"
+xattr -lr "/Applications/v2rayN.app"
+
+新增页面包含 TCP、DNS、普通 UDP、TLS、IPv6、QUIC/HTTP3、系统路径与 SOCKS/HTTP 入口检查。通信成功与出口符合预期分别显示；没有出口证据或预期出口时显示“无法判定”。
+
+本包包含 SSH UDP 传输修复及配套 sing-box 1.14.3-ssh-udp.1 内核。
+修订版会校验并优先使用随包专用核心，避免 Application Support 中保留的原版核心无法识别 udp_forwarding。正常更新 App 即可生效，无需删除用户配置。
+
+本次已部署的独立入口：43.98.191.120，TCP 端口 10026。原 22 端口服务保留。
+请复制原 SSH 节点，修改服务器和端口，沿用自己的认证信息；核对新入口主机密钥后，在“高级”中开启“UDP over SSH”和“允许 HTTP3”。国内 106.14.159.136:10024 和香港 47.56.255.129:10024 中继现已接至新服务，也可继续使用原中继入口。
+仅对支持自定义 UDP 扩展的 SSH 服务开启此选项。旧节点默认关闭，扩展失败不会回退直连。允许 HTTP3 仅略过内置通用 UDP 443 阻断，自定义拒绝规则仍有效。
+启动新节点后进入“代理检查”，预期出口填写 43.98.191.120，验证普通 UDP 与真正的 HTTP3。SSH 传输仍承载于 TCP，丢包时性能与原生 QUIC 不同。

@@ -3,6 +3,9 @@
 ###############################################################################
 * text=auto
 
+# Unified patch context intentionally contains a leading space before Go tabs.
+core-patches/*.patch -whitespace
+
 ###############################################################################
 # Set default behavior for command prompt diff.
 #

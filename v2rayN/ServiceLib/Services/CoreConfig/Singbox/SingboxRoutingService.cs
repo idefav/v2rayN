@@ -262,6 +262,8 @@ public partial class CoreConfigSingboxService
                         continue;
                     }
 
+                    if (SshUdpPolicy.SkipDefaultUdp443Block(_node, item1)) continue;
+
                     if (item1.RuleType == ERuleType.DNS)
                     {
                         continue;

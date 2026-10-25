@@ -92,6 +92,58 @@ jobs:
       run: |
         find ${{ matrix.arch }} -type f -name '*.pdb' -delete
 
+    - name: Setup Go for SSH UDP core and proxy checks
+      uses: actions/setup-go@v6
+      with:
+        go-version-file: proxy-check/go.mod
+        cache-dependency-path: proxy-check/go.sum
+
+    - name: Install ARM64 core compiler
+      if: inputs.target == 'linux' && matrix.arch == 'arm64'
+      shell: bash
+      run: sudo apt-get update && sudo apt-get install -y g++-aarch64-linux-gnu
+
+    - name: Build pinned SSH UDP core
+      shell: bash
+      run: |
+        set -euo pipefail
+        case "${{ inputs.target }}" in
+          macos) core_os=darwin ;;
+          windows) core_os=windows ;;
+          linux) core_os=linux ;;
+        esac
+        core_arch=${{ matrix.arch }}
+        [[ "$core_arch" != x64 ]] || core_arch=amd64
+        core_name=sing-box
+        [[ "$core_os" != windows ]] || core_name=sing-box.exe
+        bash packaging/build-ssh-core.sh "$core_os" "$core_arch" "$Output/bin/sing_box/$core_name"
+
+    - name: Build bundled proxy-check worker
+      shell: bash
+      working-directory: ./proxy-check
+      run: |
+        set -euo pipefail
+        export CGO_ENABLED=0
+        case "${{ inputs.target }}" in
+          macos) export GOOS=darwin ;;
+          windows) export GOOS=windows ;;
+          linux) export GOOS=linux ;;
+        esac
+        case "${{ matrix.arch }}" in
+          x64) export GOARCH=amd64 ;;
+          arm64) export GOARCH=arm64 ;;
+        esac
+        worker=proxy-check
+        if [[ "$GOOS" == windows ]]; then worker=proxy-check.exe; fi
+        go build -trimpath -ldflags='-s -w' -o "$Output/$worker" .
+        test -s "$Output/$worker"
+        if [[ "$GOOS" != windows ]]; then chmod +x "$Output/$worker"; fi
+
+    - name: Verify worker tests
+      shell: bash
+      working-directory: ./proxy-check
+      run: go test ./...
+
     - name: Upload build artifacts
       uses: actions/upload-artifact@v7
       with:

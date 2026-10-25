@@ -32,6 +32,7 @@ public partial class MainWindow
     private string _settingsKey = "Core";
     private MsgView? _logs;
     private ServerWorkspaceView? _servers;
+    private ProxyCheckView? _proxyCheck;
     private ThemeSettingView? _appearance;
     private Grid? _settingsWorkspace;
     private ContentControl? _settingsBody;
@@ -76,6 +77,7 @@ public partial class MainWindow
             new NavigationEntry("Proxies", ResUI.TbProxies, "M4,6 L10,6 10,12 4,12 Z M14,12 L20,12 20,18 14,18 Z M10,9 L17,9 17,12"),
             new NavigationEntry("Routing", WorkspaceText.Routing, "M4,4 L10,4 10,10 4,10 Z M14,14 L20,14 20,20 14,20 Z M7,10 L7,17 14,17 M10,7 L17,7 17,14"),
             new NavigationEntry("Connections", ResUI.TbConnections, "M2,12 L6,12 9,4 13,20 17,9 20,12 23,12"),
+            new NavigationEntry("ProxyCheck", ServiceLib.Models.Dto.ProxyCheckText.Title, "M12,2 L21,6 20,15 12,22 4,15 3,6 Z M7,12 L11,16 17,8"),
             new NavigationEntry("Logs", WorkspaceText.Logs, "M4,3 L20,3 20,21 4,21 Z M8,7 L16,7 M8,12 L16,12 M8,17 L13,17")
         };
         foreach (var entry in entries)
@@ -192,6 +194,7 @@ public partial class MainWindow
             switch (key)
             {
                 case "Servers": pageContent.Content = _servers; break;
+                case "ProxyCheck": pageContent.Content = _proxyCheck ??= new ProxyCheckView(); break;
                 case "Logs": pageContent.Content = _logs; break;
                 case "Proxies":
                     var proxies = (ClashProxiesView)SimpleViewLocator.Instance.Build(ViewModel.ClashProxiesViewModel);

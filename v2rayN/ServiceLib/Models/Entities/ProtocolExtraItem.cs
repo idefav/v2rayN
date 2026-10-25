@@ -5,6 +5,8 @@ public record ProtocolExtraItem
     // SSH: trust belongs to the exact endpoint, not to the login user.
     public bool? SshPrivateKeyAuth { get; init; }
     public string? SshPrivateKeyPath { get; init; }
+    public bool? SshUdpForwarding { get; init; }
+    public bool? SshAllowHttp3 { get; init; }
     public string? SshPrivateKeyPassphrase { get; init; }
     public string? SshHostKey { get; init; }
     public string? SshHostKeyAlgorithm { get; init; }

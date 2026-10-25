@@ -28,6 +28,8 @@ public partial class AddSshServerWindow : WindowBase<AddSshServerViewModel>
             this.Bind(ViewModel, vm => vm.Password, v => v.txtPassword.Text).DisposeWith(disposables);
             this.Bind(ViewModel, vm => vm.Passphrase, v => v.txtPassphrase.Text).DisposeWith(disposables);
             this.Bind(ViewModel, vm => vm.PrivateKeyAuth, v => v.chkPrivateKey.IsChecked).DisposeWith(disposables);
+            this.Bind(ViewModel, vm => vm.UdpForwarding, v => v.chkUdpForwarding.IsChecked).DisposeWith(disposables);
+            this.Bind(ViewModel, vm => vm.AllowHttp3, v => v.chkAllowHttp3.IsChecked).DisposeWith(disposables);
             this.OneWayBind(ViewModel, vm => vm.Status, v => v.txtStatus.Text).DisposeWith(disposables);
             this.WhenAnyValue(v => v.ViewModel.LastTestResult).Subscribe(result =>
             {

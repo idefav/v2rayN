@@ -33,6 +33,8 @@ public sealed class CoreInfoManager
     {
         var fileName = string.Empty;
         msg = string.Empty;
+        var bundled = BundledSshCore.TryResolve(coreInfo?.CoreType, Utils.GetBaseDirectory("bin"));
+        if (bundled != null) return bundled;
         foreach (var name in coreInfo?.CoreExes)
         {
             var vName = Utils.GetBinPath(Utils.GetExeName(name), coreInfo.CoreType.ToString());

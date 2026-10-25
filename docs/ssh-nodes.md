@@ -4,6 +4,8 @@
 
 [macOS 休眠与网络恢复](macos-network-recovery.md)
 
+[SSH UDP / HTTP3：服务部署、扩展协议、中继、专用核心与排障记录](ssh-udp-deployment.zh-Hans.md)
+
 SSH is a native profile type in both the Avalonia desktop client (macOS/Linux)
 and the Windows WPF client. Select **Add SSH server**, enter the SSH endpoint and
 username, then choose password or private-key-file authentication. An encrypted
