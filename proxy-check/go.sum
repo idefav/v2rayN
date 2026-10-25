@@ -1,7 +1,7 @@
 github.com/google/uuid v1.6.0 h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=
 github.com/google/uuid v1.6.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
-github.com/idefav/egress-probe v0.2.0-rc.1 h1:2AuXbfyYhqS/Yx8JUEQl0sE6mpTSpN7jt5IwdCtjiwc=
-github.com/idefav/egress-probe v0.2.0-rc.1/go.mod h1:DkHGD+LSRd1TM1oUySa28fppLGWZlGp5D3XWaahBk0o=
+github.com/idefav/egress-probe v0.2.0-rc.2 h1:r9Xzsc969y5Bn5N4ExyF3cMdd04vu3bxFcYodgisDc0=
+github.com/idefav/egress-probe v0.2.0-rc.2/go.mod h1:fzMIf4yHA1K8ZakHcxLXMrmLI5ThZfqVun+WMCIEulU=
 github.com/pion/datachannel v1.6.3 h1:HZAYLpunVI0xi057ZiANl558d0uSpomcWw4UEPz3qXs=
 github.com/pion/datachannel v1.6.3/go.mod h1:oRmkXVVXxkUbqa8MatgdNHW29kvtQY3HUdjJQsfv2GE=
 github.com/pion/dtls/v3 v3.1.15 h1:okWk5LNwU21DfhvG8z4wm45knHVSPEdkihwp6BxfQcc=
