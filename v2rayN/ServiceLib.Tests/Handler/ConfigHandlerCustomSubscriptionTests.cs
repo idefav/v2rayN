@@ -2,6 +2,8 @@ using ServiceLib.Tests.CoreConfig;
 
 namespace ServiceLib.Tests.Handler;
 
+// Uses AppManager's shared configuration and the process-wide SQLite database.
+[NotInParallel]
 public class ConfigHandlerCustomSubscriptionTests
 {
     private const string FullXrayConfigs = """

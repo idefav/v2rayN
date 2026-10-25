@@ -250,8 +250,10 @@ public partial class ProfilesViewModel : MyReactiveObject
 
         #endregion AppEvents
 
-        _ = Init();
+        Initialization = Init();
     }
+
+    internal Task Initialization { get; }
 
     private async Task Init()
     {

@@ -338,6 +338,11 @@ public class ReviewApp : v2rayN.Desktop.App
 
     private async Task ReviewAsync()
     {
+        // Await the actual startup and all refresh work it queued before seeding
+        // fixture objects. A fixed delay races slow clean CI runners.
+        await _vm.ProfilesViewModel.Initialization;
+        await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
+        await (Task)typeof(MainWindowViewModel).GetMethod("RefreshServersDispatcherAsync", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(_vm, null)!;
         await Task.WhenAll(Enumerable.Range(0, 8).Select(_ => ConfigHandler.InitBuiltinRouting(AppManager.Instance.Config)));
         var builtins = await AppManager.Instance.RoutingItems();
         Check(builtins.Count == 3 && builtins.Select(item => item.Remarks).Distinct().Count() == 3,
@@ -352,6 +357,7 @@ public class ReviewApp : v2rayN.Desktop.App
         _vm.ProfilesViewModel.SubItems.Clear();
         _vm.ProfilesViewModel.SubItems.Add(new SubItem { Id = "", Remarks = ResUI.AllGroupServers });
         foreach (var sub in await AppManager.Instance.SubItems()) _vm.ProfilesViewModel.SubItems.Add(sub);
+        AppManager.Instance.Config.SubIndexId = "";
         _vm.ProfilesViewModel.SelectedSub = _vm.ProfilesViewModel.SubItems[0];
         foreach (var (name, type, host, delay) in new[]
         {
