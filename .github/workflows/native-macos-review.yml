@@ -31,10 +31,12 @@ jobs:
               path=pathlib.Path('artifacts/native-review')/name
               report=json.loads((path/'manifest.json').read_text())
               assert report['renderer']=='native'
+              assert report['actualTheme']==('Light' if name=='zh-light' else 'Dark')
+              assert report['actualWidth']>0 and report['actualHeight']>0
               assert not (path/'failure.txt').exists()
               assert any('AppKit NSWindow' in check for check in report['checks'])
               assert len(report['screenshots'])>=17
-              print(name, len(report['checks']), 'native checks passed')
+              print(name, len(report['checks']), 'native checks passed', report['actualTheme'], report['actualWidth'], report['actualHeight'])
           PY
       - uses: actions/upload-artifact@v7
         if: always()

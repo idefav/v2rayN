@@ -82,7 +82,11 @@ internal static class Program
             switch (option[0])
             {
                 case "--language": Language = option[1]; break;
-                case "--theme": Theme = option[1]; break;
+                case "--theme":
+                    if (!Enum.TryParse<ETheme>(option[1], true, out var theme) || !Enum.IsDefined(theme))
+                        throw new ArgumentException("Unknown review theme: " + option[1]);
+                    Theme = theme.ToString();
+                    break;
                 case "--font": FontSize = int.Parse(option[1], CultureInfo.InvariantCulture); break;
                 case "--width": Width = int.Parse(option[1], CultureInfo.InvariantCulture); break;
                 case "--scale": Scale = double.Parse(option[1], CultureInfo.InvariantCulture); break;
@@ -435,7 +439,7 @@ public class ReviewApp : v2rayN.Desktop.App
         {
             await CheckPrimerWorkspaceAsync();
             await CheckProxyPageAsync();
-            File.WriteAllText(Path.Combine(Program.Output, "manifest.json"), JsonSerializer.Serialize(new { fixtureData = true, renderer = Program.Headless ? "Avalonia.Headless + Skia" : "native", Program.Language, Program.Theme, Program.Width, Program.FontSize, screenshots = _shots, checks = _checks }, new JsonSerializerOptions { WriteIndented = true }));
+            File.WriteAllText(Path.Combine(Program.Output, "manifest.json"), JsonSerializer.Serialize(new { fixtureData = true, actualTheme = _main.ActualThemeVariant.ToString(), actualWidth = _main.ClientSize.Width, actualHeight = _main.ClientSize.Height, renderer = Program.Headless ? "Avalonia.Headless + Skia" : "native", Program.Language, Program.Theme, Program.Width, Program.FontSize, screenshots = _shots, checks = _checks }, new JsonSerializerOptions { WriteIndented = true }));
             Console.WriteLine($"Reviewed {_shots.Count} Primer screens; {_checks.Count} scenarios passed.");
             return;
         }
@@ -599,7 +603,7 @@ public class ReviewApp : v2rayN.Desktop.App
         await CheckPolishAsync();
         if (!Program.WorkflowOnly) await CheckSecurityVariantsAsync();
         if (!Program.ScreensOnly && !Program.WorkflowOnly) await CheckScenariosAsync();
-        File.WriteAllText(Path.Combine(Program.Output, "manifest.json"), JsonSerializer.Serialize(new { fixtureData = true, renderer = Program.Headless ? "Avalonia.Headless + Skia" : "native", Program.Language, Program.Theme, Program.FontSize, Program.Scale, screenshots = _shots, checks = _checks }, new JsonSerializerOptions { WriteIndented = true }));
+        File.WriteAllText(Path.Combine(Program.Output, "manifest.json"), JsonSerializer.Serialize(new { fixtureData = true, actualTheme = _main.ActualThemeVariant.ToString(), actualWidth = _main.ClientSize.Width, actualHeight = _main.ClientSize.Height, renderer = Program.Headless ? "Avalonia.Headless + Skia" : "native", Program.Language, Program.Theme, Program.FontSize, Program.Scale, screenshots = _shots, checks = _checks }, new JsonSerializerOptions { WriteIndented = true }));
         File.WriteAllText(Path.Combine(Program.Output, "layout.json"), JsonSerializer.Serialize(_layouts, new JsonSerializerOptions { WriteIndented = true }));
         var gallery = string.Join("", _shots.Select(s => { var value = JsonSerializer.SerializeToElement(s); return $"<article><h2>{value.GetProperty("id")} · {value.GetProperty("title")}</h2><img src='{value.GetProperty("file")}'></article>"; }));
         File.WriteAllText(Path.Combine(Program.Output, "index.html"), "<!doctype html><meta charset='utf-8'><title>v2rayN UI review</title><style>body{font:16px system-ui;background:#eef2f7;margin:32px}article{background:white;padding:20px;margin:24px 0;border-radius:12px}img{width:100%;height:auto}</style><h1>v2rayN 实际界面截图</h1><p>测试进程使用独立配置和示例数据；截图来自实际 Avalonia 控件。网络状态并非生产检测结果。</p>" + gallery);
@@ -839,6 +843,9 @@ public class ReviewApp : v2rayN.Desktop.App
         _vm.StatusBarViewModel.RunningServerDisplay = "[SSH] " + active.Remarks;
         table.SelectedItem = selected;
         await Task.Delay(1150);
+        if (Program.Theme is nameof(ETheme.Light) or nameof(ETheme.Dark))
+            Check(_main.ActualThemeVariant == (Program.Theme == nameof(ETheme.Dark) ? ThemeVariant.Dark : ThemeVariant.Light),
+                "the rendered theme matches the requested Light or Dark variant");
         await CaptureAsync("primer-main", "Primer · isolated fixture · no core launched", _main);
         var appearanceButton = _main.FindControl<Button>("btnAppearance")!;
         appearanceButton.Flyout!.ShowAt(appearanceButton);

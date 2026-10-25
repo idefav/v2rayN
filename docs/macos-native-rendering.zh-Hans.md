@@ -18,6 +18,8 @@ Avalonia 12.1.2 的原生渲染计时器调用 `CVDisplayLinkCreateWithActiveCGD
 
 原生检查必须不传 `--headless`，成功清单的 `renderer` 为 `native`，并通过“可见AppKit NSWindow且原生句柄非零”断言。中文浅色1440宽与英文深色600宽均需完成实际控件检查和截图。
 
+主题参数大小写会归一为真实的主题枚举，并断言窗口实际主题。清单的 `actualTheme`、`actualWidth`、`actualHeight` 记录实际值；原生窗口的桌面宽度可能受CI显示器工作区限制，不能只凭请求参数宣称覆盖1440宽。Headless仍另行验证1440布局。
+
 ```sh
 dotnet build v2rayN/v2rayN.Desktop.Review -c Release
 dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/native-review/zh-light --primer-only --language=zh-Hans --theme=light --width=1440
