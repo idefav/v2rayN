@@ -134,13 +134,18 @@ public partial class StatusBarView : ReactiveUserControl<StatusBarViewModel>
             RecoveryState.Recovering => WorkspaceText.T("恢复中", "Recovering connection"),
             RecoveryState.Offline => WorkspaceText.T("等待网络", "Waiting for network"),
             RecoveryState.Failed => WorkspaceText.T("连接异常", "Connection unavailable"),
+            RecoveryState.Degraded => WorkspaceText.T("探测异常，已保留连接", "Probe unavailable; connection preserved"),
             _ => string.Empty,
         };
         var connectionFailed = !string.IsNullOrWhiteSpace(ViewModel?.ConnectionError);
         if (connectionFailed) txtRecoveryState.Text = WorkspaceText.T("配置应用失败", "Configuration failed");
         txtRecoveryState.Classes.Set("error", connectionFailed || recovery?.State == RecoveryState.Failed);
         txtRecoveryState.IsVisible = !string.IsNullOrEmpty(txtRecoveryState.Text);
-        ToolTip.SetTip(txtRecoveryState, connectionFailed ? ViewModel?.ConnectionError : recovery?.Error);
+        ToolTip.SetTip(txtRecoveryState, connectionFailed ? ViewModel?.ConnectionError
+            : recovery?.State == RecoveryState.Degraded && recovery.Error?.StartsWith("External probes") == true
+                ? WorkspaceText.T("内核及本地 SOCKS 正常，未自动重启；可使用代理检查进一步验证。",
+                    "Local core and SOCKS are healthy; no automatic restart. Use Proxy Check to investigate.")
+                : recovery?.Error);
         UpdateExitSummary();
         var running = CoreManager.Instance.IsCoreRunning;
         var applying = _reloading || ViewModel?.IsChangingConnection == true;

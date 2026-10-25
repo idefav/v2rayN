@@ -22,10 +22,19 @@ public partial class CoreConfigSingboxService
             // final dns
             var useDirectDns = UseDirectDns();
             _coreConfig.dns.final = useDirectDns ? Global.SingboxDirectDNSTag : Global.SingboxRemoteDNSTag;
+            if (ManagedEgress)
+            {
+                _coreConfig.dns.final = DnsForEgress(DefaultDnsEgress())[0].tag;
+                _coreConfig.dns.independent_cache = true;
+                // These legacy servers are replaced by per-egress upstreams in managed mode.
+                _coreConfig.dns.servers.RemoveAll(s => s.tag?.StartsWith(Global.SingboxRemoteDNSTagPrefix) == true);
+            }
         }
+        catch (SshConfigurationException) { throw; }
         catch (Exception ex)
         {
             Logging.SaveLog(_tag, ex);
+            if (ManagedEgress) throw;
         }
     }
 
@@ -166,18 +175,19 @@ public partial class CoreConfigSingboxService
             });
         }
 
-        _coreConfig.dns.rules.AddRange([
-            new Rule4Sbox
-            {
-                server = Global.SingboxRemoteDNSTag,
-                clash_mode = nameof(ERuleMode.Global),
-            },
-            new Rule4Sbox
-            {
-                server = Global.SingboxDirectDNSTag,
-                clash_mode = nameof(ERuleMode.Direct),
-            },
-        ]);
+        if (ManagedEgress)
+        {
+            AddRules(new() { clash_mode = nameof(ERuleMode.Global) },
+                new() { Id = "egress-global" }, DnsForEgress(Global.ProxyTag));
+            AddRules(new() { clash_mode = nameof(ERuleMode.Direct) },
+                new() { Id = "egress-direct" }, _coreConfig.dns.servers
+                    .Where(s => s.tag?.StartsWith(Global.SingboxDirectDNSTagPrefix) == true).ToList());
+        }
+        else
+        {
+            _coreConfig.dns.rules.Add(new() { server = Global.SingboxRemoteDNSTag, clash_mode = nameof(ERuleMode.Global) });
+            _coreConfig.dns.rules.Add(new() { server = Global.SingboxDirectDNSTag, clash_mode = nameof(ERuleMode.Direct) });
+        }
 
         foreach (var kvp in Utils.ParseHostsToDictionary(simpleDnsItem.Hosts))
         {
@@ -288,7 +298,7 @@ public partial class CoreConfigSingboxService
         }
 
         var routing = context.RoutingItem;
-        if (routing == null)
+        if (routing == null && !ManagedEgress)
         {
             return;
         }
@@ -297,8 +307,9 @@ public partial class CoreConfigSingboxService
             .Where(s => s.tag?.StartsWith(Global.SingboxDirectDNSTagPrefix) == true).ToList();
         var remoteDnsList = _coreConfig.dns.servers
             .Where(s => s.tag?.StartsWith(Global.SingboxRemoteDNSTagPrefix) == true).ToList();
+        if (ManagedEgress) remoteDnsList = DnsForEgress(DefaultDnsEgress());
 
-        var rules = JsonUtils.Deserialize<List<RulesItem>>(routing.RuleSet) ?? [];
+        var rules = JsonUtils.Deserialize<List<RulesItem>>(routing?.RuleSet) ?? [];
         var expectedIPCidr = new HashSet<string>();
         var expectedIPsRegions = new HashSet<string>();
         var regionName = string.Empty;
@@ -337,10 +348,12 @@ public partial class CoreConfigSingboxService
                 continue;
             }
 
-            if (item.RuleType == ERuleType.Routing)
+            if (item.RuleType == ERuleType.Routing && !ManagedEgress)
             {
                 continue;
             }
+            if (ManagedEgress && simpleDnsItem.EgressMode == DnsEgressMode.CurrentProxy
+                && item.RuleType != ERuleType.DNS) continue;
 
             var rule = new Rule4Sbox();
             var validDomains = item.Domain.Count(it => ParseV2Domain(it, rule));
@@ -349,11 +362,19 @@ public partial class CoreConfigSingboxService
                 continue;
             }
 
+            if (ManagedEgress && !DnsEgressPolicy.CanMatchDns(item))
+            {
+                // The target port/process/IP is unknown during DNS. Preserve rule order:
+                // a later broad domain rule must not choose an exit for this ambiguous query.
+                AddRules(rule, item, remoteDnsList);
+                continue;
+            }
+
             if (item.OutboundTag == Global.DirectTag)
             {
                 Rule4Sbox? rule4ExpectedIPs = null;
 
-                if (expectedIPsRegions.Count > 0 && rule.geosite?.Count > 0 && !regionName.IsNullOrEmpty())
+                if (!ManagedEgress && expectedIPsRegions.Count > 0 && rule.geosite?.Count > 0 && !regionName.IsNullOrEmpty())
                 {
                     var regionGeosite = rule.geosite.Where(g =>
                         g.EndsWith($"-{regionName}", StringComparison.OrdinalIgnoreCase)
@@ -427,10 +448,10 @@ public partial class CoreConfigSingboxService
                     rule4Fake.rewrite_ttl = 1;
                     _coreConfig.dns.rules.Add(rule4Fake);
                 }
-                AddRules(rule, item, remoteDnsList);
+                AddRules(rule, item, ManagedEgress ? DnsForRule(item) : remoteDnsList);
             }
         }
-        var useDirectDns = UseDirectDns();
+        var useDirectDns = !ManagedEgress && UseDirectDns();
         if ((!useDirectDns) && simpleDnsItem.FakeIP == true && simpleDnsItem.GlobalFakeIp == false)
         {
             _coreConfig.dns.rules.Add(new()
@@ -446,7 +467,7 @@ public partial class CoreConfigSingboxService
         }
         var tempRuleItem = new RulesItem
         {
-            Id = $"final-{Utils.GetGuid(false)}",
+            Id = ManagedEgress ? "egress-final" : $"final-{Utils.GetGuid(false)}",
             Enabled = true,
         };
         AddRules(new(), tempRuleItem, useDirectDns ? directDnsList : remoteDnsList);
@@ -516,6 +537,14 @@ public partial class CoreConfigSingboxService
             {
                 var ruleList = BuildMultiRules(rule, item, dnsList);
                 _coreConfig.dns.rules.AddRange(ruleList);
+                if (ManagedEgress)
+                {
+                    // Exhausting upstreams may not fall through to another rule/outbound.
+                    var stop = JsonUtils.DeepCopy(rule);
+                    stop.server = null;
+                    stop.action = "reject";
+                    _coreConfig.dns.rules.Add(stop);
+                }
             }
         }
     }
@@ -642,6 +671,15 @@ public partial class CoreConfigSingboxService
 
         var server = new Server4Sbox();
 
+        // A bare IPv6 literal has no port. Generic URL fallback parsing can mistake
+        // its final numeric group for one (including Bootstrap addresses).
+        if (IPAddress.TryParse(addressFirst, out var literal))
+        {
+            server.type = "udp";
+            server.server = literal.ToString();
+            return server;
+        }
+
         if (addressFirst is "local" or "localhost")
         {
             server.type = "local";
@@ -674,7 +712,8 @@ public partial class CoreConfigSingboxService
             server.type = scheme.Replace("+local", "", StringComparison.OrdinalIgnoreCase).ToLower();
         }
 
-        server.server = domain;
+        // Uri.Host retains IPv6 brackets; sing-box expects the address without URI delimiters.
+        server.server = IPAddress.TryParse(domain.Trim('[', ']'), out var ip) ? ip.ToString() : domain;
         if (port != 0)
         {
             server.server_port = port;

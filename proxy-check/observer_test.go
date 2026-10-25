@@ -6,7 +6,11 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"io"
 	"net"
 	"net/http"
@@ -31,14 +35,47 @@ func observerFixture(t *testing.T) (*observerServer.Server, *ecdsa.PrivateKey) {
 	if e != nil {
 		t.Fatal(e)
 	}
+	s.Auth, e = observerServer.OpenAuth(t.TempDir(), s.Profile)
+	if e != nil {
+		t.Fatal(e)
+	}
 	return s, key
 }
 func observerTicket(t *testing.T, s *observerServer.Server, kind string) observer.Ticket {
 	t.Helper()
+	encoded, err := s.Auth.CreatePairing(10 * time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(encoded, "EP1."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var code observerServer.PairingCode
+	if err = json.Unmarshal(data, &code); err != nil {
+		t.Fatal(err)
+	}
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	csr, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{Subject: pkix.Name{CommonName: "worker-test"}}, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, certPEM, err := s.Auth.Redeem(code.ID, code.Secret, string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: csr})), "worker-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	block, _ := pem.Decode([]byte(certPEM))
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
 	call := func(path, body string) []byte {
-		r := httptest.NewRequest("POST", "https://api.check.example.net"+path, strings.NewReader(body))
-		r.TLS = &tls.ConnectionState{}
-		r.Header.Set("Authorization", "Bearer "+strings.Repeat("k", 64))
+		r := httptest.NewRequest("POST", "https://control.check.example.net"+path, strings.NewReader(body))
+		// The fixture uses a genuinely issued device identity; TLS handshake tests live in the server SDK.
+		r.TLS = &tls.ConnectionState{ServerName: "control.check.example.net", PeerCertificates: []*x509.Certificate{cert}, VerifiedChains: [][]*x509.Certificate{{cert}}}
 		w := httptest.NewRecorder()
 		s.Handler().ServeHTTP(w, r)
 		if w.Code != 200 {
@@ -49,10 +86,10 @@ func observerTicket(t *testing.T, s *observerServer.Server, kind string) observe
 	var sess struct {
 		ID string `json:"id"`
 	}
-	json.Unmarshal(call("/v1/sessions", "{}"), &sess)
+	json.Unmarshal(call("/v2/sessions", "{}"), &sess)
 	var ticket observer.Ticket
 	body, _ := json.Marshal(map[string]string{"kind": kind})
-	json.Unmarshal(call("/v1/sessions/"+sess.ID+"/probes", string(body)), &ticket)
+	json.Unmarshal(call("/v2/sessions/"+sess.ID+"/probes", string(body)), &ticket)
 	return ticket
 }
 

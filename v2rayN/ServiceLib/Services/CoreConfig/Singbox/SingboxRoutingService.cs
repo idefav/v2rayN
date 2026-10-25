@@ -237,7 +237,7 @@ public partial class CoreConfigSingboxService
 
             var domainStrategy = _config.RoutingBasicItem.DomainStrategy4Singbox.NullIfEmpty();
             var routing = context.RoutingItem;
-            if (routing.DomainStrategy4Singbox.IsNotEmpty())
+            if (!string.IsNullOrEmpty(routing?.DomainStrategy4Singbox))
             {
                 domainStrategy = routing.DomainStrategy4Singbox;
             }
@@ -255,6 +255,8 @@ public partial class CoreConfigSingboxService
             if (routing != null)
             {
                 var rules = JsonUtils.Deserialize<List<RulesItem>>(routing.RuleSet);
+                if (ManagedEgress && rules == null && !string.IsNullOrWhiteSpace(routing.RuleSet))
+                    throw new SshConfigurationException("路由规则格式无效 / Invalid routing rules.");
                 foreach (var item1 in rules ?? [])
                 {
                     if (!item1.Enabled)
@@ -289,6 +291,7 @@ public partial class CoreConfigSingboxService
         catch (Exception ex)
         {
             Logging.SaveLog(_tag, ex);
+            if (ManagedEgress) throw;
         }
     }
 
@@ -509,6 +512,7 @@ public partial class CoreConfigSingboxService
         catch (Exception ex)
         {
             Logging.SaveLog(_tag, ex);
+            if (ManagedEgress) throw;
         }
     }
 

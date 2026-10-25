@@ -5,11 +5,23 @@ namespace ServiceLib.Tests.Services;
 
 public class ObserverLifecycleTests
 {
+    [Test]
+    public async Task ChangedDomainCannotTestPreviouslyPairedService()
+    {
+        var calls = 0;
+        using var model = new ProxyCheckViewModel((_, _) => { calls++; return Task.FromResult<IAsyncDisposable>(new FakeSession()); });
+        Configure(model);
+        model.ObserverDomain = "different.example.net";
+        await model.TestObserverAsync();
+        await calls.Should().BeEqualTo(0);
+        await model.ObserverConnectionState.Should().BeEqualTo("invalid");
+    }
+
     private static void Configure(ProxyCheckViewModel model)
     {
         using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         model.ImportObserverProfile(JsonSerializer.Serialize(ObserverTests.Profile(key), ProxyCheckService.Json));
-        model.ObserverCredential = new string('k', 64);
+        model.ObserverPairingCode = "fixture-code";
     }
 
     [Test]
@@ -49,7 +61,7 @@ public class ObserverLifecycleTests
         var pending = model.TestObserverAsync(); await entered.Task.WaitAsync(TimeSpan.FromSeconds(2));
         model.Dispose(); await pending.WaitAsync(TimeSpan.FromSeconds(2));
         await model.CanStart.Should().BeFalse();
-        await model.ObserverCredential.Should().BeEqualTo("");
+        await model.ObserverPairingCode.Should().BeEqualTo("");
         await model.TestObserverAsync(); await model.IsBusy.Should().BeFalse();
     }
 
@@ -81,7 +93,7 @@ public class ObserverLifecycleTests
         await model.TestObserverAsync();
         await model.ObserverConnectionState.Should().BeEqualTo("passed");
         await session.Disposed.Should().BeTrue();
-        model.ObserverCredential = "different-credential";
+        model.ObserverPairingCode = "different-pairing";
         await model.ObserverConnectionState.Should().BeEqualTo("unverified");
     }
 
@@ -91,9 +103,9 @@ public class ObserverLifecycleTests
         using var model = new ProxyCheckViewModel((_, _) => Task.FromResult<IAsyncDisposable>(new FakeSession()));
         Configure(model);
         await model.TestObserverAsync();
-        var success = ProxyCheckText.T("控制接口连接成功", "Control connection works");
+        var success = ProxyCheckText.T("双向认证连接成功", "Mutually authenticated control connection works");
         await model.ObserverStatus.Contains(success).Should().BeTrue();
-        model.ObserverCredential = new string('n', 64);
+        model.ObserverPairingCode = "new-pairing";
         await model.ObserverConnectionState.Should().BeEqualTo("unverified");
         await model.ObserverStatus.Contains(success).Should().BeFalse();
     }
@@ -119,7 +131,7 @@ public class ObserverLifecycleTests
         model.UseObserver = true; model.ObserverProfileJson = "{";
         await model.TestObserverAsync();
         await model.ObserverConnectionState.Should().BeEqualTo("invalid");
-        Configure(model); model.ObserverCredential = "";
+        Configure(model); model.ObserverProfileJson = "{}";
         await model.TestObserverAsync();
         await model.ObserverConnectionState.Should().BeEqualTo("invalid");
         await calls.Should().BeEqualTo(0);

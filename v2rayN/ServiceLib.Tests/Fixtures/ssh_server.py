@@ -13,6 +13,7 @@ import socket
 import ssl
 import sys
 import threading
+import time
 
 import paramiko
 from cryptography import x509
@@ -39,6 +40,16 @@ ssh_channels_enabled.set()
 
 class HttpHandler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
+        if self.path == "/stream":
+            block = bytes(range(256)) * 32
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(block) * 128))
+            self.end_headers()
+            for _ in range(128):
+                self.wfile.write(block)
+                self.wfile.flush()
+                time.sleep(0.02)
+            return
         if self.path == "/stall-ssh":
             ssh_channels_enabled.clear()
         elif self.path == "/resume-ssh":

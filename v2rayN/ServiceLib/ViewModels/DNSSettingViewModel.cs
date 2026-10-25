@@ -62,7 +62,14 @@ public partial class DNSSettingViewModel : MyReactiveObject, ICloseable
         });
 
         this.WhenAnyValue(x => x.RayCustomDNSEnableCompatible, x => x.SBCustomDNSEnableCompatible)
-            .Subscribe(_ => this.RaisePropertyChanged(nameof(IsSimpleDNSEnabled)));
+            .Subscribe(_ =>
+            {
+                this.RaisePropertyChanged(nameof(IsSimpleDNSEnabled));
+                this.RaisePropertyChanged(nameof(IsManagedEgressEditable));
+                this.RaisePropertyChanged(nameof(IsDefaultDnsEditable));
+            });
+        this.WhenAnyValue(x => x.EgressModeIndex)
+            .Subscribe(_ => this.RaisePropertyChanged(nameof(IsDefaultDnsEditable)));
 
         Initialization = Init();
     }
@@ -102,10 +109,17 @@ public partial class DNSSettingViewModel : MyReactiveObject, ICloseable
         DomainDNSAddress2Compatible = item2?.DomainDNSAddress ?? string.Empty;
         NormalDNS2Compatible = item2?.NormalDNS ?? string.Empty;
         TunDNS2Compatible = item2?.TunDNS ?? string.Empty;
+        await InitEgressAsync();
     }
 
     private async Task SaveSettingAsync()
     {
+        var egressDraft = ValidateEgressDraft();
+        if (egressDraft == null)
+        {
+            NoticeManager.Instance.Enqueue(EgressError);
+            return;
+        }
         if (NormalDNSCompatible.IsNotEmpty())
         {
             var obj = JsonUtils.ParseJson(NormalDNSCompatible);
@@ -140,9 +154,10 @@ public partial class DNSSettingViewModel : MyReactiveObject, ICloseable
         {
             var obj2 = JsonUtils.Deserialize<Dns4Sbox>(NormalDNS2Compatible);
             if (obj2 == null
-                || obj2.servers.Count == 0
-                || obj2.servers.Any(s => s.type.IsNullOrEmpty()))
+                || obj2.servers is not { Count: > 0 }
+                || obj2.servers.Any(s => s == null || s.type.IsNullOrEmpty()))
             {
+                EgressError = ResUI.FillCorrectDNSText;
                 NoticeManager.Instance.Enqueue(ResUI.FillCorrectDNSText);
                 return;
             }
@@ -151,62 +166,65 @@ public partial class DNSSettingViewModel : MyReactiveObject, ICloseable
         {
             var obj2 = JsonUtils.Deserialize<Dns4Sbox>(TunDNS2Compatible);
             if (obj2 == null
-                || obj2.servers.Count == 0
-                || obj2.servers.Any(s => s.type.IsNullOrEmpty()))
+                || obj2.servers is not { Count: > 0 }
+                || obj2.servers.Any(s => s == null || s.type.IsNullOrEmpty()))
             {
+                EgressError = ResUI.FillCorrectDNSText;
                 NoticeManager.Instance.Enqueue(ResUI.FillCorrectDNSText);
                 return;
             }
         }
 
-        _config.SimpleDNSItem.UseSystemHosts = UseSystemHosts;
-        _config.SimpleDNSItem.AddCommonHosts = AddCommonHosts;
-        _config.SimpleDNSItem.FakeIP = FakeIP;
-        _config.SimpleDNSItem.FakeIPRange = FakeIPRange;
-        _config.SimpleDNSItem.BlockBindingQuery = BlockBindingQuery;
-        _config.SimpleDNSItem.BlockAAAAQuery = BlockAAAAQuery;
-        _config.SimpleDNSItem.DirectDNS = DirectDNS;
-        _config.SimpleDNSItem.RemoteDNS = RemoteDNS;
-        _config.SimpleDNSItem.BootstrapDNS = BootstrapDNS;
-        _config.SimpleDNSItem.Strategy4Freedom = Strategy4Freedom;
-        _config.SimpleDNSItem.Strategy4Proxy = Strategy4Proxy;
-        _config.SimpleDNSItem.Strategy4ProxyDial = Strategy4ProxyDial;
-        _config.SimpleDNSItem.Hosts = Hosts;
-        _config.SimpleDNSItem.DirectExpectedIPs = DirectExpectedIPs;
-        _config.SimpleDNSItem.ParallelQuery = ParallelQuery;
-        _config.SimpleDNSItem.ServeStale = ServeStale;
-        _config.SimpleDNSItem.EnableHappyEyeballs = EnableHappyEyeballs;
+        if (!await ValidateEgressGenerationAsync(egressDraft))
+        {
+            NoticeManager.Instance.Enqueue(EgressError);
+            return;
+        }
 
         var item1 = await AppManager.Instance.GetDNSItem(ECoreType.Xray);
+        var originalItem1 = JsonUtils.DeepCopy(item1);
         item1.Enabled = RayCustomDNSEnableCompatible;
         item1.DomainStrategy4Freedom = DomainStrategy4FreedomCompatible;
         item1.DomainDNSAddress = DomainDNSAddressCompatible;
         item1.UseSystemHosts = UseSystemHostsCompatible;
         item1.NormalDNS = NormalDNSCompatible;
         item1.TunDNS = TunDNSCompatible;
-        if (await ConfigHandler.SaveDNSItems(_config, item1) != 0)
-        {
-            NoticeManager.Instance.Enqueue(ResUI.OperationFailed);
-            return;
-        }
-
         var item2 = await AppManager.Instance.GetDNSItem(ECoreType.sing_box);
+        var originalItem2 = JsonUtils.DeepCopy(item2);
         item2.Enabled = SBCustomDNSEnableCompatible;
         item2.DomainStrategy4Freedom = DomainStrategy4Freedom2Compatible;
         item2.DomainDNSAddress = DomainDNSAddress2Compatible;
         item2.NormalDNS = JsonUtils.Serialize(JsonUtils.Deserialize<Dns4Sbox>(NormalDNS2Compatible));
         item2.TunDNS = JsonUtils.Serialize(JsonUtils.Deserialize<Dns4Sbox>(TunDNS2Compatible));
-        if (await ConfigHandler.SaveDNSItems(_config, item2) != 0)
+        var savedConfig = JsonUtils.DeepCopy(_config);
+        savedConfig.SimpleDNSItem = egressDraft;
+        var databaseSaved = false;
+        try
         {
-            NoticeManager.Instance.Enqueue(ResUI.OperationFailed);
+            // The two core settings form one database change. If the config file
+            // cannot be replaced, restore that change before reporting failure.
+            await SQLiteHelper.Instance.ReplaceAllAsync([item1, item2]);
+            databaseSaved = true;
+            if (await ConfigHandler.SaveConfig(savedConfig) != 0)
+                throw new IOException(ResUI.OperationFailed);
+        }
+        catch (Exception ex)
+        {
+            Logging.SaveLog(nameof(DNSSettingViewModel), ex);
+            EgressError = ResUI.OperationFailed;
+            if (databaseSaved)
+            {
+                try { await SQLiteHelper.Instance.ReplaceAllAsync([originalItem1, originalItem2]); }
+                catch (Exception rollbackError)
+                {
+                    Logging.SaveLog(nameof(DNSSettingViewModel), rollbackError);
+                    EgressError += " DNS 数据库回滚失败，请重新检查设置 / DNS database rollback failed; review settings.";
+                }
+            }
+            NoticeManager.Instance.Enqueue(EgressError);
             return;
         }
-
-        if (await ConfigHandler.SaveConfig(_config) != 0)
-        {
-            NoticeManager.Instance.Enqueue(ResUI.OperationFailed);
-            return;
-        }
+        _config.SimpleDNSItem = egressDraft;
         RequestClose?.Invoke(this, EventArgs.Empty);
     }
 }

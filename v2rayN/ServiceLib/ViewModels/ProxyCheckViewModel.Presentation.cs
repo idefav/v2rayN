@@ -55,6 +55,10 @@ public partial class ProxyCheckViewModel
     public string ObserverCoverage => UseObserver ? T("IPv4 · IPv6 未覆盖", "IPv4 · IPv6 not covered") : T("系统路径与本地入口分别检查", "System paths and local ingress checked separately");
     public string ObserverConnectionLabel => !UseObserver ? T("未启用", "Disabled") : ObserverConnectionState switch
     {
+        "pairing" => T("配对中", "Pairing"), "locked" => T("安全存储锁定或不可用", "Secure storage locked or unavailable"),
+        "temporary" => T("仅本次使用", "Temporary identity"),
+        "expired" => T("设备证书已过期", "Device certificate expired"), "revoked" => T("设备被撤销或认证被拒绝", "Device revoked or authentication rejected"),
+        "identity-changed" => T("服务器身份变化，请重新配对", "Server identity changed; pair again"),
         "testing" => T("验证中", "Testing"), "passed" => T("控制接口已验证", "Control verified"),
         "failed" => T("连接失败", "Connection failed"), "invalid" => T("配置无效", "Invalid configuration"), _ => T("尚未验证", "Not verified")
     };
@@ -75,7 +79,7 @@ public partial class ProxyCheckViewModel
         Results.CollectionChanged += ResultsChanged;
         _presentation = this.WhenAnyValue(x => x.SearchText, x => x.SelectedFilter, x => x.IsRunning, x => x.UseObserver, x => x.ObserverProfileJson, x => x.IsTestingObserver, x => x.ObserverConnectionState)
             .Subscribe(_ => RefreshPresentation());
-        _observerSettings = this.WhenAnyValue(x => x.UseObserver, x => x.ObserverProfileJson, x => x.ObserverCredential).Skip(1).Subscribe(_ =>
+        _observerSettings = this.WhenAnyValue(x => x.UseObserver, x => x.ObserverProfileJson, x => x.ObserverPairingCode, x => x.ObserverDomain).Skip(1).Subscribe(_ =>
         {
             _observerSettingsVersion++;
             ObserverConnectionState = "unverified";

@@ -38,6 +38,14 @@ public sealed class SQLiteHelper
         return await _dbAsync.InsertOrReplaceAsync(model);
     }
 
+    public Task ReplaceAllAsync(IEnumerable<object> models)
+    {
+        return _dbAsync.RunInTransactionAsync(connection =>
+        {
+            foreach (var model in models) connection.InsertOrReplace(model);
+        });
+    }
+
     public async Task<int> UpdateAsync(object model)
     {
         return await _dbAsync.UpdateAsync(model);

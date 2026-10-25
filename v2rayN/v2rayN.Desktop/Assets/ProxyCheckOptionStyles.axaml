@@ -1,0 +1,12 @@
+<Styles xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Style Selector="Border.check-panel">
+        <Setter Property="Background" Value="{DynamicResource WorkspaceSurface}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource WorkspaceBorder}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="6" />
+    </Style>
+    <Style Selector="TextBlock.check-caption, SelectableTextBlock.check-caption">
+        <Setter Property="Foreground" Value="{DynamicResource WorkspaceMuted}" />
+        <Setter Property="FontSize" Value="12" />
+    </Style>
+</Styles>

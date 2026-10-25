@@ -10,15 +10,7 @@ public partial class DNSSettingWindow : PageBase<DNSSettingViewModel>
     public DNSSettingWindow()
     {
         InitializeComponent();
-        var priority = new TextBlock
-        {
-            Text = WorkspaceText.T("启用自定义 DNS 后，相应内核使用自定义配置；基础与进阶配置会暂停生效。",
-                "Custom DNS takes priority for its core. Basic and advanced settings are suspended while custom DNS is enabled."),
-            TextWrapping = TextWrapping.Wrap, Margin = new Thickness(8, 0, 8, 12)
-        };
-        priority.Classes.Add("muted");
-        DockPanel.SetDock(priority, Dock.Top);
-        ((DockPanel)Content!).Children.Insert(0, priority);
+        BuildEgressLayout();
 
         _config = AppManager.Instance.Config;
         Loaded += Window_Loaded;

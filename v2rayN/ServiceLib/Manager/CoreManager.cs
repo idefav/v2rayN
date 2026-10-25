@@ -1,5 +1,7 @@
 namespace ServiceLib.Manager;
 
+internal sealed record CoreProcessRequirements(bool PreRequired);
+
 /// <summary>
 /// Core process processing class
 /// </summary>
@@ -15,6 +17,21 @@ public class CoreManager
     private ProcessService? _processService;
     private ProcessService? _processPreService;
     private EffectiveCoreConfig? _runningConfig;
+    // Startup requirements survive a partial launch; effective config is recorded only
+    // after every required process starts successfully.
+    private CoreProcessRequirements? _processRequirements;
+    internal (LocalHealth Main, LocalHealth Pre) GetRecoveryProcessHealth()
+    {
+        static LocalHealth Read(ProcessService? process)
+        {
+            try { return process is { HasExited: false } ? LocalHealth.Healthy : LocalHealth.Failed; }
+            catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception or ObjectDisposedException)
+            { return LocalHealth.Unknown; }
+        }
+        var requirements = _processRequirements;
+        return (Read(_processService), requirements == null ? LocalHealth.Unknown
+            : requirements.PreRequired ? Read(_processPreService) : LocalHealth.Healthy);
+    }
     public bool IsCoreRunning
     {
         get
@@ -122,6 +139,7 @@ public class CoreManager
             await UpdateFunc(false, $"{Utils.GetRuntimeInfo()}");
             await UpdateFunc(false, string.Format(ResUI.StartService, DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss")));
             await CoreStop();
+            _processRequirements = new(preContext != null);
             await Task.Delay(100);
 
             if (Utils.IsWindows() && (mainContext.IsTunEnabled || preContext?.IsTunEnabled == true))
@@ -199,6 +217,7 @@ public class CoreManager
     public async Task CoreStop()
     {
         _runningConfig = null;
+        _processRequirements = null;
         try
         {
             if (_linuxSudo)

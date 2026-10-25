@@ -32,7 +32,7 @@ public class MacWakeObserverTests
         if (await MacRecoveryPlatform.NetworkAsync(timeout.Token) == null) throw new Exception("default network not ready");
         var actual = await MacRecoveryPlatform.ReadProxyAsync(10808, timeout.Token);
         if (!actual.Matches) throw new Exception("current system proxy mismatch: " + actual.Detail);
-        if (!await RecoveryProbe.ProbeAsync(new("live read-only", 10808, "https://www.google.com/generate_204", 0), timeout.Token))
+        if (!(await RecoveryProbe.ProbeAsync(new("live read-only", 10808, "https://www.google.com/generate_204", 0), timeout.Token)).Success)
             throw new Exception("running proxy cannot reach Google");
     }
 

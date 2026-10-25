@@ -16,7 +16,6 @@ public partial class ProxyCheckViewModel : MyReactiveObject, IDisposable
     private int _generation;
     [Reactive] public partial bool UseObserver { get; set; }
     [Reactive] public partial string ObserverProfileJson { get; set; } = "";
-    [Reactive] public partial string ObserverCredential { get; set; } = "";
     [Reactive] public partial string ObserverStatus { get; set; } = "";
     [Reactive] public partial bool IsTestingObserver { get; set; }
     [Reactive] public partial string ObserverConnectionState { get; set; } = "unverified";
@@ -40,7 +39,11 @@ public partial class ProxyCheckViewModel : MyReactiveObject, IDisposable
     [Reactive] public partial string Http3Timeout { get; set; } = "10";
     private static string T(string zh, string en) => ProxyCheckText.T(zh, en);
 
-    public ProxyCheckViewModel() : this(async (options, ct) => await ObserverSession.OpenAsync(options, ct)) { }
+    public ProxyCheckViewModel() : this(async (options, ct) => await ObserverSession.OpenAsync(options, ct))
+    {
+        try { if (ObserverPairingService.Instance.Metadata() is { } metadata) ApplyPairedConnection(metadata); }
+        catch { ObserverStatus = T("配对配置无效，请重新配对。", "Invalid pairing metadata; pair again."); }
+    }
 
     internal ProxyCheckViewModel(Func<ProxyCheckOptions, CancellationToken, Task<IAsyncDisposable>> connectObserver)
     {
@@ -94,7 +97,7 @@ public partial class ProxyCheckViewModel : MyReactiveObject, IDisposable
         {
             var options = new ProxyCheckOptions
             {
-                Observer = ReadObserver(), ObserverCredential = ObserverCredential,
+                Observer = ReadObserver(),
                 ExpectedEgress = ExpectedEgress, HttpsUrl = HttpsUrl, HttpUrl = HttpUrl, StunTarget = StunTarget,
                 DnsTarget = DnsTarget, LocalDnsTarget = LocalDnsTarget,
                 Samples = int.Parse(Samples), Timeout = int.Parse(Timeout), Http3Timeout = int.Parse(Http3Timeout)
@@ -183,6 +186,9 @@ public partial class ProxyCheckViewModel : MyReactiveObject, IDisposable
     private ObserverProfile? ReadObserver()
     {
         if (!UseObserver) return null;
+        var profile = JsonSerializer.Deserialize<ObserverProfile>(ObserverProfileJson, ProxyCheckService.Json);
+        if (!string.IsNullOrWhiteSpace(ObserverDomain) && ObserverPairingService.NormalizeDomain(ObserverDomain) != profile?.Domain)
+            throw new ArgumentException(T("服务域名已修改，请先配对新服务。", "The service domain changed. Pair the new service first."));
         ImportObserverProfile(ObserverProfileJson);
         return JsonSerializer.Deserialize<ObserverProfile>(ObserverProfileJson, ProxyCheckService.Json);
     }
@@ -190,22 +196,21 @@ public partial class ProxyCheckViewModel : MyReactiveObject, IDisposable
     {
         if (_disposed || _starting || IsRunning || IsTestingObserver) return;
         IsTestingObserver = true; CanStart = CanRetry = false;
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(45));
         var version = _observerSettingsVersion;
         var connecting = false;
         try
         {
             var profile = ReadObserver() ?? throw new ArgumentException(T("请先启用受控服务。", "Enable the observer first."));
             version = _observerSettingsVersion;
-            if (ObserverCredential.Length < 32) throw new ArgumentException(T("请填写至少 32 字符的服务凭证。", "Provide an observer credential of at least 32 characters."));
             _observerCancel = timeout;
             connecting = true;
             ObserverConnectionState = "testing";
-            await using var session = await _connectObserver(new() { Observer = profile, ObserverCredential = ObserverCredential }, timeout.Token);
+            await using var session = await _connectObserver(new() { Observer = profile }, timeout.Token);
             timeout.Token.ThrowIfCancellationRequested();
             if (_disposed || version != _observerSettingsVersion) return;
             ObserverConnectionState = "passed";
-            ObserverStatus += "\n" + T("控制接口连接成功；各协议端口将在完整检查时单独验证。凭证仅保存在内存。", "Control connection works; protocol ports are checked separately in a full run. Credential is memory only.");
+            ObserverStatus += "\n" + T("双向认证连接成功；各协议端口将在完整检查时单独验证。", "Mutually authenticated control connection works; protocol ports are checked separately in a full run.");
         }
         catch (OperationCanceledException) when (timeout.IsCancellationRequested)
         {
@@ -213,7 +218,7 @@ public partial class ProxyCheckViewModel : MyReactiveObject, IDisposable
         }
         catch (Exception ex)
         {
-            if (!_disposed && version == _observerSettingsVersion) { ObserverConnectionState = connecting ? "failed" : "invalid"; ObserverStatus = ex.Message; }
+            if (!_disposed && version == _observerSettingsVersion) { ObserverConnectionState = ex is ObserverStorageException ? "locked" : ex is ObserverAuthenticationException auth ? auth.State : connecting ? "failed" : "invalid"; ObserverStatus = ex.Message; }
         }
         finally { _observerCancel = null; IsTestingObserver = false; CanStart = !_disposed; CanRetry = !_disposed && Results.Any(r => r.State is "failed" or "cancelled"); }
     }
@@ -221,6 +226,6 @@ public partial class ProxyCheckViewModel : MyReactiveObject, IDisposable
     {
         if (_disposed) return;
         _disposed = true; Cancel(); _exit.Dispose(); _presentation?.Dispose(); _observerSettings?.Dispose();
-        Results.CollectionChanged -= ResultsChanged; ObserverCredential = ""; CanStart = CanRetry = CanExport = false;
+        Results.CollectionChanged -= ResultsChanged; ObserverPairingCode = ""; CanStart = CanRetry = CanExport = false;
     }
 }

@@ -112,7 +112,16 @@ public sealed partial class ProxyCheckService
 
     internal static bool ObservationMatches(Probe probe, ObserverTicket ticket, EgressObservation observation)
     {
-        if (ticket.Kind.StartsWith("dns-")) return observation.Query == ticket.QueryName && observation.Protocol is "DNS/UDP" or "DNS/TCP";
+        if (ticket.Kind.StartsWith("dns-"))
+        {
+            if (observation.Query != ticket.QueryName || observation.Protocol is not ("DNS/UDP" or "DNS/TCP")) return false;
+            // Recursive resolvers can change transport and issue additional question types.
+            if (ticket.Kind == "dns-system") return true;
+            var expectedType = ticket.Query == "AAAA" ? "TypeAAAA" : "TypeA";
+            if (observation.QueryType != expectedType) return false;
+            return ticket.Kind == "dns-tcp" ? observation.Protocol == "DNS/TCP"
+                : observation.Protocol == "DNS/UDP" || ticket.Query == "TRUNCATED";
+        }
         return ticket.Kind switch { "h3" => observation.Protocol == "HTTP/3.0" && observation.Alpn == "h3", "udp" => observation.Protocol == "UDP", "stun" => observation.Protocol == "STUN/UDP", "tcp" => observation.Protocol == "TCP", "tls" => observation.Protocol == "TLS", _ => observation.Protocol.StartsWith("HTTP/") && !observation.Protocol.StartsWith("HTTP/3") };
     }
 

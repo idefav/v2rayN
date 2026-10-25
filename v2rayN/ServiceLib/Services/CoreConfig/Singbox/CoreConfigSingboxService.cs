@@ -12,6 +12,7 @@ public partial class CoreConfigSingboxService(CoreConfigContext context)
 
     public RetResult GenerateClientConfigContent()
     {
+        _egressDns.Clear();
         var ret = new RetResult();
         try
         {
@@ -51,8 +52,11 @@ public partial class CoreConfigSingboxService(CoreConfigContext context)
 
             GenRouting();
 
+            if (ManagedEgress && DnsEgressPolicy.Validate(context.SimpleDnsItem, context.AllProxiesMap.Values.Select(n => n.IndexId)) is { } dnsError)
+                throw new SshConfigurationException(dnsError);
             GenDns();
 
+            ApplyUdpEgressPolicy();
             GenLocalDns();
 
             GenExperimental();

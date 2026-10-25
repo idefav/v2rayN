@@ -18,6 +18,8 @@ public static class EditorSnapshot
         foreach (var property in model.GetType().GetProperties())
         {
             if (!property.CanRead || property.GetIndexParameters().Length != 0) continue;
+            if (model is DNSSettingViewModel && property.Name is nameof(DNSSettingViewModel.EgressError)
+                or nameof(DNSSettingViewModel.NodeCapability)) continue;
             var type = Nullable.GetUnderlyingType(property.PropertyType) ?? property.PropertyType;
             if (property.CanWrite && (type.IsPrimitive || type.IsEnum || type == typeof(string) || type == typeof(decimal)))
                 values[property.Name] = type == typeof(string) ? property.GetValue(model) ?? "" : property.GetValue(model);

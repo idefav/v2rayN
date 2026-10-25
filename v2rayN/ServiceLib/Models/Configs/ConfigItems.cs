@@ -274,6 +274,12 @@ public class WindowSizeItem
 [Serializable]
 public class SimpleDNSItem
 {
+    // Zero is deliberately the migration default.
+    public DnsEgressMode EgressMode { get; set; }
+    public string? DefaultEgressNodeId { get; set; }
+    public Dictionary<string, string> NodeDnsOverrides { get; set; } = new();
+    public bool BlockProxyUdp { get; set; }
+    public bool BlockQuic { get; set; }
     public bool? UseSystemHosts { get; set; }
     public bool? AddCommonHosts { get; set; }
     public bool? FakeIP { get; set; }
@@ -293,6 +299,8 @@ public class SimpleDNSItem
     public string? DirectExpectedIPs { get; set; }
     public bool? EnableHappyEyeballs { get; set; }
 }
+
+public enum DnsEgressMode { Legacy, FollowRouting, CurrentProxy }
 
 [Serializable]
 public class HappyEyeballs4RayItem

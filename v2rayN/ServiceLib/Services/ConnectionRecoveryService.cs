@@ -4,7 +4,17 @@ namespace ServiceLib.Services;
 
 internal sealed record RecoveryContext(string NodeId, int Port, string TestUrl, long Revision);
 internal sealed record ProxyCheckResult(bool Matches, string Detail);
-internal enum RecoveryState { Idle, Checking, Recovering, Offline, Failed }
+internal enum RecoveryState { Idle, Checking, Recovering, Offline, Failed, Degraded }
+internal enum LocalHealth { Healthy, Failed, Unknown }
+internal sealed record LocalRecoveryResult(LocalHealth Main, LocalHealth Pre, LocalHealth Socks)
+{
+    public bool Healthy => Main == LocalHealth.Healthy && Pre == LocalHealth.Healthy && Socks == LocalHealth.Healthy;
+    public string? Failure => Main == LocalHealth.Failed ? "主内核进程已退出"
+        : Pre == LocalHealth.Failed ? "必要前置内核已退出"
+        : Socks == LocalHealth.Failed ? "本地 SOCKS 连续两次握手失败" : null;
+}
+internal sealed record RecoveryRestartRequest(RecoveryContext Context, string Reason,
+    Func<CancellationToken, Task<bool>> Confirm);
 
 internal sealed record RecoveryOptions
 {
@@ -20,11 +30,12 @@ internal sealed class ConnectionRecoveryService(
     Func<CancellationToken, Task<string?>> network,
     Func<int, CancellationToken, Task<ProxyCheckResult>> readProxy,
     Func<RecoveryContext, CancellationToken, Task<bool>> applyProxy,
-    Func<RecoveryContext, CancellationToken, Task<bool>> probe,
-    Func<RecoveryContext, CancellationToken, Task<bool>> reload,
+    Func<RecoveryContext, CancellationToken, Task<RecoveryProbeResult>> probe,
+    Func<RecoveryRestartRequest, CancellationToken, Task<bool>> reload,
     Action<string> log,
     TimeProvider? timeProvider = null,
-    RecoveryOptions? options = null)
+    RecoveryOptions? options = null,
+    Func<RecoveryContext, CancellationToken, Task<LocalRecoveryResult>>? localHealth = null)
 {
     private readonly TimeProvider _clock = timeProvider ?? TimeProvider.System;
     private readonly RecoveryOptions _options = options ?? new();
@@ -38,6 +49,7 @@ internal sealed class ConnectionRecoveryService(
     private bool _started;
     private bool _stopping;
     private string _reason = "startup";
+    private long _checkId;
     public RecoveryState State { get; private set; }
     public string? Error { get; private set; }
     public event Action? Changed;
@@ -111,7 +123,7 @@ internal sealed class ConnectionRecoveryService(
                     reason = _reason;
                 }
                 try { await CheckAsync(reason, check.Token).ConfigureAwait(false); }
-                catch (OperationCanceledException) { }
+                catch (OperationCanceledException) { Log("decision=cancelled check superseded or stopped"); }
                 catch (Exception ex)
                 {
                     // Exception messages from HTTP clients may contain credential-bearing URLs.
@@ -139,7 +151,7 @@ internal sealed class ConnectionRecoveryService(
         var changed = State != state || Error != error;
         State = state;
         Error = error;
-        if (error != null) log(error);
+        if (error != null) Log(error);
         if (changed) Changed?.Invoke();
     }
 
@@ -149,9 +161,10 @@ internal sealed class ConnectionRecoveryService(
         var snapshot = context();
         if (snapshot == null) { SetState(RecoveryState.Idle); return; }
         SetState(RecoveryState.Checking);
-        log("check trigger=" + reason);
+        Interlocked.Increment(ref _checkId);
+        Log("check trigger=" + reason);
         var before = await network(token).ConfigureAwait(false);
-        if (before == null) { SetState(RecoveryState.Offline); return; }
+        if (before == null) { Log("decision=preserve network unavailable"); SetState(RecoveryState.Offline); return; }
         await Delay(_options.StableDelay, token).ConfigureAwait(false);
         EnsureCurrent(snapshot, token);
         if (before != await network(token).ConfigureAwait(false))
@@ -161,41 +174,149 @@ internal sealed class ConnectionRecoveryService(
             return;
         }
         if (!await EnsureProxyAsync(snapshot, token).ConfigureAwait(false)) return;
-        if (await probe(snapshot, token).ConfigureAwait(false)) { EnsureCurrent(snapshot, token); Healthy(); return; }
-        await Delay(_options.RetryDelay, token).ConfigureAwait(false);
-        EnsureCurrent(snapshot, token);
-        // A link can disappear during a timed-out request. Do not restart while offline.
-        if (before != await network(token).ConfigureAwait(false))
+        var local = await ReadLocal(snapshot, token);
+        if (!local.Healthy) { await ConfirmAndRecover(local); return; }
+        local = await ProbeAndRecheckLocal();
+        if (local != null) await ConfirmAndRecover(local);
+
+        // All paths use the same final local check before reporting an external-only
+        // outage. A null result means the check already published its final state.
+        async Task<LocalRecoveryResult?> ProbeAndRecheckLocal()
         {
+            if ((await Probe(snapshot, token)).Success) { Healthy(); return null; }
+            await Delay(_options.RetryDelay, token);
+            if (!await SameNetwork()) return null;
+            if ((await Probe(snapshot, token)).Success) { Healthy(); return null; }
+            if (!await SameNetwork()) return null;
+            var latest = await ReadLocal(snapshot, token);
+            if (!await SameNetwork()) return null;
+            if (!latest.Healthy) return latest;
+            Degraded();
+            return null;
+        }
+
+        async Task ConfirmAndRecover(LocalRecoveryResult first, bool recheckTransient = true)
+        {
+            if (first.Failure == null) { Unknown(); return; }
+            await Delay(_options.RetryDelay, token);
+            if (!await SameNetwork()) return;
+            var second = await ReadLocal(snapshot, token);
+            if (second.Healthy)
+            {
+                if (!recheckTransient)
+                {
+                    // Bound work when local health keeps flapping; the next scheduled
+                    // check may try again, without falsely claiming external-only failure.
+                    Log("decision=preserve local health unstable");
+                    SetState(RecoveryState.Degraded, "Local core health unstable; connection preserved.");
+                    return;
+                }
+                var latest = await ProbeAndRecheckLocal();
+                if (latest != null) await ConfirmAndRecover(latest, recheckTransient: false);
+                return;
+            }
+            if (second.Failure == null) { Unknown(); return; }
+            await Restart(second.Failure);
+        }
+
+        async Task<bool> SameNetwork()
+        {
+            EnsureCurrent(snapshot, token);
+            var current = await network(token);
+            EnsureCurrent(snapshot, token);
+            if (current == before) return true;
             SetState(RecoveryState.Offline);
-            return;
+            Log("decision=preserve network changed");
+            return false;
         }
-        if (await probe(snapshot, token).ConfigureAwait(false)) { EnsureCurrent(snapshot, token); Healthy(); return; }
-        EnsureCurrent(snapshot, token);
-        var now = _clock.GetUtcNow();
-        while (_restarts.TryPeek(out var oldest) && now - oldest >= TimeSpan.FromMinutes(5)) _restarts.Dequeue();
-        if (_restarts.Count >= 2 || _restarts.TryPeek(out _) && now - _restarts.Last() < TimeSpan.FromSeconds(60))
+
+        async Task Restart(string failure)
         {
-            SetState(RecoveryState.Failed, "Core connection unavailable; automatic restart limit reached.");
-            return;
+            if (!await SameNetwork()) return;
+            var now = _clock.GetUtcNow();
+            while (_restarts.TryPeek(out var oldest) && now - oldest >= TimeSpan.FromMinutes(5)) _restarts.Dequeue();
+            if (_restarts.Count >= 2 || _restarts.TryPeek(out _) && now - _restarts.Last() < TimeSpan.FromSeconds(60))
+            {
+                SetState(RecoveryState.Failed, "Core connection unavailable; automatic restart limit reached.");
+                return;
+            }
+            SetState(RecoveryState.Recovering);
+            var attempted = false;
+            var request = new RecoveryRestartRequest(snapshot, failure, async ct =>
+            {
+                ct.ThrowIfCancellationRequested();
+                if (!await SameNetwork()) return false;
+                var latest = await ReadLocal(snapshot, ct);
+                if (latest.Failure != failure) { Log("decision=preserve local fault cleared, changed or unknown before reload"); return false; }
+                if (!await SameNetwork()) return false;
+                // Count only a restart authorized while holding the reload coordinator lock.
+                attempted = true;
+                _restarts.Enqueue(_clock.GetUtcNow());
+                Log("decision=restart reason=" + failure);
+                return true;
+            });
+            var reloaded = await reload(request, token).ConfigureAwait(false);
+            EnsureCurrent(snapshot, token);
+            if (!reloaded)
+            {
+                if (!attempted)
+                {
+                    EnsureCurrent(snapshot, token);
+                    if (State != RecoveryState.Offline) SetState(RecoveryState.Degraded, "Recovery deferred; local state changed.");
+                    return;
+                }
+                SetState(RecoveryState.Failed, "Core restart failed; see core log.");
+                return;
+            }
+            EnsureCurrent(snapshot, token);
+            if (!await EnsureProxyAsync(snapshot, token).ConfigureAwait(false)) return;
+            var after = await ReadLocal(snapshot, token);
+            if (!after.Healthy) { SetState(RecoveryState.Failed, "Local core unavailable after restart."); return; }
+            // A fault recurring after the restart is reported, never followed by a
+            // second restart within this check.
+            if (await ProbeAndRecheckLocal() != null)
+                SetState(RecoveryState.Failed, "Local core unavailable after restart.");
         }
-        SetState(RecoveryState.Recovering);
-        _restarts.Enqueue(now);
-        log("core connection failed twice; restarting current core");
-        if (!await reload(snapshot, token).ConfigureAwait(false))
-        {
-            SetState(RecoveryState.Failed, "Core restart failed; see core log.");
-            return;
-        }
+    }
+
+    private async Task<RecoveryProbeResult> Probe(RecoveryContext snapshot, CancellationToken token)
+    {
+        var result = await probe(snapshot, token).ConfigureAwait(false);
         EnsureCurrent(snapshot, token);
-        if (!await EnsureProxyAsync(snapshot, token).ConfigureAwait(false)) return;
-        if (await probe(snapshot, token).ConfigureAwait(false)) { EnsureCurrent(snapshot, token); Healthy(); }
-        else SetState(RecoveryState.Failed, "Core connection unavailable after restart.");
+        foreach (var target in result.Targets)
+            Log($"probe host={target.Host} outcome={target.Outcome} HTTP={target.StatusCode} elapsedMs={target.ElapsedMs}");
+        return result;
+    }
+
+    private void Log(string message) => log("check=" + _checkId + " " + message);
+
+    private void Degraded()
+    {
+        Log("decision=preserve external probes unavailable; local core healthy");
+        SetState(RecoveryState.Degraded, "External probes unavailable; local core and SOCKS are healthy. Connection preserved.");
+    }
+
+    private void Unknown()
+    {
+        Log("decision=preserve local health unknown");
+        SetState(RecoveryState.Degraded, "Local core health unknown; connection preserved.");
+    }
+
+    private async Task<LocalRecoveryResult> ReadLocal(RecoveryContext snapshot, CancellationToken token)
+    {
+        EnsureCurrent(snapshot, token);
+        LocalRecoveryResult result;
+        try { result = localHealth == null ? new(LocalHealth.Unknown, LocalHealth.Unknown, LocalHealth.Unknown) : await localHealth(snapshot, token); }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
+        catch (Exception ex) { Log("local check unknown=" + ex.GetType().Name); result = new(LocalHealth.Unknown, LocalHealth.Unknown, LocalHealth.Unknown); }
+        EnsureCurrent(snapshot, token);
+        Log($"local main={result.Main} pre={result.Pre} socks={result.Socks}");
+        return result;
     }
 
     private void Healthy()
     {
-        log("connection healthy");
+        Log("decision=preserve connection healthy");
         SetState(RecoveryState.Idle);
     }
 
@@ -207,17 +328,19 @@ internal sealed class ConnectionRecoveryService(
             try
             {
                 var actual = await readProxy(snapshot.Port, token).ConfigureAwait(false);
-                log("system proxy " + actual.Detail);
+                EnsureCurrent(snapshot, token);
+                Log("system proxy " + actual.Detail);
                 if (actual.Matches) return true;
                 SetState(RecoveryState.Recovering);
                 await applyProxy(snapshot, token).ConfigureAwait(false);
                 EnsureCurrent(snapshot, token);
                 actual = await readProxy(snapshot.Port, token).ConfigureAwait(false);
-                log("system proxy read-back " + actual.Detail);
+                EnsureCurrent(snapshot, token);
+                Log("system proxy read-back " + actual.Detail);
                 if (actual.Matches) return true;
             }
-            catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
-            catch (Exception ex) { log("system proxy verification failed=" + ex.GetType().Name); }
+            catch (OperationCanceledException) when (token.IsCancellationRequested || context() != snapshot) { throw; }
+            catch (Exception ex) { Log("system proxy verification failed=" + ex.GetType().Name); }
             if (attempt < 2) await Delay(_options.ProxyRetryDelay, token).ConfigureAwait(false);
         }
         SetState(RecoveryState.Failed, "System proxy settings could not be applied or verified; check network permissions.");

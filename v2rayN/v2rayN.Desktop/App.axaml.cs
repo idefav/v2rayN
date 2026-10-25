@@ -43,8 +43,8 @@ public partial class App : Application
                     var recovery = new ConnectionRecoveryService(mainWindowViewModel.GetRecoveryContext,
                         MacRecoveryPlatform.NetworkAsync, MacRecoveryPlatform.ReadProxyAsync,
                         (_, token) => SysProxyHandler.UpdateSysProxy(AppManager.Instance.Config, false, cancellationToken: token),
-                        (snapshot, token) => RecoveryProbe.ProbeAsync(snapshot, token, RecoveryLog),
-                        mainWindowViewModel.ReloadForRecoveryAsync, RecoveryLog);
+                        (snapshot, token) => RecoveryProbe.ProbeAsync(snapshot, token),
+                        mainWindowViewModel.ReloadForRecoveryAsync, RecoveryLog, localHealth: RecoveryProbe.LocalAsync);
                     AppManager.Instance.ConnectionRecovery = recovery;
                     var events = new MacConnectionEvents(recovery);
                     recovery.Stopping += events.Dispose;

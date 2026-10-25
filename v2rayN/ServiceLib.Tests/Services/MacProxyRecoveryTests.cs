@@ -3,6 +3,25 @@ namespace ServiceLib.Tests.Services;
 public class MacProxyRecoveryTests
 {
     [Test]
+    [Arguments(true)]
+    [Arguments(false)]
+    public async Task PlatformCommandDistinguishesInternalTimeoutFromCallerCancellation(bool cancelCaller)
+    {
+        if (!OperatingSystem.IsMacOS()) { Skip.Test("macOS recovery command wrapper"); return; }
+        using var caller = new CancellationTokenSource(cancelCaller ? TimeSpan.FromMilliseconds(150) : TimeSpan.FromSeconds(10));
+        try
+        {
+            await MacRecoveryPlatform.CommandAsync("/bin/sleep", ["30"], caller.Token);
+            throw new Exception("stalled command completed unexpectedly");
+        }
+        catch (TimeoutException) when (!cancelCaller)
+        {
+            if (caller.IsCancellationRequested) throw new Exception("internal timeout cancelled its caller");
+        }
+        catch (OperationCanceledException) when (cancelCaller && caller.IsCancellationRequested) { }
+    }
+
+    [Test]
     public async Task ReadsActualProxyFlagsAndEndpoint()
     {
         var actual = "<dictionary> {\n HTTPEnable : 1\n HTTPProxy : 127.0.0.1\n HTTPPort : 10808\n HTTPSEnable : 1\n HTTPSProxy : 127.0.0.1\n HTTPSPort : 10808\n SOCKSEnable : 1\n SOCKSProxy : 127.0.0.1\n SOCKSPort : 10808\n}";

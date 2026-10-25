@@ -14,6 +14,48 @@ public class ObserverTests
     };
 
     [Test]
+    public async Task DirectDnsEvidenceMustMatchQuestionTypeAndTransport()
+    {
+        var probe = new ProxyCheckService.Probe("dns", "DNS", "dns-udp", "203.0.113.10:53", "socks");
+        var ticket = new ObserverTicket { Kind = "dns-udp", Query = "AAAA", QueryName = "sample.check.example.net." };
+        var observation = new EgressObservation { Query = ticket.QueryName, QueryType = "TypeA", Protocol = "DNS/UDP" };
+        await ProxyCheckService.ObservationMatches(probe, ticket, observation).Should().BeFalse();
+        observation.QueryType = "TypeAAAA";
+        await ProxyCheckService.ObservationMatches(probe, ticket, observation).Should().BeTrue();
+        observation.Protocol = "DNS/TCP";
+        await ProxyCheckService.ObservationMatches(probe, ticket, observation).Should().BeFalse();
+        ticket.Kind = "dns-tcp";
+        await ProxyCheckService.ObservationMatches(probe, ticket, observation).Should().BeTrue();
+        observation.Protocol = "DNS/UDP";
+        await ProxyCheckService.ObservationMatches(probe, ticket, observation).Should().BeFalse();
+        ticket.Kind = "dns-udp"; ticket.Query = "TRUNCATED"; observation.QueryType = "TypeA";
+        await ProxyCheckService.ObservationMatches(probe, ticket, observation).Should().BeTrue();
+        observation.Protocol = "DNS/TCP";
+        await ProxyCheckService.ObservationMatches(probe, ticket, observation).Should().BeTrue();
+        ticket.Kind = "dns-system"; ticket.Query = "AAAA";
+        await ProxyCheckService.ObservationMatches(probe, ticket, observation).Should().BeTrue();
+    }
+
+    [Test]
+    public async Task SecureObserverEndpointsCannotAliasPlainHttpEndpoint()
+    {
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        foreach (var kind in new[] { "https", "h3" })
+        {
+            var profile = Profile(key);
+            if (kind == "https") profile.HttpsUrl = profile.HttpUrl;
+            else profile.Http3Url = profile.HttpUrl;
+            var rejected = false;
+            try { ObserverSession.Validate(profile); }
+            catch (ArgumentException) { rejected = true; }
+            await rejected.Should().BeTrue();
+        }
+        var sharedTlsEndpoint = Profile(key);
+        sharedTlsEndpoint.Http3Url = sharedTlsEndpoint.HttpsUrl;
+        ObserverSession.Validate(sharedTlsEndpoint);
+    }
+
+    [Test]
     public async Task SignedReceiptBindsTheActualSample()
     {
         using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256); var profile = Profile(key); ObserverSession.Validate(profile);

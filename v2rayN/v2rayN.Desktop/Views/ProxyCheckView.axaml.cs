@@ -1,5 +1,7 @@
 using Avalonia.Platform.Storage;
-using Avalonia.Threading;
+using Avalonia.Layout;
+using Avalonia.Markup.Xaml.Styling;
+using Avalonia.VisualTree;
 using ServiceLib.Models.Dto;
 
 namespace v2rayN.Desktop.Views;
@@ -7,6 +9,7 @@ namespace v2rayN.Desktop.Views;
 public partial class ProxyCheckView : UserControl
 {
     public ProxyCheckViewModel Model { get; }
+    private Window? _optionsWindow;
     public ProxyCheckView() : this(new ProxyCheckViewModel()) { }
     internal ProxyCheckView(ProxyCheckViewModel model)
     {
@@ -15,7 +18,6 @@ public partial class ProxyCheckView : UserControl
         start.Content = T("开始检查", "Start checks"); cancel.Content = T("取消", "Cancel");
         retry.Content = T("重试失败项", "Retry failed"); saveBaseline.Content = T("保存为基线", "Save as baseline");
         loadBaseline.Content = T("选择基线", "Choose baseline"); export.Content = T("导出报告", "Export report");
-        advanced.Header = T("高级选项", "Advanced options");
         pageHint.Text = T("通信、出口与预期，分开判断", "Connectivity, egress and expectations — evaluated separately");
         baselineMenu.Content = T("基线 ▾", "Baseline ▾"); settingsButton.Content = T("检查选项", "Check options");
         environmentLabel.Text = T("当前运行环境", "RUNNING ENVIRONMENT");
@@ -34,41 +36,83 @@ public partial class ProxyCheckView : UserControl
         comparisonColumn.Text = T("预期比较", "Expectation"); elapsedColumn.Text = T("耗时", "Time");
         emptyTitle.Text = T("暂无可显示的结果", "No results to display");
         emptyHint.Text = T("开始检查以获取真实证据；已有结果时可调整筛选或清空搜索。", "Start a check to collect evidence, or adjust the filter and clear your search.");
-        observerRawJson.Header = T("原始连接配置 JSON", "Raw profile JSON");
-        observerSection.Header = T("独立出口探测服务", "Independent egress observer");
+        observerRawJson.Header = T("设备身份与高级配置", "Device identity and advanced configuration");
         enableObserver.Content = T("启用受控探测（IPv4）", "Use controlled observer (IPv4)");
-        importObserver.Content = T("导入连接配置", "Import profile");
+        observerDomainLabel.Text = T("服务域名", "Service domain");
+        observerDeviceLabel.Text = T("设备名称", "Device name");
+        pairObserver.Content = T("配对并连接", "Pair and connect");
+        unpairObserver.Content = T("解除配对", "Unpair");
+        temporaryObserver.Content = T("仅本次使用", "Use temporarily");
+        forgetObserver.Content = T("仅删除本地凭证（未撤销）", "Delete locally only (not revoked)");
         testObserver.Content = T("测试控制接口", "Test control connection");
-        observerCredentialLabel.Text = T("私有 API 凭证（仅保存在内存，不写入配置、报告或基线）", "Private API credential (memory only; excluded from settings, reports and baselines)");
+        observerCredentialLabel.Text = T("一次性配对串（由服务器管理员生成，成功后清空）", "One-time pairing string (provided by the administrator; cleared after pairing)");
         expectedLabel.Text = T("预期出口 IP / CIDR（多个值以逗号分隔）", "Expected egress IP / CIDR (comma-separated)");
-        rulesLabel.Text = T("分流预期：目标=IP/CIDR；精确规则：目标|协议|路径=IP/CIDR（路径：socks/native/http-connect/system）", "Expectations: target=IP/CIDR; scoped: target|protocol|path=IP/CIDR (paths: socks/native/http-connect/system)");
+        rulesLabel.Text = T("分流预期：目标=IP/CIDR；精确规则：目标|协议|路径=IP/CIDR（路径：socks/native/http-connect/system/browser；WebRTC 协议：webrtc）", "Expectations: target=IP/CIDR; scoped: target|protocol|path=IP/CIDR (paths: socks/native/http-connect/system/browser; WebRTC protocol: webrtc)");
         dnsLabel.Text = T("公共 DNS（host:port）", "Public DNS (host:port)");
         localDnsLabel.Text = T("本地 DNS（留空自动发现；系统解析单独检查）", "Local DNS (empty to discover; system resolver is checked separately)");
         samplesLabel.Text = T("采样次数", "Samples"); timeoutLabel.Text = T("超时 / 秒", "Timeout / s"); h3TimeoutLabel.Text = T("HTTP3 超时 / 秒", "HTTP3 timeout / s");
-        limits.Text = T("结论仅适用于当前探测目标。保存直连基线前请自行关闭代理。WebRTC/浏览器 DoH、断网保护、网络切换、长连接、局域网/.local、UDP 大包与 MTU 尚未覆盖。", "Conclusions apply only to the probed targets. Turn your proxy off before capturing a direct baseline. Browser WebRTC/DoH, kill switch, network changes, long-lived connections, LAN/.local, large UDP datagrams and MTU are not covered.");
+        limits.Text = T("结论仅适用于当前探测目标。保存直连基线前请自行关闭代理。WebRTC 通过“浏览器 WebRTC”单独采集。浏览器 DoH、TURN、IPv6 WebRTC 传输、断网保护、网络切换、长连接、局域网/.local、UDP 大包与 MTU 尚未覆盖。", "Conclusions apply only to the probed targets. Turn your proxy off before capturing a direct baseline. Use Browser WebRTC for a separate browser run. Browser DoH, TURN, IPv6 WebRTC transport, kill switch, network changes, long-lived connections, LAN/.local, large UDP datagrams and MTU are not covered.");
         start.Click += async (_, _) => await Model.StartAsync();
+        webRtc.Content = T("浏览器 WebRTC", "Browser WebRTC");
+        webRtc.Click += async (_, _) => await Model.StartWebRtcAsync(async uri =>
+            TopLevel.GetTopLevel(this) is { } top && await top.Launcher.LaunchUriAsync(uri));
         retry.Click += async (_, _) => await Model.StartAsync(true);
         cancel.Click += (_, _) => Model.Cancel();
         saveBaseline.Click += (_, _) => { try { Model.SaveBaseline(); } catch (Exception ex) { Model.Summary = ex.Message; } };
         loadBaseline.Click += async (_, _) => await LoadBaselineAsync();
         export.Click += async (_, _) => await ExportAsync();
         testObserver.Click += async (_, _) => await Model.TestObserverAsync();
-        importObserver.Click += async (_, _) => await ImportObserverAsync();
-        configureObserver.Click += (_, _) => ShowOptions(observerSection);
-        settingsButton.Click += (_, _) => ShowOptions(advanced);
+        pairObserver.Click += async (_, _) => await Model.PairObserverAsync();
+        temporaryObserver.Click += async (_, _) => await Model.PairObserverAsync(true);
+        unpairObserver.Click += async (_, _) => await Model.UnpairObserverAsync();
+        forgetObserver.Click += async (_, _) => await Model.UnpairObserverAsync(true);
+        configureObserver.Click += async (_, _) => await ShowOptionsAsync(observerSection, T("独立出口探测服务", "Independent egress observer"), configureObserver);
+        settingsButton.Click += async (_, _) => await ShowOptionsAsync(advanced, T("检查选项", "Check options"), settingsButton);
         SizeChanged += (_, _) => { var compact = Bounds.Width < 960; Classes.Set("compact", compact); ProxyCheckGrid.SetCompact(this, compact); };
         AttachedToVisualTree += async (_, _) => await Model.RefreshEnvironmentAsync();
+        DetachedFromVisualTree += (_, _) => _optionsWindow?.Close();
     }
-    private static void ShowOptions(Expander section)
+    private async Task ShowOptionsAsync(Border section, string title, Button trigger)
     {
-        section.IsExpanded = true;
-        Dispatcher.UIThread.Post(() => section.BringIntoView(), DispatcherPriority.Loaded);
+        if (_optionsWindow != null) { _optionsWindow.Activate(); return; }
+        if (TopLevel.GetTopLevel(this) is not Window owner) return;
+        var close = new Button { Name = "closeCheckOptions", Content = ProxyCheckText.T("完成", "Done"),
+            IsDefault = true, IsCancel = true, HorizontalAlignment = HorizontalAlignment.Right, MinWidth = 100 };
+        var footer = new Border { Padding = new Thickness(0, 12, 0, 0), Child = close };
+        DockPanel.SetDock(footer, Dock.Bottom);
+        var heading = new TextBlock { Text = title, FontSize = 20, FontWeight = Avalonia.Media.FontWeight.SemiBold,
+            TextWrapping = Avalonia.Media.TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) };
+        DockPanel.SetDock(heading, Dock.Top);
+        var scroll = new ScrollViewer { Name = "checkOptionsScroll", HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled };
+        var layout = new DockPanel { Margin = new Thickness(16), Children = { footer, heading, scroll } };
+        var window = new Window
+        {
+            Name = "proxyCheckOptionsWindow", Title = title, DataContext = Model, Content = layout,
+            Width = Math.Min(720, owner.ClientSize.Width), Height = Math.Min(720, owner.ClientSize.Height),
+            MinWidth = 320, MinHeight = 240, ShowInTaskbar = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner
+        };
+        var stylesUri = new Uri($"avares://{typeof(ProxyCheckView).Assembly.GetName().Name}/Assets/ProxyCheckOptionStyles.axaml");
+        window.Styles.Add(new StyleInclude(stylesUri) { Source = stylesUri });
+        close.Click += (_, _) => window.Close();
+        _optionsWindow = window;
+        optionsStore.Children.Remove(section);
+        section.DataContext = Model;
+        scroll.Content = section;
+        try { await window.ShowDialog(owner); }
+        finally
+        {
+            scroll.Content = null;
+            optionsStore.Children.Add(section);
+            _optionsWindow = null;
+            if (trigger.IsAttachedToVisualTree()) trigger.Focus();
+        }
     }
     private async Task ImportObserverAsync()
     {
         try
         {
-            var provider = TopLevel.GetTopLevel(this)?.StorageProvider; if (provider == null) return;
+            var provider = (_optionsWindow ?? TopLevel.GetTopLevel(this))?.StorageProvider; if (provider == null) return;
             var files = await provider.OpenFilePickerAsync(new() { Title = "Observer profile.json", AllowMultiple = false, FileTypeFilter = [new("JSON") { Patterns = ["*.json"] }] });
             if (files.Count == 0) return;
             using var file = files[0]; await using var stream = await file.OpenReadAsync();

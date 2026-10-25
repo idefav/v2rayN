@@ -9,6 +9,7 @@ public static class FormPresentation
 {
     public static void Apply(Control root)
     {
+        if (root is Views.DNSSettingWindow) return; // Dedicated design preserves its three-tab layout.
         if (root.Tag is string tag && tag == "workspace-presented") return;
         SettingsPresentation.Apply(root);
         if (root is Views.SubEditWindow) GroupSubscriptionForm(root);

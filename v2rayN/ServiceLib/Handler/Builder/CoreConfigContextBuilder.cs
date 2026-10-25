@@ -31,13 +31,14 @@ public class CoreConfigContextBuilder
     ///     Builds a <see cref="CoreConfigContext" /> for the given node, resolves its proxy map,
     ///     and processes outbound nodes referenced by routing rules.
     /// </summary>
-    public static async Task<CoreConfigContextBuilderResult> Build(Config config, ProfileItem node)
+    public static async Task<CoreConfigContextBuilderResult> Build(Config config, ProfileItem node, DNSItem? dnsOverride = null)
     {
         var runCoreType = AppManager.Instance.GetCoreType(node, node.ConfigType);
         var coreType = runCoreType == ECoreType.sing_box ? ECoreType.sing_box : ECoreType.Xray;
         var context = new CoreConfigContext
         {
             Node = node,
+            SourceNodeId = node.IndexId,
             RunCoreType = runCoreType,
             AllProxiesMap = [],
             AppConfig = config,
@@ -45,7 +46,7 @@ public class CoreConfigContextBuilder
             IsTunEnabled = config.TunModeItem.EnableTun,
             SimpleDnsItem = config.SimpleDNSItem,
             ProtectDomainList = [],
-            RawDnsItem = await AppManager.Instance.GetDNSItem(coreType),
+            RawDnsItem = dnsOverride ?? await AppManager.Instance.GetDNSItem(coreType),
             RoutingItem = await ConfigHandler.GetDefaultRouting(config),
             IsWindows = Utils.IsWindows(),
             IsMacOS = Utils.IsMacOS(),
@@ -63,7 +64,12 @@ public class CoreConfigContextBuilder
         validatorResult.Warnings.AddRange(nodeValidatorResult.Warnings);
         if (!(context.RoutingItem?.RuleSet.IsNullOrEmpty() ?? true))
         {
-            var rules = JsonUtils.Deserialize<List<RulesItem>>(context.RoutingItem?.RuleSet) ?? [];
+            var rules = JsonUtils.Deserialize<List<RulesItem>>(context.RoutingItem?.RuleSet);
+            if (rules == null || rules.Any(rule => rule == null))
+            {
+                validatorResult.Errors.Add("路由规则格式无效 / Invalid routing rules.");
+                return new CoreConfigContextBuilderResult(context, validatorResult);
+            }
             foreach (var ruleItem in rules.Where(ruleItem =>
                          ruleItem.Enabled && !Global.OutboundTags.Contains(ruleItem.OutboundTag)))
             {
@@ -95,6 +101,27 @@ public class CoreConfigContextBuilder
                 }
 
                 context.AllProxiesMap[$"remark:{ruleItem.OutboundTag}"] = actRuleNode;
+            }
+        }
+
+        if (coreType == ECoreType.sing_box && context.RawDnsItem?.Enabled != true && context.FullConfigTemplate?.Enabled != true
+            && config.SimpleDNSItem.EgressMode != DnsEgressMode.Legacy)
+        {
+            var ids = (config.SimpleDNSItem.NodeDnsOverrides ?? []).Keys.ToHashSet();
+            if (config.SimpleDNSItem.EgressMode == DnsEgressMode.FollowRouting
+                && !string.IsNullOrEmpty(config.SimpleDNSItem.DefaultEgressNodeId))
+                ids.Add(config.SimpleDNSItem.DefaultEgressNodeId);
+            foreach (var id in ids)
+            {
+                if (context.AllProxiesMap.ContainsKey(id)) continue;
+                var dnsNode = await AppManager.Instance.GetProfileItem(id);
+                if (dnsNode == null)
+                {
+                    validatorResult.Errors.Add("DNS 出口节点不存在 / DNS egress node is missing: " + id);
+                    continue;
+                }
+                var (_, validation) = await ResolveNodeAsync(context, dnsNode, false);
+                validatorResult.Errors.AddRange(validation.Errors);
             }
         }
 

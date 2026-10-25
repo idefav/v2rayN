@@ -5,7 +5,7 @@ public sealed class SshConfigurationException(string message) : Exception(messag
 public static class SshDnsPolicy
 {
     // Inspect the final graph, including selectors, chains and user templates.
-    public static string Apply(string content, bool customDns)
+    public static string Apply(string content, bool customDns, bool respectUdpCapability = false)
     {
         var config = JsonNode.Parse(content)!;
         var nodes = (config["outbounds"] as JsonArray ?? []).OfType<JsonObject>().ToList();
@@ -15,7 +15,8 @@ public static class SshDnsPolicy
         bool UsesSsh(string? tag, HashSet<string> seen)
         {
             if (tag == null || !seen.Add(tag) || !outbounds.TryGetValue(tag, out var outbound)) return false;
-            if (outbound["type"]?.GetValue<string>() == "ssh") return true;
+            if (outbound["type"]?.GetValue<string>() == "ssh")
+                return !respectUdpCapability || outbound["udp_forwarding"]?.GetValue<bool>() != true;
             if (UsesSsh(outbound["detour"]?.GetValue<string>(), seen)) return true;
             return (outbound["outbounds"] as JsonArray ?? [])
                 .Any(child => UsesSsh(child?.GetValue<string>(), seen));

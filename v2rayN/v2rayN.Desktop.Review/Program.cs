@@ -124,7 +124,7 @@ internal static class Program
     }
 }
 
-public class ReviewApp : v2rayN.Desktop.App
+public partial class ReviewApp : v2rayN.Desktop.App
 {
     private MainWindow _main = null!;
     private MainWindowViewModel _vm = null!;
@@ -197,20 +197,31 @@ public class ReviewApp : v2rayN.Desktop.App
         var bar = _main.GetLogicalDescendants().OfType<StatusBarView>().Single();
         var label = bar.FindControl<TextBlock>("txtRecoveryState")!;
         foreach (var width in new[] { 700, 1100 })
-        foreach (var state in new[] { RecoveryState.Checking, RecoveryState.Recovering, RecoveryState.Offline, RecoveryState.Failed, RecoveryState.Idle })
+        foreach (var state in new[] { RecoveryState.Checking, RecoveryState.Recovering, RecoveryState.Offline, RecoveryState.Failed, RecoveryState.Degraded, RecoveryState.Idle })
         {
             _main.Width = width;
             using var cancel = new CancellationTokenSource();
             var recovery = new ConnectionRecoveryService(() => new("fixture", 10808, "https://fixture.invalid", 1),
                 _ => Task.FromResult<string?>(state == RecoveryState.Offline ? null : "fixture"),
-                (_, _) => Task.FromResult(new ProxyCheckResult(state is RecoveryState.Checking or RecoveryState.Idle, "fixture")),
+                (_, _) => Task.FromResult(new ProxyCheckResult(state is RecoveryState.Checking or RecoveryState.Idle or RecoveryState.Degraded, "fixture")),
                 async (_, token) => { if (state == RecoveryState.Recovering) await Task.Delay(Timeout.Infinite, token); return false; },
-                (_, _) => Task.FromResult(true), (_, _) => Task.FromResult(false), _ => { },
-                options: new() { StableDelay = state == RecoveryState.Checking ? TimeSpan.FromMinutes(1) : TimeSpan.Zero, ProxyRetryDelay = TimeSpan.Zero });
+                (_, _) => Task.FromResult(new RecoveryProbeResult([new("fixture.invalid", state == RecoveryState.Degraded ? ProbeOutcome.Timeout : ProbeOutcome.Success, null, 0)])),
+                (_, _) => Task.FromResult(false), _ => { },
+                options: new() { StableDelay = state == RecoveryState.Checking ? TimeSpan.FromMinutes(1) : TimeSpan.Zero, ProxyRetryDelay = TimeSpan.Zero, RetryDelay = TimeSpan.Zero },
+                localHealth: (_, _) => Task.FromResult(new LocalRecoveryResult(LocalHealth.Healthy, LocalHealth.Healthy, LocalHealth.Healthy)));
             AppManager.Instance.ConnectionRecovery = recovery;
             var checking = recovery.CheckAsync("render fixture", cancel.Token);
             await Task.Delay(1150);
             Check(recovery.State == state && label.IsEffectivelyVisible == (state != RecoveryState.Idle), $"recovery state {state} visible at width {width}");
+            if (state == RecoveryState.Degraded)
+            {
+                Check(label.Text == WorkspaceText.T("探测异常，已保留连接", "Probe unavailable; connection preserved")
+                    && !label.Classes.Contains("error"), $"external probe degradation preserves connection at width {width}");
+                Check(ToolTip.GetTip(label)?.ToString() == WorkspaceText.T(
+                    "内核及本地 SOCKS 正常，未自动重启；可使用代理检查进一步验证。",
+                    "Local core and SOCKS are healthy; no automatic restart. Use Proxy Check to investigate."),
+                    $"external probe degradation has a localized explanation at width {width}");
+            }
             if (label.IsEffectivelyVisible)
                 Check(label.Bounds.Width > 0 && label.TranslatePoint(default, _main) is { X: >= 0 } point && point.X + label.Bounds.Width <= _main.ClientSize.Width,
                     $"recovery label fits width {width}");
@@ -336,25 +347,62 @@ public class ReviewApp : v2rayN.Desktop.App
         var normalHeight = _main.Height;
         _main.Height = Math.Max(_main.MinHeight, 600);
         await Task.Delay(100);
+        var pageScroll = page.FindControl<ScrollViewer>("pageScroll")!;
+        var pageOffset = pageScroll.Offset;
+        var pageExtent = pageScroll.Extent;
         page.FindControl<Button>("settingsButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-        await CaptureAsync("proxy-check-options-jump", "Check options navigation", _main);
-        var optionsScroll = page.FindControl<ScrollViewer>("pageScroll")!;
-        var optionsPosition = page.FindControl<Expander>("advanced")!.TranslatePoint(default, optionsScroll);
-        Check(page.FindControl<Expander>("advanced")!.Bounds.Height > optionsScroll.Bounds.Height,
-            "navigation fixture exercises options content taller than the viewport");
-        Check(optionsPosition is { Y: >= -1 } point && point.Y + 36 <= optionsScroll.Bounds.Height,
-            "check options navigation keeps its header visible even when the expanded content is taller than the viewport");
+        await Task.Delay(100);
+        var desktop = (IClassicDesktopStyleApplicationLifetime)ApplicationLifetime!;
+        Window OptionsWindow() => desktop.Windows.Single(window => window.Name == "proxyCheckOptionsWindow");
+        var optionsWindow = OptionsWindow();
+        await CaptureAsync("proxy-check-options-jump", "Check options · owned modal window", optionsWindow);
+        Check(optionsWindow.Owner == _main && optionsWindow.IsVisible && !optionsWindow.ShowInTaskbar,
+            "check options open in an owned modal window instead of expanding the page");
+        Check(pageScroll.Offset == pageOffset && pageScroll.Extent == pageExtent,
+            "opening check options preserves the main page scroll position and extent");
+        var optionsScroll = optionsWindow.GetLogicalDescendants().OfType<ScrollViewer>().Single(scroll => scroll.Name == "checkOptionsScroll");
+        Check(ReferenceEquals(optionsScroll.Content, page.FindControl<Border>("advanced")) && optionsScroll.Extent.Height > optionsScroll.Viewport.Height,
+            "long check options scroll inside their dialog");
+        var closeOptions = optionsWindow.GetLogicalDescendants().OfType<Button>().Single(button => button.Name == "closeCheckOptions");
+        var closePosition = closeOptions.TranslatePoint(default, optionsWindow)!.Value;
+        Check(closePosition.Y >= 0 && closePosition.Y + closeOptions.Bounds.Height <= optionsWindow.ClientSize.Height,
+            "dialog completion remains visible while options scroll");
+        closeOptions.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        await Task.Delay(100);
+        Check(!desktop.Windows.Any(window => window.Name == "proxyCheckOptionsWindow")
+            && ReferenceEquals(page.FindControl<Border>("advanced")!.Parent, page.FindControl<Grid>("optionsStore")),
+            "closing check options returns controls to hidden storage for reuse");
         _main.Height = normalHeight;
-        page.FindControl<Expander>("advanced")!.IsExpanded = true;
-        await CaptureAsync("proxy-check-advanced", "Proxy check · advanced", _main);
-        page.FindControl<Expander>("advanced")!.IsExpanded = false;
+        page.FindControl<Button>("settingsButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        await Task.Delay(100);
+        optionsWindow = OptionsWindow();
+        await CaptureAsync("proxy-check-advanced", "Proxy check · options dialog reopened", optionsWindow);
+        if (Program.Headless) optionsWindow.KeyPressQwerty(PhysicalKey.Escape, RawInputModifiers.None);
+        else optionsWindow.Close();
+        await Task.Delay(100);
+        Check(!desktop.Windows.Any(window => window.Name == "proxyCheckOptionsWindow"),
+            "check options can close through Escape or the native window close action");
         model.UseObserver = true;
-        model.ObserverCredential = "fixture-only-not-a-real-credential";
+        model.ObserverDomain = "check.example.net";
+        model.ObserverPairingCode = "fixture-only-not-a-real-pairing";
         model.ObserverProfileJson = "{\n  \"serverId\": \"fixture-observer\",\n  \"domain\": \"check.example.net\",\n  \"ipv4\": \"203.0.113.10\"\n}";
-        model.ObserverStatus = "UI fixture · IPv4 covered / IPv6 not covered\nPinned signing key · credential stays in memory";
-        page.FindControl<Expander>("observerSection")!.IsExpanded = true;
-        await CaptureAsync("proxy-check-observer", "Independent observer · fixture", _main);
+        model.ObserverStatus = "UI fixture · IPv4 covered / IPv6 not covered\nPair with a one-time string; device credentials use system secure storage";
+        page.FindControl<Button>("configureObserver")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        await Task.Delay(100);
+        var observerWindow = OptionsWindow();
+        await CaptureAsync("proxy-check-observer", "Independent observer · configuration dialog fixture", observerWindow);
         Check(page.FindControl<TextBox>("observerCredentialInput")!.PasswordChar != '\0', "observer credential is masked");
+        Check(ReferenceEquals(observerWindow.DataContext, model)
+            && ReferenceEquals(TopLevel.GetTopLevel(page.FindControl<Border>("observerSection")!), observerWindow),
+            "observer configuration keeps its bindings in a separate owned dialog");
+        page.FindControl<Button>("configureObserver")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        Check(desktop.Windows.Count(window => window.Name == "proxyCheckOptionsWindow") == 1,
+            "repeated configuration actions reuse the current dialog");
+        observerWindow.Close();
+        await Task.Delay(100);
+        Check(ReferenceEquals(page.FindControl<Border>("observerSection")!.Parent, page.FindControl<Grid>("optionsStore"))
+            && !page.FindControl<Grid>("optionsStore")!.IsVisible && model.ObserverPairingCode == "fixture-only-not-a-real-pairing",
+            "closing observer configuration preserves memory-only input and does not reveal an inline editor");
     }
 
     private async Task ReviewAsync()
@@ -411,6 +459,13 @@ public class ReviewApp : v2rayN.Desktop.App
         _vm.ProfilesViewModel.SelectedProfiles = [_vm.ProfilesViewModel.SelectedProfile];
         _main.GetLogicalDescendants().OfType<ProfilesView>().Single().RefreshServersBiz();
         AppEvents.SendMsgViewRequested.Publish("[UI review] Isolated fixture configuration loaded.\n[UI review] Core launch disabled; network status remains untested.\n");
+        if (Environment.GetEnvironmentVariable("DNS_EGRESS_REVIEW") == "1")
+        {
+            await CheckDnsEgressAsync();
+            File.WriteAllText(Path.Combine(Program.Output, "manifest.json"), JsonSerializer.Serialize(new { fixtureData = true, screenshots = _shots, checks = _checks }, new JsonSerializerOptions { WriteIndented = true }));
+            Console.WriteLine($"Reviewed {_shots.Count} DNS screens; {_checks.Count} checks passed.");
+            return;
+        }
         if (Program.SshUdpOnly)
         {
             var editor = new AddSshServerWindow { ViewModel = new AddSshServerViewModel(Profile(EConfigType.SSH)) { UdpForwarding = true, AllowHttp3 = true } };

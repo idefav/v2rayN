@@ -380,7 +380,7 @@ public partial class MainWindow
         {
             ("Core", WorkspaceText.T("Core 基础", "Core settings")), ("Application", WorkspaceText.T("应用设置", "Application")),
             ("SystemProxy", ResUI.menuSystemproxy), ("Tun", WorkspaceText.T("TUN 模式", "TUN mode")),
-            ("Engines", WorkspaceText.T("核心分配", "Core assignment")), ("DNS", ResUI.menuDNSSetting),
+            ("Engines", WorkspaceText.T("核心分配", "Core assignment")), ("DNS", WorkspaceText.T("DNS 与流量出口", "DNS & traffic egress")),
             ("Templates", WorkspaceText.T("配置模板", "Config templates")), ("Appearance", WorkspaceText.T("外观", "Appearance")),
             ("Backup", ResUI.menuBackupAndRestore), ("Updates", ResUI.menuCheckUpdate),
             ("Utilities", WorkspaceText.T("应用工具", "Application tools"))

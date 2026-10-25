@@ -10,7 +10,8 @@ public partial class CoreConfigSingboxService
         var coreConfigContent = ApplyCustomOutboundReplace();
 
         return SshDnsPolicy.Apply(ApplyFullConfigTemplate(coreConfigContent),
-            context.RawDnsItem?.Enabled == true || context.FullConfigTemplate?.Enabled == true);
+            context.RawDnsItem?.Enabled == true || context.FullConfigTemplate?.Enabled == true || ManagedEgress,
+            respectUdpCapability: ManagedEgress);
     }
 
     private string ApplyCustomOutboundReplace()

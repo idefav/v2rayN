@@ -6,8 +6,13 @@ namespace ServiceLib.Tests.Services;
 public class ConnectionRecoveryIntegrationTests
 {
     [Test]
-    public async Task StalledSshRecoversByRestartingCurrentCoreOnSameProxyPort()
+    [Arguments("exited")]
+    [Arguments("stalled")]
+    [Arguments("partial")]
+    [Arguments("external-failure")]
+    public async Task OnlyLocalFaultRestartsCurrentCoreOnSameProxyPort(string scenario)
     {
+        var localFault = scenario == "exited";
         var python = Environment.GetEnvironmentVariable("SSH_TEST_PYTHON");
         var singbox = Environment.GetEnvironmentVariable("SSH_TEST_SINGBOX");
         if (string.IsNullOrEmpty(python) || string.IsNullOrEmpty(singbox))
@@ -37,31 +42,66 @@ public class ConnectionRecoveryIntegrationTests
             var originalPid = core.Id;
             if (!await RecoveryProbe.WaitForListenerAsync(proxyPort, CancellationToken.None)) throw new Exception("core did not listen");
             var snapshot = new RecoveryContext("fixture", proxyPort, $"https://127.0.0.1:{endpoints["https"]!.GetValue<int>()}/check", 1);
-            Task<bool> Probe(RecoveryContext selected, CancellationToken token) => RecoveryProbe.ProbeAsync(selected, token,
-                fallback: snapshot.TestUrl, handlerFactory: () => new SocketsHttpHandler
+            var fallback = snapshot.TestUrl;
+            Task<RecoveryProbeResult> Probe(RecoveryContext selected, CancellationToken token) => RecoveryProbe.ProbeAsync(selected, token,
+                fallback: fallback, handlerFactory: () => new SocketsHttpHandler
                 {
                     SslOptions = new() { RemoteCertificateValidationCallback = (_, _, _, _) => true },
                 });
-            if (!await Probe(snapshot, CancellationToken.None)) throw new Exception("initial fixture SSH/TLS request failed");
+            if (!(await Probe(snapshot, CancellationToken.None)).Success) throw new Exception("initial fixture SSH/TLS request failed");
             using var control = new HttpClient(new SocketsHttpHandler { UseProxy = false });
             var baseUrl = $"http://127.0.0.1:{endpoints["http"]!.GetValue<int>()}";
-            await control.GetStringAsync(baseUrl + "/stall-ssh");
+            using var downloadClient = new HttpClient(new SocketsHttpHandler { Proxy = new WebProxy($"socks5://127.0.0.1:{proxyPort}"), UseProxy = true });
+            using var download = scenario is "partial" or "external-failure"
+                ? await downloadClient.GetAsync(baseUrl + "/stream", HttpCompletionOption.ResponseHeadersRead) : null;
+            var transfer = download?.Content.ReadAsByteArrayAsync();
+            if (transfer?.IsCompleted == true) throw new Exception("stream fixture did not remain active");
+            if (localFault) { core.Kill(true); await core.WaitForExitAsync(); }
+            else if (scenario == "stalled") await control.GetStringAsync(baseUrl + "/stall-ssh");
+            else
+            {
+                snapshot = snapshot with { TestUrl = "http://127.0.0.2:80/unreachable" };
+                if (scenario == "external-failure") fallback = "http://127.0.0.3:80/unreachable";
+            }
             var restarts = 0;
             var service = new ConnectionRecoveryService(() => snapshot, _ => Task.FromResult<string?>("loopback fixture"),
                 (_, _) => Task.FromResult(new ProxyCheckResult(true, "fixture")), (_, _) => Task.FromResult(true), Probe,
-                async (_, token) =>
+                async (request, token) =>
                 {
+                    if (!await request.Confirm(token)) return false;
                     restarts++;
-                    core.Kill(true); await core.WaitForExitAsync(); core.Dispose();
+                    if (!core.HasExited) { core.Kill(true); await core.WaitForExitAsync(); }
+                    core.Dispose();
                     await control.GetStringAsync(baseUrl + "/resume-ssh", token);
                     core = Start(singbox, "run", "-c", path);
                     return await RecoveryProbe.WaitForListenerAsync(proxyPort, token);
-                }, _ => { }, options: new() { StableDelay = TimeSpan.Zero, RetryDelay = TimeSpan.Zero });
+                }, _ => { }, options: new() { StableDelay = TimeSpan.Zero, RetryDelay = TimeSpan.Zero },
+                localHealth: async (_, token) => new(core.HasExited ? LocalHealth.Failed : LocalHealth.Healthy,
+                    LocalHealth.Healthy, await RecoveryProbe.CheckSocksAsync(proxyPort, token)));
             var elapsed = Stopwatch.StartNew();
             await service.CheckAsync("fixture wake", CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(30));
-            if (restarts != 1 || core.Id == originalPid || service.State != RecoveryState.Idle || elapsed.Elapsed >= TimeSpan.FromSeconds(30))
-                throw new Exception("stalled running core did not recover within deadline");
-            if (!await Probe(snapshot, CancellationToken.None)) throw new Exception("restored SSH/TLS path failed");
+            if (localFault)
+            {
+                if (restarts != 1 || core.Id == originalPid || service.State != RecoveryState.Idle || elapsed.Elapsed >= TimeSpan.FromSeconds(30))
+                    throw new Exception("exited core did not recover within deadline");
+            }
+            else
+            {
+                var expected = scenario == "partial" ? RecoveryState.Idle : RecoveryState.Degraded;
+                if (restarts != 0 || core.Id != originalPid || service.State != expected)
+                    throw new Exception("stalled SSH restarted a healthy local SOCKS service");
+                if (scenario == "stalled") await control.GetStringAsync(baseUrl + "/resume-ssh");
+                if (transfer != null)
+                {
+                    var bytes = await transfer.WaitAsync(TimeSpan.FromSeconds(10));
+                    var expectedBytes = Enumerable.Range(0, 1024 * 1024).Select(i => (byte)(i % 256)).ToArray();
+                    if (!SHA256.HashData(bytes).SequenceEqual(SHA256.HashData(expectedBytes)))
+                        throw new Exception("active transfer was interrupted or corrupted");
+                }
+            }
+            snapshot = snapshot with { TestUrl = $"https://127.0.0.1:{endpoints["https"]!.GetValue<int>()}/check" };
+            fallback = snapshot.TestUrl;
+            if (!(await Probe(snapshot, CancellationToken.None)).Success) throw new Exception("restored SSH/TLS path failed");
         }
         finally
         {

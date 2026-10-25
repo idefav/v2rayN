@@ -645,7 +645,7 @@ public partial class MainWindowViewModel : MyReactiveObject
             await StatusBarViewModel.RefreshRoutingsMenu();
         }
         if (section is "Hotkeys" or "Backup") return;
-        await Reload($"设置已修改：{section}");
+        await Reload($"设置已修改：{section}", onlyIfChanged: section == "DNS");
     }
 
     private async Task ClearServerStatistics()
@@ -703,14 +703,15 @@ public partial class MainWindowViewModel : MyReactiveObject
         }
     }
 
-    internal async Task<bool> ReloadForRecoveryAsync(RecoveryContext expected, CancellationToken token)
+    internal async Task<bool> ReloadForRecoveryAsync(RecoveryRestartRequest request, CancellationToken token)
     {
-        if (!await ReloadCoreAsync(expected, token, "连接连续检测失败，自动恢复")) return false;
-        return await RecoveryProbe.WaitForListenerAsync(expected.Port, token);
+        if (!await ReloadCoreAsync(request.Context, token, "自动恢复：" + request.Reason,
+            recoveryConfirm: request.Confirm)) return false;
+        return await RecoveryProbe.WaitForListenerAsync(request.Context.Port, token);
     }
 
     private async Task<bool> ReloadCoreAsync(RecoveryContext? expected, CancellationToken token,
-        string reason, bool onlyIfChanged = false)
+        string reason, bool onlyIfChanged = false, Func<CancellationToken, Task<bool>>? recoveryConfirm = null)
     {
         return await _reloadCoordinator.RunAsync(
             () => !DesignMode && !AppManager.Instance.IsExiting && (expected == null || GetRecoveryContext() == expected), async () =>
@@ -743,6 +744,9 @@ public partial class MainWindowViewModel : MyReactiveObject
 
             if (expected != null)
             {
+                token.ThrowIfCancellationRequested();
+                if (GetRecoveryContext() != expected) return false;
+                if (recoveryConfirm != null && !await recoveryConfirm(token)) return false;
                 token.ThrowIfCancellationRequested();
                 if (GetRecoveryContext() != expected) return false;
             }
@@ -793,6 +797,11 @@ public partial class MainWindowViewModel : MyReactiveObject
 
             ReloadResult(showClashUI);
             return proxyApplied && CoreManager.Instance.IsCoreRunning;
+        }
+        catch (OperationCanceledException) when (expected != null)
+        {
+            // Superseded recovery checks are not configuration failures.
+            throw;
         }
         catch (Exception ex)
         {
