@@ -98,11 +98,6 @@ jobs:
         go-version-file: proxy-check/go.mod
         cache-dependency-path: proxy-check/go.sum
 
-    - name: Install ARM64 core compiler
-      if: inputs.target == 'linux' && matrix.arch == 'arm64'
-      shell: bash
-      run: sudo apt-get update && sudo apt-get install -y g++-aarch64-linux-gnu
-
     - name: Build pinned SSH UDP core
       shell: bash
       run: |

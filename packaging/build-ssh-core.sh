@@ -16,21 +16,28 @@ test "$(git -C "$build_dir/source" rev-parse HEAD)" = "$commit"
 export GOOS="$target_os" GOARCH="$target_arch"
 tags=with_gvisor,with_quic,with_dhcp,with_wireguard,with_utls,with_acme,with_clash_api,with_tailscale,with_ccm,with_ocm,with_cloudflared,with_naive_outbound,with_usbip,with_openvpn,with_openconnect,badlinkname,tfogo_checklinkname0
 link_flags='-s -w -X github.com/sagernet/sing-box/constant.Version=1.14.3-ssh-udp.1'
-if [[ "$target_os" == windows ]]; then
+if [[ "$target_os" == windows || "$target_os" == linux ]]; then
     export CGO_ENABLED=0
     tags="$tags,with_purego"
-    link_flags="$link_flags -checklinkname=0"
+    if [[ "$target_os" == windows ]]; then link_flags="$link_flags -checklinkname=0"; fi
 else
     export CGO_ENABLED=1
     if [[ "$target_os" == darwin ]]; then
         if [[ "$target_arch" == amd64 ]]; then export CC="clang -arch x86_64" CXX="clang++ -arch x86_64";
         else export CC="clang -arch arm64" CXX="clang++ -arch arm64"; fi
-    elif [[ "$target_os" == linux && "$target_arch" == arm64 && "$(uname -m)" != aarch64 ]]; then
-        export CC=aarch64-linux-gnu-gcc CXX=aarch64-linux-gnu-g++
     fi
 fi
 mkdir -p "$(dirname "$output")"
 output="$(cd "$(dirname "$output")" && pwd)/$(basename "$output")"
 cd "$build_dir/source"
 go build -trimpath -tags "$tags" -ldflags "$link_flags" -o "$output" ./cmd/sing-box
+if [[ "$target_os" == windows || "$target_os" == linux ]]; then
+    library=libcronet.so
+    [[ "$target_os" != windows ]] || library=libcronet.dll
+    library_dir="$(go list -m -f '{{.Dir}}' "github.com/sagernet/cronet-go/lib/${target_os}_${target_arch}")"
+    test -s "$library_dir/$library"
+    install -m 0755 "$library_dir/$library" "$(dirname "$output")/$library"
+    install -m 0644 "$library_dir/LICENSE" "$(dirname "$output")/LICENSE.cronet"
+fi
 python3 "$root/packaging/write-ssh-core-manifest.py" "$output"
+python3 "$root/packaging/verify-ssh-core-manifest.py" "$output"

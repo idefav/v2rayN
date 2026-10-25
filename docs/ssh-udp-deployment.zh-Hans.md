@@ -14,6 +14,8 @@
 
 `packaging/build-ssh-core.sh` 从用户 fork 拉取精确提交，而非浮动分支；版本为 `1.14.3-ssh-udp.1`，保留 Naive、QUIC 等原有平台功能标签。`core-patches/sing-box-v1.14.3-ssh-udp.patch` 保留相对上游 7054cac5124465ffdb145870d7c01885566711b1 的实现补丁，方便审计和移植；正常打包直接使用上述 fork 提交，不重复应用补丁。
 
+macOS 使用 CGO；Linux/Windows 使用上游支持的 with_purego，并从 go.sum 固定的 Cronet 平台模块将 libcronet.so/libcronet.dll 放到核心同目录，保留 Naive。Linux Cronet 静态库需要 Chromium 专用工具链，不能用普通 GCC 直接链接；Windows TFO 标签还要求 -checklinkname=0。不能为了编译通过静默去掉 Naive 功能，也不能只打包纯 Go 核心而漏掉共享库。
+
 ## 为什么需要两端扩展
 
 原版 sing-box 1.14.3 的 SSH 出站只提供 TCP。SOCKS5 UDP ASSOCIATE 成功仅说明本地入口接受了请求，不能说明 SSH 出站支持普通 UDP。DNS 可能被 hijack-dns 转为 DoH/TCP，因此 DNS 成功也不能代替 STUN 或其他普通 UDP 验证。HTTP3 除了依赖 UDP，还可能被内置“阻断udp443”规则拦截。

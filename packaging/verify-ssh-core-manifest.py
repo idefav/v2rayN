@@ -11,4 +11,13 @@ if manifest.get("SchemaVersion") != 1 or not manifest.get("Version", "").startsw
     raise SystemExit("Invalid SSH UDP core manifest version")
 if manifest.get("Sha256", "").lower() != hashlib.sha256(core.read_bytes()).hexdigest():
     raise SystemExit("SSH UDP core digest mismatch")
+magic = core.read_bytes()[:4]
+library_name = 'libcronet.so' if magic == b'\x7fELF' else 'libcronet.dll' if magic[:2] == b'MZ' else None
+if library_name and not (core.parent / library_name).is_file():
+    raise SystemExit("Missing Naive shared library: " + library_name)
+for name, digest in manifest.get('Libraries', {}).items():
+    if name not in ['libcronet.so', 'libcronet.dll']:
+        raise SystemExit('Unknown library in core manifest')
+    if hashlib.sha256((core.parent / name).read_bytes()).hexdigest() != digest.lower():
+        raise SystemExit('Naive shared library digest mismatch: ' + name)
 print("Verified pinned SSH UDP core:", manifest["Version"])
