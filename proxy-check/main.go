@@ -19,7 +19,10 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
+
+	observer "github.com/idefav/egress-probe"
 
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
@@ -28,23 +31,26 @@ import (
 )
 
 type request struct {
-	SSH     *sshProbeOptions `json:"ssh,omitempty"`
-	Version int              `json:"version"`
-	Kind    string           `json:"kind"`
-	Target  string           `json:"target"`
-	Proxy   string           `json:"proxy"`
-	Family  string           `json:"family"`
-	Query   string           `json:"query"`
-	Timeout int              `json:"timeout"`
+	Observer *observerRequest `json:"observer,omitempty"`
+	SSH      *sshProbeOptions `json:"ssh,omitempty"`
+	Version  int              `json:"version"`
+	Kind     string           `json:"kind"`
+	Target   string           `json:"target"`
+	Proxy    string           `json:"proxy"`
+	Family   string           `json:"family"`
+	Query    string           `json:"query"`
+	Timeout  int              `json:"timeout"`
 }
 type result struct {
-	Version  int     `json:"version"`
-	State    string  `json:"state"`
-	Elapsed  float64 `json:"elapsed"`
-	Egress   string  `json:"egress,omitempty"`
-	Protocol string  `json:"protocol,omitempty"`
-	Evidence string  `json:"evidence,omitempty"`
-	Error    string  `json:"error,omitempty"`
+	FailureStage string             `json:"failureStage,omitempty"`
+	Receipts     []observer.Receipt `json:"receipts,omitempty"`
+	Version      int                `json:"version"`
+	State        string             `json:"state"`
+	Elapsed      float64            `json:"elapsed"`
+	Egress       string             `json:"egress,omitempty"`
+	Protocol     string             `json:"protocol,omitempty"`
+	Evidence     string             `json:"evidence,omitempty"`
+	Error        string             `json:"error,omitempty"`
 }
 
 func main() {
@@ -57,35 +63,39 @@ func main() {
 }
 
 func run(r request) (out result) {
-	out = result{Version: 1, State: "failed"}
+	out = result{Version: r.Version, State: "failed"}
 	start := time.Now()
 	defer func() { out.Elapsed = float64(time.Since(start).Microseconds()) / 1000 }()
-	if r.Version != 1 || r.Timeout < 1 || r.Timeout > 120 {
+	if (r.Version != 1 && r.Version != 2) || r.Timeout < 1 || r.Timeout > 120 || (r.Observer != nil && r.Version != 2) {
 		out.Error = "unsupported version or timeout"
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(r.Timeout)*time.Second)
 	defer cancel()
 	var err error
-	switch r.Kind {
-	case "ssh-capability":
-		err = probeSSH(ctx, r.SSH, &out)
-	case "tcp":
-		var c net.Conn
-		c, err = dialTCP(ctx, r, r.Target)
-		if err == nil {
-			out.Protocol = "TCP"
-			out.Evidence = c.RemoteAddr().String()
-			c.Close()
+	if r.Observer != nil && (r.Kind == "tcp" || r.Kind == "tls" || r.Kind == "udp") {
+		err = probeObserver(ctx, r, &out)
+	} else {
+		switch r.Kind {
+		case "ssh-capability":
+			err = probeSSH(ctx, r.SSH, &out)
+		case "tcp":
+			var c net.Conn
+			c, err = dialTCP(ctx, r, r.Target)
+			if err == nil {
+				out.Protocol = "TCP"
+				out.Evidence = c.RemoteAddr().String()
+				c.Close()
+			}
+		case "http", "https", "h3":
+			err = probeHTTP(ctx, r, &out)
+		case "stun":
+			err = probeSTUN(ctx, r, &out)
+		case "dns-udp", "dns-tcp":
+			err = probeDNS(ctx, r, &out)
+		default:
+			err = errors.New("unsupported probe")
 		}
-	case "http", "https", "h3":
-		err = probeHTTP(ctx, r, &out)
-	case "stun":
-		err = probeSTUN(ctx, r, &out)
-	case "dns-udp", "dns-tcp":
-		err = probeDNS(ctx, r, &out)
-	default:
-		err = errors.New("unsupported probe")
 	}
 	if err != nil {
 		out.Error = err.Error()
@@ -172,6 +182,9 @@ func probeHTTP(ctx context.Context, r request, out *result) error {
 	return probeHTTPWithRoots(ctx, r, out, nil)
 }
 func probeHTTPWithRoots(ctx context.Context, r request, out *result, roots *x509.CertPool) error {
+	var stage atomic.Value
+	stage.Store("")
+	defer func() { out.FailureStage = stage.Load().(string) }()
 	u, err := url.Parse(r.Target)
 	if err != nil || u.Hostname() == "" || u.User != nil {
 		return errors.New("invalid HTTP target")
@@ -187,16 +200,19 @@ func probeHTTPWithRoots(ctx context.Context, r request, out *result, roots *x509
 	if r.Kind == "h3" {
 		h3 := &http3.Transport{TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS13, RootCAs: roots}, QUICConfig: &quic.Config{HandshakeIdleTimeout: time.Duration(r.Timeout) * time.Second}}
 		h3.Dial = func(ctx context.Context, addr string, tc *tls.Config, qc *quic.Config) (*quic.Conn, error) {
+			stage.Store("udp-channel")
 			pc, remote, e := openPacket(ctx, r, addr)
 			if e != nil {
 				return nil, e
 			}
+			stage.Store("quic-tls-handshake")
 			conn, e := quic.Dial(ctx, pc, remote, tc, qc)
 			if e != nil {
 				pc.Close()
 				return nil, e
 			}
 			go func() { <-conn.Context().Done(); pc.Close() }()
+			stage.Store("http3-request")
 			return conn, nil
 		}
 		transport = h3
@@ -211,6 +227,10 @@ func probeHTTPWithRoots(ctx context.Context, r request, out *result, roots *x509
 	req, err := http.NewRequestWithContext(ctx, "GET", r.Target, nil)
 	if err != nil {
 		return err
+	}
+	if r.Observer != nil {
+		req.Header.Set("X-Probe-ID", r.Observer.Ticket.ID)
+		req.Header.Set("X-Probe-Nonce", r.Observer.Ticket.Nonce)
 	}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -229,6 +249,26 @@ func probeHTTPWithRoots(ctx context.Context, r request, out *result, roots *x509
 	}
 	if len(body) > 65536 {
 		return errors.New("response exceeds limit")
+	}
+	if r.Observer != nil {
+		stage.Store("observer-evidence")
+		var receipt observer.Receipt
+		if err = json.Unmarshal(body, &receipt); err != nil {
+			return err
+		}
+		o, e := observer.Verify(r.Observer.Profile, r.Observer.Ticket, receipt)
+		if e != nil {
+			return e
+		}
+		if r.Kind == "h3" && (o.Protocol != "HTTP/3.0" || o.ALPN != "h3") {
+			return errors.New("observer did not confirm HTTP3")
+		}
+		out.Receipts = []observer.Receipt{receipt}
+		out.Egress = o.PeerIP
+		out.Protocol = resp.Proto
+		out.Evidence = "signed observation on the same HTTP connection"
+		stage.Store("")
+		return nil
 	}
 	out.Protocol = resp.Proto
 	for _, line := range strings.Split(string(body), "\n") {
@@ -530,6 +570,9 @@ func probeSTUN(ctx context.Context, r request, out *result) error {
 	if _, e = rand.Read(b[8:]); e != nil {
 		return e
 	}
+	if r.Observer != nil {
+		b = observer.STUNRequest(r.Observer.Ticket, b[8:20])
+	}
 	if _, e = c.WriteTo(b, a); e != nil {
 		return e
 	}
@@ -541,7 +584,7 @@ func probeSTUN(ctx context.Context, r request, out *result) error {
 	if from.String() != a.String() {
 		return errors.New("STUN source mismatch")
 	}
-	ip, e := parseSTUN(buf[:n], b[8:])
+	ip, e := parseSTUN(buf[:n], b[8:20])
 	if e != nil {
 		return e
 	}
@@ -611,6 +654,10 @@ func probeDNS(ctx context.Context, r request, out *result) error {
 		name = "whoami.cloudflare."
 		typ = dnsmessage.TypeTXT
 		class = dnsmessage.ClassCHAOS
+	}
+	if r.Observer != nil {
+		name = r.Observer.Ticket.QueryName
+		class = dnsmessage.ClassINET
 	}
 	var id [2]byte
 	rand.Read(id[:])

@@ -4,11 +4,13 @@ using DiagnosticResult = ServiceLib.Models.Dto.ProxyDiagnosticResult;
 
 namespace ServiceLib.Services;
 
-public sealed class ProxyCheckService
+public sealed partial class ProxyCheckService
 {
     internal sealed record Probe(string Id, string Group, string Kind, string Target, string Path, string Proxy = "", string Family = "", string Query = "");
-    private sealed class WorkerResult
+    internal sealed class WorkerResult
     {
+        public List<ObserverReceipt> Receipts { get; set; } = [];
+        public string FailureStage { get; set; } = "";
         public int Version { get; set; }
         public string State { get; set; } = "failed";
         public double Elapsed { get; set; }
@@ -22,6 +24,7 @@ public sealed class ProxyCheckService
 
     public static void Validate(ProxyCheckOptions options)
     {
+        if (options.Observer != null) ObserverSession.Validate(options.Observer);
         if (options.Samples is < 1 or > 10 || options.Timeout is < 1 or > 120 || options.Http3Timeout is < 1 or > 120)
             throw new ArgumentException(T("采样次数需为 1–10，超时需为 1–120 秒。", "Samples must be 1–10 and timeouts 1–120 seconds."));
         foreach (var value in options.TargetExpectations.Values.Append(options.ExpectedEgress))
@@ -56,11 +59,16 @@ public sealed class ProxyCheckService
         return false;
     }
 
-    public static string ExpectedFor(string target, ProxyCheckOptions options)
+    public static string ExpectedFor(string target, ProxyCheckOptions options, string kind = "", string path = "")
     {
         var uri = Uri.TryCreate(target, UriKind.Absolute, out var u) && u.Scheme is "http" or "https" ? u : new Uri("udp://" + target);
         var host = uri.Host;
         var endpoint = host + ":" + uri.Port;
+        foreach (var candidate in new[] { target, endpoint, host })
+        {
+            var scoped = options.TargetExpectations.FirstOrDefault(p => p.Key.Equals($"{candidate}|{kind}|{path}", StringComparison.OrdinalIgnoreCase)).Value;
+            if (scoped != null) return scoped;
+        }
         return options.TargetExpectations.FirstOrDefault(p => p.Key.Equals(target, StringComparison.OrdinalIgnoreCase)).Value
             ?? options.TargetExpectations.FirstOrDefault(p => p.Key.Equals(endpoint, StringComparison.OrdinalIgnoreCase)).Value
             ?? options.TargetExpectations.FirstOrDefault(p => p.Key.Equals(host, StringComparison.OrdinalIgnoreCase)).Value ?? options.ExpectedEgress;
@@ -133,6 +141,7 @@ public sealed class ProxyCheckService
 
     internal static List<Probe> CreateProbes(ProxyCheckOptions options, int port)
     {
+        if (options.Observer != null) return CreateObserverProbes(options, port);
         var result = new List<Probe>();
         var httpsUri = new Uri(options.HttpsUrl);
         var tcpTarget = (httpsUri.Host.Contains(':') ? "[" + httpsUri.Host.Trim('[', ']') + "]" : httpsUri.Host) + ":" + httpsUri.Port;
@@ -171,7 +180,8 @@ public sealed class ProxyCheckService
         IProgress<DiagnosticResult> progress, CancellationToken ct, ISet<string>? retry = null)
     {
         Validate(options);
-        var report = new ProxyCheckReport { Environment = await DescribeEnvironmentAsync(), Fingerprint = Fingerprint(), OptionsFingerprint = OptionsFingerprint(options), RuntimeState = await RuntimeStateAsync(ct) };
+        var report = new ProxyCheckReport { Observer = options.Observer, Environment = await DescribeEnvironmentAsync(), Fingerprint = Fingerprint(), OptionsFingerprint = OptionsFingerprint(options), RuntimeState = await RuntimeStateAsync(ct) };
+        await using var observer = options.Observer == null ? null : await ObserverSession.OpenAsync(options, ct);
         var probes = CreateProbes(options, AppManager.Instance.GetLocalPort(EInboundProtocol.socks))
             .Where(p => retry == null || retry.Contains(p.Id))
             .OrderBy(p => p.Kind == "system-proxy" ? 0 : p.Group switch { "TCP/TLS" => 1, "DNS" => 2, "UDP" => 3, "QUIC/HTTP3" => 4, "IPv4" => 5, _ => 6 }).ToList();
@@ -198,7 +208,7 @@ public sealed class ProxyCheckService
             await Parallel.ForEachAsync(probes, new ParallelOptions { MaxDegreeOfParallelism = 4, CancellationToken = linked.Token }, async (p, token) =>
             {
                 var row = NewResult(p); row.State = "running"; progress.Report(row);
-                row = await CheckAsync(p, options, token);
+                row = observer == null ? await CheckAsync(p, options, token) : await CheckObserverAsync(p, options, observer, token);
                 var old = baseline?.Results?.FirstOrDefault(x => x.Id == row.Id);
                 if (old != null && old.Target != row.Target)
                     row.BaselineComparison = T("探测目标已变化，不比较该项基线。", "Probe target changed; baseline comparison is not applicable.");
@@ -262,7 +272,7 @@ public sealed class ProxyCheckService
         }
         row.Elapsed /= Math.Max(1, row.Attempts);
         Evaluate(row, exits);
-        if (p.Kind == "ssh-capability" && row.Connectivity == "passed") { row.State = "passed"; row.EgressState = "skipped"; }
+        if (p.Kind is "ssh-capability" or "system-proxy") { row.State = row.Connectivity; row.EgressState = "not-applicable"; row.ObservationType = "not-applicable"; }
         if (errors.Count > 0) row.Evidence += "\n" + string.Join("\n", errors.Distinct());
         row.Advice = row.Connectivity == "failed" ? T("检查入口、路由和目标服务；超时本身不证明泄漏。", "Check ingress, routing and endpoint health; a timeout alone does not establish leakage.")
             : row.EgressState == "failed" ? T("观测出口不符合配置的预期，请检查分流规则。", "Observed egress does not match the configured expectation. Check routing rules.")
@@ -276,7 +286,7 @@ public sealed class ProxyCheckService
     {
         row.Connectivity = row.Attempts > 0 && row.Successes == row.Attempts ? "passed" : "failed";
         row.Egress = string.Join(", ", exits.Distinct().Order(StringComparer.Ordinal));
-        row.EgressState = row.Expected.Length == 0 || exits.Count != row.Attempts ? "unknown" : exits.All(ip => Matches(ip, row.Expected)) ? "passed" : "failed";
+        row.EgressState = row.Expected.Length > 0 && exits.Any(ip => !Matches(ip, row.Expected)) ? "failed" : exits.Count != row.Attempts ? "unknown" : row.Expected.Length == 0 ? "not-configured" : "passed";
         row.State = row.Connectivity == "failed" || row.EgressState == "failed" ? "failed" : row.EgressState == "passed" ? "passed" : "unknown";
     }
 
@@ -304,7 +314,7 @@ public sealed class ProxyCheckService
         }
     }
 
-    private static async Task<WorkerResult> WorkerAsync(Probe probe, int timeout, CancellationToken ct)
+    internal static async Task<WorkerResult> WorkerAsync(Probe probe, int timeout, CancellationToken ct, object? observer = null)
     {
         var ssh = probe.Kind == "ssh-capability" ? ReadSshOutbound() : null;
         if (probe.Kind == "ssh-capability" && ssh?["udp_forwarding"]?.GetValue<bool>() != true)
@@ -317,7 +327,7 @@ public sealed class ProxyCheckService
         if (!process.Start()) throw new IOException("Cannot start proxy-check");
         using var stop = deadline.Token.Register(() => { try { if (!process.HasExited) process.Kill(true); } catch (InvalidOperationException) { } });
         // Do not log requests: proxy credentials, if added later, belong only in stdin.
-        await process.StandardInput.WriteAsync(JsonSerializer.Serialize(new { version = 1, kind = probe.Kind, target = probe.Target, proxy = probe.Proxy, family = probe.Family, query = probe.Query, timeout, ssh }, Json));
+        await process.StandardInput.WriteAsync(JsonSerializer.Serialize(new { version = observer == null ? 1 : 2, kind = probe.Kind, target = probe.Target, proxy = probe.Proxy, family = probe.Family, query = probe.Query, timeout, ssh, observer }, Json));
         process.StandardInput.Close();
         var stdout = ReadLimitedAsync(process.StandardOutput, deadline.Token);
         var stderr = ReadLimitedAsync(process.StandardError, deadline.Token);
@@ -325,7 +335,7 @@ public sealed class ProxyCheckService
         var output = await stdout; await stderr;
         if (process.ExitCode != 0) throw new IOException("proxy-check exited: " + process.ExitCode);
         var result = JsonSerializer.Deserialize<WorkerResult>(output, Json);
-        if (result?.Version != 1 || result.State is not ("passed" or "failed" or "unsupported")) throw new IOException("Invalid proxy-check response");
+        if (result?.Version != (observer == null ? 1 : 2) || result.State is not ("passed" or "failed" or "unsupported")) throw new IOException("Invalid proxy-check response");
         return result;
     }
 

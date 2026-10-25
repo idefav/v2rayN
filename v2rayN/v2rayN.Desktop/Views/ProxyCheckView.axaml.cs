@@ -15,8 +15,13 @@ public partial class ProxyCheckView : UserControl
         retry.Content = T("重试失败项", "Retry failed"); saveBaseline.Content = T("保存为基线", "Save as baseline");
         loadBaseline.Content = T("选择基线", "Choose baseline"); export.Content = T("导出报告", "Export report");
         advanced.Header = T("高级选项", "Advanced options");
+        observerSection.Header = T("独立出口探测服务", "Independent egress observer");
+        enableObserver.Content = T("启用受控探测（IPv4）", "Use controlled observer (IPv4)");
+        importObserver.Content = T("导入连接配置", "Import profile");
+        testObserver.Content = T("测试控制接口", "Test control connection");
+        observerCredentialLabel.Text = T("私有 API 凭证（仅保存在内存，不写入配置、报告或基线）", "Private API credential (memory only; excluded from settings, reports and baselines)");
         expectedLabel.Text = T("预期出口 IP / CIDR（多个值以逗号分隔）", "Expected egress IP / CIDR (comma-separated)");
-        rulesLabel.Text = T("按目标设置分流预期（每行：主机名或 host:port=IP/CIDR，优先于全局预期）", "Routing expectations (one hostname or host:port=IP/CIDR per line; overrides global expectation)");
+        rulesLabel.Text = T("分流预期：目标=IP/CIDR；精确规则：目标|协议|路径=IP/CIDR（路径：socks/native/http-connect/system）", "Expectations: target=IP/CIDR; scoped: target|protocol|path=IP/CIDR (paths: socks/native/http-connect/system)");
         dnsLabel.Text = T("公共 DNS（host:port）", "Public DNS (host:port)");
         localDnsLabel.Text = T("本地 DNS（留空自动发现；系统解析单独检查）", "Local DNS (empty to discover; system resolver is checked separately)");
         samplesLabel.Text = T("采样次数", "Samples"); timeoutLabel.Text = T("超时 / 秒", "Timeout / s"); h3TimeoutLabel.Text = T("HTTP3 超时 / 秒", "HTTP3 timeout / s");
@@ -27,7 +32,22 @@ public partial class ProxyCheckView : UserControl
         saveBaseline.Click += (_, _) => { try { Model.SaveBaseline(); } catch (Exception ex) { Model.Summary = ex.Message; } };
         loadBaseline.Click += async (_, _) => await LoadBaselineAsync();
         export.Click += async (_, _) => await ExportAsync();
+        testObserver.Click += async (_, _) => await Model.TestObserverAsync();
+        importObserver.Click += async (_, _) => await ImportObserverAsync();
         AttachedToVisualTree += async (_, _) => await Model.RefreshEnvironmentAsync();
+    }
+    private async Task ImportObserverAsync()
+    {
+        try
+        {
+            var provider = TopLevel.GetTopLevel(this)?.StorageProvider; if (provider == null) return;
+            var files = await provider.OpenFilePickerAsync(new() { Title = "Observer profile.json", AllowMultiple = false, FileTypeFilter = [new("JSON") { Patterns = ["*.json"] }] });
+            if (files.Count == 0) return;
+            using var file = files[0]; await using var stream = await file.OpenReadAsync();
+            if (stream.Length > 16384) throw new IOException("Observer profile exceeds limit");
+            using var reader = new StreamReader(stream); Model.ImportObserverProfile(await reader.ReadToEndAsync());
+        }
+        catch (Exception ex) { Model.ObserverStatus = ex.Message; }
     }
     private async Task LoadBaselineAsync()
     {

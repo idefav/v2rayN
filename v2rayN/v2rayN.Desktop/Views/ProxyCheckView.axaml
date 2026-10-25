@@ -24,6 +24,19 @@
             <ProgressBar IsIndeterminate="True" IsVisible="{Binding IsRunning}" Height="3" />
             <TextBlock Text="{Binding Summary}" TextWrapping="Wrap" />
             <TextBlock Text="{Binding BaselineText}" TextWrapping="Wrap" Opacity="0.7" />
+            <Expander x:Name="observerSection" HorizontalAlignment="Stretch">
+                <StackPanel Spacing="10" IsEnabled="{Binding CanStart}" Margin="0,12,0,0">
+                    <CheckBox x:Name="enableObserver" IsChecked="{Binding UseObserver}" />
+                    <WrapPanel>
+                        <Button x:Name="importObserver" Margin="0,0,8,8" />
+                        <Button x:Name="testObserver" Margin="0,0,8,8" />
+                    </WrapPanel>
+                    <TextBox Text="{Binding ObserverProfileJson}" AcceptsReturn="True" MinHeight="100" MaxHeight="220" PlaceholderText="profile.json" />
+                    <TextBlock x:Name="observerCredentialLabel" TextWrapping="Wrap" />
+                    <TextBox x:Name="observerCredentialInput" Text="{Binding ObserverCredential}" PasswordChar="●" />
+                    <SelectableTextBlock Text="{Binding ObserverStatus}" TextWrapping="Wrap" />
+                </StackPanel>
+            </Expander>
             <Expander x:Name="advanced" HorizontalAlignment="Stretch">
                 <StackPanel Spacing="10" IsEnabled="{Binding CanStart}" Margin="0,12,0,0">
                     <TextBlock x:Name="expectedLabel" TextWrapping="Wrap" />

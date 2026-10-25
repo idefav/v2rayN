@@ -8,6 +8,11 @@ public partial class ProxyCheckViewModel : MyReactiveObject, IDisposable
     private readonly IDisposable _exit;
     private ProxyCheckReport? _report;
     private ProxyCheckReport? _baseline;
+    private int _generation;
+    [Reactive] public partial bool UseObserver { get; set; }
+    [Reactive] public partial string ObserverProfileJson { get; set; } = "";
+    [Reactive] public partial string ObserverCredential { get; set; } = "";
+    [Reactive] public partial string ObserverStatus { get; set; } = "";
     public ObservableCollection<DiagnosticResult> Results { get; } = [];
     [Reactive] public partial bool IsRunning { get; set; }
     [Reactive] public partial bool CanStart { get; set; } = true;
@@ -40,6 +45,8 @@ public partial class ProxyCheckViewModel : MyReactiveObject, IDisposable
                 if (o != null)
                 {
                     ProxyCheckService.Validate(o);
+                    UseObserver = o.Observer != null;
+                    ObserverProfileJson = o.Observer == null ? "" : JsonSerializer.Serialize(o.Observer, ProxyCheckService.Json);
                     ExpectedEgress = o.ExpectedEgress; HttpsUrl = o.HttpsUrl; HttpUrl = o.HttpUrl; StunTarget = o.StunTarget;
                     DnsTarget = o.DnsTarget; LocalDnsTarget = o.LocalDnsTarget;
                     Samples = o.Samples.ToString(); Timeout = o.Timeout.ToString(); Http3Timeout = o.Http3Timeout.ToString();
@@ -65,6 +72,7 @@ public partial class ProxyCheckViewModel : MyReactiveObject, IDisposable
         {
             var options = new ProxyCheckOptions
             {
+                Observer = ReadObserver(), ObserverCredential = ObserverCredential,
                 ExpectedEgress = ExpectedEgress, HttpsUrl = HttpsUrl, HttpUrl = HttpUrl, StunTarget = StunTarget,
                 DnsTarget = DnsTarget, LocalDnsTarget = LocalDnsTarget,
                 Samples = int.Parse(Samples), Timeout = int.Parse(Timeout), Http3Timeout = int.Parse(Http3Timeout)
@@ -88,8 +96,10 @@ public partial class ProxyCheckViewModel : MyReactiveObject, IDisposable
             if (!retry) { Results.Clear(); _report = null; }
             EnvironmentText = await ProxyCheckService.DescribeEnvironmentAsync();
             Summary = T("正在检查；出口判断仅适用于当前探测目标。", "Checking; egress conclusions apply only to the probed targets.");
+            var generation = Interlocked.Increment(ref _generation);
             var progress = new Progress<DiagnosticResult>(row =>
             {
+                if (!IsRunning || generation != _generation) return;
                 var old = Results.FirstOrDefault(r => r.Id == row.Id);
                 if (old == null) Results.Add(row); else Results[Results.IndexOf(old)] = row;
             });
@@ -125,9 +135,9 @@ public partial class ProxyCheckViewModel : MyReactiveObject, IDisposable
     {
         if (json.Length > 2 * 1024 * 1024) throw new ArgumentException("Baseline exceeds limit");
         var baseline = JsonSerializer.Deserialize<ProxyCheckReport>(json, ProxyCheckService.Json);
-        if (baseline?.Version != 1 || baseline.Results == null || baseline.Results.Any(r => r == null || string.IsNullOrEmpty(r.Id) || r.Egress == null || r.State == null)) throw new ArgumentException(T("无效的基线报告。", "Invalid baseline report."));
+        if (baseline?.Version is not (1 or 2) || baseline.Results == null || baseline.Results.Any(r => r == null || string.IsNullOrEmpty(r.Id) || r.Egress == null || r.State == null)) throw new ArgumentException(T("无效的基线报告。", "Invalid baseline report."));
         _baseline = baseline;
-        BaselineText = T("基线：", "Baseline: ") + baseline.StartedAt.ToLocalTime().ToString("g");
+        BaselineText = T("基线：", "Baseline: ") + baseline.StartedAt.ToLocalTime().ToString("g") + (baseline.Version == 1 ? T(" · 旧版证据，未经签名验证", " · Legacy evidence, not signature verified") : "");
         if (persist) AtomicSave(Utils.GetConfigPath("proxy-check-baseline.json"), JsonSerializer.Serialize(baseline, ProxyCheckService.Json));
     }
     private static void AtomicSave(string path, string text)
@@ -135,5 +145,30 @@ public partial class ProxyCheckViewModel : MyReactiveObject, IDisposable
         var temp = path + ".tmp";
         File.WriteAllText(temp, text); File.Move(temp, path, true);
     }
-    public void Dispose() { Cancel(); _exit.Dispose(); }
+    public void ImportObserverProfile(string json)
+    {
+        if (json.Length > 16384) throw new ArgumentException("Observer profile exceeds limit");
+        var profile = JsonSerializer.Deserialize<ObserverProfile>(json, ProxyCheckService.Json) ?? throw new ArgumentException("Invalid profile");
+        ObserverSession.Validate(profile); ObserverProfileJson = JsonSerializer.Serialize(profile, ProxyCheckService.Json); UseObserver = true;
+        ObserverStatus = $"{profile.ServerId} · IPv4: {profile.Ipv4} · " + T("IPv6 未覆盖；签名公钥 SHA-256：", "IPv6 not covered; signing key SHA-256: ") + Convert.ToHexString(SHA256.HashData(ObserverSession.Decode(profile.PublicKey)));
+    }
+    private ObserverProfile? ReadObserver()
+    {
+        if (!UseObserver) return null;
+        ImportObserverProfile(ObserverProfileJson);
+        return JsonSerializer.Deserialize<ObserverProfile>(ObserverProfileJson, ProxyCheckService.Json);
+    }
+    public async Task TestObserverAsync()
+    {
+        if (IsRunning) return;
+        try
+        {
+            var profile = ReadObserver() ?? throw new ArgumentException(T("请先启用受控服务。", "Enable the observer first."));
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            await using var session = await ObserverSession.OpenAsync(new() { Observer = profile, ObserverCredential = ObserverCredential }, timeout.Token);
+            ObserverStatus += "\n" + T("控制接口连接成功；各协议端口将在完整检查时单独验证。凭证仅保存在内存。", "Control connection works; protocol ports are checked separately in a full run. Credential is memory only.");
+        }
+        catch (Exception ex) { ObserverStatus = ex.Message; }
+    }
+    public void Dispose() { Cancel(); ObserverCredential = ""; _exit.Dispose(); }
 }

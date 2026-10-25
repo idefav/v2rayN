@@ -260,6 +260,14 @@ public class ReviewApp : v2rayN.Desktop.App
         model.IsRunning = false; model.CanStart = true;
         page.FindControl<Expander>("advanced")!.IsExpanded = true;
         await CaptureAsync("proxy-check-advanced", "Proxy check · advanced", _main);
+        page.FindControl<Expander>("advanced")!.IsExpanded = false;
+        model.UseObserver = true;
+        model.ObserverCredential = "fixture-only-not-a-real-credential";
+        model.ObserverProfileJson = "{\n  \"serverId\": \"fixture-observer\",\n  \"domain\": \"check.example.net\",\n  \"ipv4\": \"203.0.113.10\"\n}";
+        model.ObserverStatus = "UI fixture · IPv4 covered / IPv6 not covered\nPinned signing key · credential stays in memory";
+        page.FindControl<Expander>("observerSection")!.IsExpanded = true;
+        await CaptureAsync("proxy-check-observer", "Independent observer · fixture", _main);
+        Check(page.FindControl<TextBox>("observerCredentialInput")!.PasswordChar != '\0', "observer credential is masked");
     }
 
     private async Task ReviewAsync()
