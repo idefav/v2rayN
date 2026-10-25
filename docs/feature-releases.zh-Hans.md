@@ -1,6 +1,6 @@
 # SSH feature 测试版打包发布
 
-`release SSH feature preview` 从 `feature/native-ssh-profiles` 的提交构建测试版。
+`release SSH feature preview` 支持从 `feature/native-ssh-profiles` 或与源码版本对应的 `release/<Version>` 构建测试版。
 推送 `v<Version>-ssh-preview.<序号>` 标签即可触发，例如：
 
 ```bash
@@ -12,7 +12,7 @@ git push origin v7.25.5-ssh-preview.1
 ```
 
 `Version` 必须与 `v2rayN/Directory.Build.props` 一致，序号为正整数。
-标签必须属于 feature 分支，工作流从标签对应的提交构建，不会转到 `master`。
+标签提交必须属于 feature 分支或对应版本的 release 分支，工作流校验标签与所选 ref 指向同一提交，不会转到 `master`。
 如果 fork 尚未自动注册新工作流，可通过已有的 `release all platforms` 入口启动：
 
 ```bash
@@ -24,6 +24,17 @@ gh workflow run build-all.yml --repo idefav/v2rayN \
 也可重跑失败的 Actions；新工作流进入默认分支后，可以直接手动选择标签并传入同名
 `release_tag`。标签与所选 ref 必须指向同一个提交。
 
+## 从 release 分支打包
+
+例如当前 `release/7.25.6`：先将变更提交并推送到 release，再在该提交创建未使用过的预览标签。标签推送会自动触发一次任务；如果需要 Actions 的运行来源明确显示 release 分支，取消该标签的自动任务后，使用以下入口手动启动：
+
+```bash
+gh workflow run build-all.yml --repo idefav/v2rayN \
+  --ref release/7.25.6 -f release_tag=v7.25.6-ssh-preview.8
+```
+
+运行详情的 `headBranch` 应为 `release/7.25.6`，`headSha` 必须等于该标签提交；发布说明会记录实际构建来源。这样使用的是 release 提交，而非重新回到 feature 分支构建。
+
 发布内容：
 
 | 平台 | 架构 | 格式 |
@@ -34,7 +45,7 @@ gh workflow run build-all.yml --repo idefav/v2rayN \
 | macOS | Intel x64 / Apple Silicon arm64 | ZIP、DMG |
 
 共 10 个包及一个 `SHA256SUMS` 文件。所有包包含 .NET 运行时和代理核心。
-每次运行先固定 `2dust/v2rayN-core-bin` 的提交，测试和所有包使用同一份核心版本。
+每次运行先固定 `2dust/v2rayN-core-bin` 的资源提交；专用 sing-box 从 `packaging/build-ssh-core.sh` 固定的用户 fork 提交构建并附核心摘要清单，Linux/Windows 同时交付匹配的 Cronet 共享库。测试和所有包使用相同的固定源码与资源。
 Linux ZIP 解压后运行 `v2rayN`；macOS 可使用 DMG 安装。
 
 发布前必须通过单元测试、临时 Docker OpenSSH/Paramiko 集成测试、全部架构编译、

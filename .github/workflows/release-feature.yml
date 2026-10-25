@@ -47,7 +47,9 @@ jobs:
           sequence=${RELEASE_TAG#"v${version}-ssh-preview."}
           [[ "$sequence" =~ ^[1-9][0-9]*$ ]]
           [[ "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")" == "$GITHUB_SHA" ]]
-          git merge-base --is-ancestor "$GITHUB_SHA" origin/feature/native-ssh-profiles
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/feature/native-ssh-profiles; then
+            git merge-base --is-ancestor "$GITHUB_SHA" "origin/release/$version"
+          fi
           core_ref=$(gh api repos/2dust/v2rayN-core-bin/commits/master --jq .sha)
           echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
@@ -220,7 +222,7 @@ jobs:
         run: |
           set -euo pipefail
           cat > notes.md <<EOF
-          SSH feature 测试版，来自 \`feature/native-ssh-profiles\`。
+          SSH 测试版，构建来源：\`$GITHUB_REF_NAME\`。
 
           - 原生 SSH 节点：密码、私钥及加密私钥认证。
           - 共用 SSH 密钥选择、一键配置免密登录。
