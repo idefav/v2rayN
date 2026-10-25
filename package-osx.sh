@@ -34,7 +34,7 @@ cp -f "$PackagePath/v2rayN.app/Contents/MacOS/v2rayN.icns" "$PackagePath/v2rayN.
 echo "When this file exists, app will not store configs under this folder" > "$PackagePath/v2rayN.app/Contents/MacOS/NotStoreConfigHere.txt"
 chmod +x "$PackagePath/v2rayN.app/Contents/MacOS/v2rayN"
 chmod +x "$PackagePath/v2rayN.app/Contents/MacOS/AmazTool"
-test -x "$PackagePath/v2rayN.app/Contents/MacOS/proxy-check"
+chmod +x "$PackagePath/v2rayN.app/Contents/MacOS/proxy-check"
 chmod -R +x "$PackagePath/v2rayN.app/Contents/MacOS/bin"
 
 cat >"$PackagePath/v2rayN.app/Contents/Info.plist" <<-EOF
@@ -70,6 +70,8 @@ cat >"$PackagePath/v2rayN.app/Contents/Info.plist" <<-EOF
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
   <string>${Version}</string>
+  <key>CFBundleVersion</key>
+  <string>${Version}</string>
   <key>CSResourcesFileMapped</key>
   <true/>
   <key>NSHighResolutionCapable</key>
@@ -79,6 +81,13 @@ cat >"$PackagePath/v2rayN.app/Contents/Info.plist" <<-EOF
 </dict>
 </plist>
 EOF
+
+AppPath="$PackagePath/v2rayN.app"
+codesign --force --deep --sign - "$AppPath"
+python3 "$ScriptDir/packaging/write-ssh-core-manifest.py" "$AppPath/Contents/MacOS/bin/sing_box/sing-box"
+codesign --force --deep --sign - "$AppPath"
+codesign --verify --deep --strict "$AppPath"
+python3 "$ScriptDir/packaging/verify-ssh-core-manifest.py" "$AppPath/Contents/MacOS/bin/sing_box/sing-box"
 
 mkdir -p "$PackagePath/.background"
 swift "$ScriptDir/packaging/macos/dmg-background.swift" "$PackagePath/.background/background.png"
