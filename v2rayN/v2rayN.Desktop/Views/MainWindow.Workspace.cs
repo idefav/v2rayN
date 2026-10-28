@@ -19,8 +19,8 @@ public partial class MainWindow
         public string Snapshot { get; set; } = EditorSnapshot.Capture(model);
         public Task Ready { get; set; } = Task.CompletedTask;
         public bool IsReady { get; set; }
-        public bool IsDraft => Model is OptionSettingViewModel or DNSSettingViewModel or FullConfigTemplateViewModel or GlobalHotkeySettingViewModel or BackupAndRestoreViewModel;
-        public bool IsDirty => IsReady && IsDraft && Snapshot != EditorSnapshot.Capture(Model);
+        public bool IsDraft => Model is OptionSettingViewModel or TunSettingsViewModel or DNSSettingViewModel or FullConfigTemplateViewModel or GlobalHotkeySettingViewModel or BackupAndRestoreViewModel;
+        public bool IsDirty => IsReady && IsDraft && (Model is TunSettingsViewModel tun ? tun.IsDirty : Snapshot != EditorSnapshot.Capture(Model));
     }
 
     private readonly Dictionary<string, PageSession> _sessions = new();
@@ -275,13 +275,16 @@ public partial class MainWindow
         object model = key switch
         {
             "Subscriptions" => new SubSettingViewModel(), "Routing" => new RoutingSettingViewModel(),
-            "Options" => new OptionSettingViewModel(), "DNS" => new DNSSettingViewModel(),
+            "Options" => new OptionSettingViewModel(false), "DNS" => new DNSSettingViewModel(),
+            "Tun" => new TunSettingsViewModel { ApplyAsync = reason => ViewModel!.ReloadWithResultAsync(reason, onlyIfChanged: true) },
             "Templates" => new FullConfigTemplateViewModel(), "Hotkeys" => new GlobalHotkeySettingViewModel(),
             "Backup" => new BackupAndRestoreViewModel(),
             _ => throw new ArgumentOutOfRangeException(nameof(key))
         };
         var view = SimpleViewLocator.Instance.Build(model);
         view.DataContext = model;
+        if (view is TunSettingsWindow tunPage)
+            tunPage.NavigateRequested += section => _ = OpenSettingsAsync(section);
         if (view is SubSettingWindow subscriptions)
         {
             subscriptions.IsEmbedded = true;
@@ -313,6 +316,7 @@ public partial class MainWindow
         var initialization = session.Model switch
         {
             OptionSettingViewModel vm => vm.Initialization,
+            TunSettingsViewModel vm => vm.Initialization,
             DNSSettingViewModel vm => vm.Initialization,
             FullConfigTemplateViewModel vm => vm.Initialization,
             _ => Task.CompletedTask
@@ -330,7 +334,7 @@ public partial class MainWindow
     {
         try
         {
-            if (session.Model is not OptionSettingViewModel { OnlySourcesChanged: true })
+            if (session.Model is not TunSettingsViewModel and not OptionSettingViewModel { OnlySourcesChanged: true })
                 await ViewModel!.ApplySettingsChangesAsync(session.Key);
             session.Snapshot = EditorSnapshot.Capture(session.Model);
             NoticeManager.Instance.Enqueue(ResUI.OperationSuccess);
@@ -360,6 +364,7 @@ public partial class MainWindow
                 switch (session.Model)
                 {
                     case OptionSettingViewModel vm: await vm.SaveCmd.Execute().ToTask(); break;
+                    case TunSettingsViewModel vm: await vm.SaveCmd.Execute().ToTask(); break;
                     case DNSSettingViewModel vm: await vm.SaveCmd.Execute().ToTask(); break;
                     case FullConfigTemplateViewModel vm: await vm.SaveCmd.Execute().ToTask(); break;
                     case GlobalHotkeySettingViewModel vm: await vm.SaveCmd.Execute().ToTask(); break;
@@ -429,6 +434,11 @@ public partial class MainWindow
                 _settingsBody.Content = _checkUpdateView;
                 break;
             case "Utilities": _settingsBody.Content = BuildApplicationTools(); break;
+            case "Tun":
+                var tunSession = GetSession(key);
+                _settingsBody.Content = tunSession.View;
+                _ = RefreshTunSettingsAsync(tunSession);
+                break;
             case "DNS" or "Templates" or "Hotkeys": _settingsBody.Content = GetSession(key).View; break;
             default:
                 var options = (OptionSettingWindow)GetSession("Options").View;
@@ -440,6 +450,12 @@ public partial class MainWindow
         txtPageTitle.Text = (navigationItem.Content as TextBlock)?.Text;
         ResizeWorkspace();
         return Task.CompletedTask;
+    }
+
+    private static async Task RefreshTunSettingsAsync(PageSession session)
+    {
+        await session.Ready;
+        if (session.Model is TunSettingsViewModel tun) await tun.RefreshRuntimeAsync();
     }
 
     private Control BuildApplicationTools()

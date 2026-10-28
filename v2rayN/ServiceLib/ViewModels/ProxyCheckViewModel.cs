@@ -48,6 +48,7 @@ public partial class ProxyCheckViewModel : MyReactiveObject, IDisposable
     internal ProxyCheckViewModel(Func<ProxyCheckOptions, CancellationToken, Task<IAsyncDisposable>> connectObserver)
     {
         _connectObserver = connectObserver;
+        InitializeCountrySelection();
         InitializePresentation();
         _exit = AppEvents.AppExitRequested.AsObservable().Subscribe(_ => Cancel());
         try
@@ -62,6 +63,7 @@ public partial class ProxyCheckViewModel : MyReactiveObject, IDisposable
                     UseObserver = o.Observer != null;
                     ObserverProfileJson = o.Observer == null ? "" : JsonSerializer.Serialize(o.Observer, ProxyCheckService.Json);
                     ExpectedEgress = o.ExpectedEgress; HttpsUrl = o.HttpsUrl; HttpUrl = o.HttpUrl; StunTarget = o.StunTarget;
+                    foreach (var choice in CountryChoices) choice.IsSelected = o.ExpectedCountryCodes.Contains(choice.Code, StringComparer.OrdinalIgnoreCase);
                     DnsTarget = o.DnsTarget; LocalDnsTarget = o.LocalDnsTarget;
                     Samples = o.Samples.ToString(); Timeout = o.Timeout.ToString(); Http3Timeout = o.Http3Timeout.ToString();
                     TargetRules = string.Join("\n", o.TargetExpectations.Select(p => p.Key + "=" + p.Value));
@@ -98,7 +100,7 @@ public partial class ProxyCheckViewModel : MyReactiveObject, IDisposable
             var options = new ProxyCheckOptions
             {
                 Observer = ReadObserver(),
-                ExpectedEgress = ExpectedEgress, HttpsUrl = HttpsUrl, HttpUrl = HttpUrl, StunTarget = StunTarget,
+                ExpectedEgress = ExpectedEgress, ExpectedCountryCodes = SelectedCountryCodes, HttpsUrl = HttpsUrl, HttpUrl = HttpUrl, StunTarget = StunTarget,
                 DnsTarget = DnsTarget, LocalDnsTarget = LocalDnsTarget,
                 Samples = int.Parse(Samples), Timeout = int.Parse(Timeout), Http3Timeout = int.Parse(Http3Timeout)
             };
@@ -109,6 +111,10 @@ public partial class ProxyCheckViewModel : MyReactiveObject, IDisposable
                 options.TargetExpectations.Add(parts[0], parts[1]);
             }
             ProxyCheckService.Validate(options);
+            var configuredCountries = options.ExpectedCountryCodes;
+            // Retrying a report retains its advisory region snapshot, even if the next-run selection changed.
+            if (retry && _report?.Results.FirstOrDefault() is { } previous)
+                options.ExpectedCountryCodes = previous.ExpectedCountryCodes?.ToList() ?? [];
             ISet<string>? ids = retry ? Results.Where(r => r.State is "failed" or "cancelled").Select(r => r.Id).ToHashSet() : null;
             var runtime = retry ? await ProxyCheckService.RuntimeStateAsync(_cancel.Token) : "";
             if (retry && (ids?.Count == 0 || _report?.Fingerprint != ProxyCheckService.Fingerprint() || _report.OptionsFingerprint != ProxyCheckService.OptionsFingerprint(options)
@@ -117,7 +123,9 @@ public partial class ProxyCheckViewModel : MyReactiveObject, IDisposable
                 Summary = T("没有可重试项目，或运行配置已变化；请开始完整检查。", "No failed checks to retry, or configuration changed. Start a full check."); return;
             }
             _cancel.Token.ThrowIfCancellationRequested();
-            AtomicSave(Utils.GetConfigPath("proxy-check-options.json"), JsonSerializer.Serialize(options, ProxyCheckService.Json));
+            var storedOptions = JsonSerializer.SerializeToNode(options, ProxyCheckService.Json)!;
+            storedOptions["expectedCountryCodes"] = JsonSerializer.SerializeToNode(configuredCountries);
+            AtomicSave(Utils.GetConfigPath("proxy-check-options.json"), storedOptions.ToJsonString(ProxyCheckService.Json));
             BeginLocationLookups();
             IsRunning = true; CanExport = false;
             LastChecked = DateTimeOffset.Now.ToString("g");
@@ -229,6 +237,8 @@ public partial class ProxyCheckViewModel : MyReactiveObject, IDisposable
         if (_disposed) return;
         _disposed = true; Cancel(); _exit.Dispose(); _presentation?.Dispose(); _observerSettings?.Dispose();
         _locationCancel?.Dispose(); _locationCancel = null;
+        _countrySearchSubscription?.Dispose();
+        foreach (var choice in CountryChoices) choice.PropertyChanged -= CountrySelectionChanged;
         Results.CollectionChanged -= ResultsChanged; ObserverPairingCode = ""; CanStart = CanRetry = CanExport = false;
     }
 }

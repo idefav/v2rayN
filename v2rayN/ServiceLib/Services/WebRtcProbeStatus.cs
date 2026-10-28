@@ -18,6 +18,7 @@ internal sealed class WebRtcProbeStatus
             Target = target, Family = "IPv4", Protocol = "WebRTC/DTLS/SCTP", Attempts = State == "pending" ? 0 : 1,
             State = State == "unsupported" ? "unsupported" : "failed", Connectivity = State == "unsupported" ? "unsupported" : "failed",
             Expected = ProxyCheckService.ExpectedFor(target, options, "webrtc", "browser"),
+            ExpectedCountryCodes = options.ExpectedCountryCodes.Select(c => ProxyCheckCountries.Normalize(c)!).Distinct().ToList(),
             Elapsed = double.IsFinite(Elapsed) ? Math.Clamp(Elapsed, 0, 180000) : 0,
             Evidence = ProxyCheckText.T("浏览器自报（非签名证据）：", "Browser claims (not signed evidence): ") + Browser + "\n" + Error + "\n" + string.Join("\n", Candidates.Take(64).Select(c => c.Length > 256 ? c[..256] : c)),
             Advice = ProxyCheckText.T("仅验证本次浏览器数据通道。host 候选不等于公网泄漏；.local 是 mDNS 隐私地址。未覆盖 TURN、IPv6 传输、媒体与浏览器 DoH。", "Only this browser data channel is tested. Host candidates alone do not prove public leakage; .local masks addresses with mDNS. TURN, IPv6 transport, media and browser DoH are not covered.")

@@ -77,6 +77,8 @@ public partial class CoreConfigSingboxService
                     tunInbound.address.Add(address6);
                 }
                 tunInbound.route_exclude_address = _config.TunModeItem.RouteExcludeAddress;
+                if (context.FullConfigTemplate?.Enabled != true)
+                    SingboxTunSettings.Apply(_config.TunModeItem, tunInbound, SingboxTunSettings.Platform(context));
 
                 _coreConfig.inbounds.Add(tunInbound);
             }

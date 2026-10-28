@@ -693,11 +693,14 @@ public partial class MainWindowViewModel : MyReactiveObject
     }
 
     public async Task Reload(string reason = "用户操作或配置变更", bool onlyIfChanged = false)
+        => await ReloadWithResultAsync(reason, onlyIfChanged);
+
+    public async Task<bool> ReloadWithResultAsync(string reason, bool onlyIfChanged = true)
     {
         Interlocked.Increment(ref _manualReloads);
         Interlocked.Increment(ref _connectionRevision);
         AppManager.Instance.ConnectionRecovery?.RequestCheck("configuration changed");
-        try { await ReloadCoreAsync(null, CancellationToken.None, reason, onlyIfChanged); }
+        try { return await ReloadCoreAsync(null, CancellationToken.None, reason, onlyIfChanged); }
         finally
         {
             Interlocked.Decrement(ref _manualReloads);

@@ -118,6 +118,34 @@ public class Inbound4Sbox
     public string? stack { get; set; }
     public List<User4Sbox> users { get; set; }
     public List<string>? route_exclude_address { get; set; }
+    public string? dns_mode { get; set; }
+    public List<string>? dns_address { get; set; }
+    public string? udp_timeout { get; set; }
+    public string? udp_mapping { get; set; }
+    public string? udp_filtering { get; set; }
+    public uint? udp_nat_max { get; set; }
+    public List<string>? route_address { get; set; }
+    public List<string>? route_address_set { get; set; }
+    public List<string>? route_exclude_address_set { get; set; }
+    public bool? auto_redirect { get; set; }
+    public string? auto_redirect_input_mark { get; set; }
+    public string? auto_redirect_output_mark { get; set; }
+    public string? auto_redirect_reset_mark { get; set; }
+    public ushort? auto_redirect_nfqueue { get; set; }
+    public int? iproute2_table_index { get; set; }
+    public int? iproute2_rule_index { get; set; }
+    public int? auto_redirect_iproute2_fallback_rule_index { get; set; }
+    public List<string>? include_interface { get; set; }
+    public List<string>? exclude_interface { get; set; }
+    public List<uint>? include_uid { get; set; }
+    public List<uint>? exclude_uid { get; set; }
+    public List<string>? include_uid_range { get; set; }
+    public List<string>? exclude_uid_range { get; set; }
+    public List<string>? include_mac_address { get; set; }
+    public List<string>? exclude_mac_address { get; set; }
+    public string? netns { get; set; }
+    public bool? exclude_mptcp { get; set; }
+    public List<string>? loopback_address { get; set; }
 }
 
 public class User4Sbox

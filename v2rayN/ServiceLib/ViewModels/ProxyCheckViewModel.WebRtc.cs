@@ -13,7 +13,7 @@ public partial class ProxyCheckViewModel
         try
         {
             var profile = ReadObserver() ?? throw new ArgumentException(T("WebRTC 需要先配置独立探测服务。", "Configure the independent observer before WebRTC checks."));
-            var options = new ProxyCheckOptions { Observer = profile, ExpectedEgress = ExpectedEgress };
+            var options = new ProxyCheckOptions { Observer = profile, ExpectedEgress = ExpectedEgress, ExpectedCountryCodes = SelectedCountryCodes };
             foreach (var line in TargetRules.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
             {
                 var pair = line.Split('=', 2, StringSplitOptions.TrimEntries);
@@ -34,7 +34,7 @@ public partial class ProxyCheckViewModel
             Results.Clear(); _report = report;
             foreach (var ticket in tickets)
             {
-                var row = new ProxyDiagnosticResult { Id = $"webrtc-browser-{rows.Count}", Group = "WebRTC", Name = $"DataChannel #{rows.Count + 1}", Path = "browser", Family = "IPv4", Target = new Uri(profile.HttpsUrl).Host + ":3480", State = "running" };
+                var row = new ProxyDiagnosticResult { Id = $"webrtc-browser-{rows.Count}", Group = "WebRTC", Name = $"DataChannel #{rows.Count + 1}", Path = "browser", Family = "IPv4", Target = new Uri(profile.HttpsUrl).Host + ":3480", State = "running", ExpectedCountryCodes = options.ExpectedCountryCodes.ToList() };
                 rows.Add(row); Results.Add(row);
             }
             report.Results = rows;

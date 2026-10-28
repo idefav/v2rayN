@@ -53,6 +53,7 @@ public partial class ProxyCheckView : UserControl
         samplesLabel.Text = T("采样次数", "Samples"); timeoutLabel.Text = T("超时 / 秒", "Timeout / s"); h3TimeoutLabel.Text = T("HTTP3 超时 / 秒", "HTTP3 timeout / s");
         limits.Text = T("结论仅适用于当前探测目标。保存直连基线前请自行关闭代理。WebRTC 通过“浏览器 WebRTC”单独采集。浏览器 DoH、TURN、IPv6 WebRTC 传输、断网保护、网络切换、长连接、局域网/.local、UDP 大包与 MTU 尚未覆盖。", "Conclusions apply only to the probed targets. Turn your proxy off before capturing a direct baseline. Use Browser WebRTC for a separate browser run. Browser DoH, TURN, IPv6 WebRTC transport, kill switch, network changes, long-lived connections, LAN/.local, large UDP datagrams and MTU are not covered.");
         start.Click += async (_, _) => await Model.StartAsync();
+        clearCountries.Click += (_, _) => Model.ClearCountrySelection();
         webRtc.Content = T("浏览器 WebRTC", "Browser WebRTC");
         webRtc.Click += async (_, _) => await Model.StartWebRtcAsync(async uri =>
             TopLevel.GetTopLevel(this) is { } top && await top.Launcher.LaunchUriAsync(uri));

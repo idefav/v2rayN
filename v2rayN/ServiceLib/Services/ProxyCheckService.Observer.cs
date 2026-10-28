@@ -42,7 +42,7 @@ public sealed partial class ProxyCheckService
             configRow.RelatedProbeIds = p.Kind == "system-proxy" ? ["observer-system-http", "observer-system-https"] : p.Kind == "ssh-capability" ? ["observer-socks-udp", "observer-socks-stun", "observer-socks-h3"] : [];
             return configRow;
         }
-        var row = NewResult(p);
+        var row = NewResult(p, options);
         if (p.Kind == "uncovered") { row.State = row.Connectivity = "skipped"; row.EgressState = "not-applicable"; row.Evidence = T("未覆盖：独立探测服务首版仅提供 IPv4。AAAA 查询不代表 IPv6 传输出口已验证。", "Not covered: this observer is IPv4 only. AAAA queries do not verify IPv6 transport."); return row; }
         if (ProxyCheckPathCapabilities.IsFixedUnsupported(p.Path, p.Kind)) { row.State = row.Connectivity = "unsupported"; row.EgressState = "not-applicable"; row.Evidence = T("HTTP CONNECT 不支持普通 UDP，未回退到其他路径。", "HTTP CONNECT does not support UDP; no fallback."); return row; }
         var recursive = p.Kind == "system-dns" || p.Path == "local-dns";

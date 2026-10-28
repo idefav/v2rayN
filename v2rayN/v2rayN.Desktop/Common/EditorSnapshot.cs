@@ -8,6 +8,7 @@ public static class EditorSnapshot
 {
     public static string Capture(object model)
     {
+        if (model is TunSettingsViewModel tun) return tun.DraftSnapshot;
         if (model is BackupAndRestoreViewModel backup)
             return JsonSerializer.Serialize(new
             {
@@ -19,6 +20,7 @@ public static class EditorSnapshot
             values["Sources"] = options.Sources.Select(r => new { r.Key, Value = r.Value ?? "" }).ToArray();
         foreach (var property in model.GetType().GetProperties())
         {
+            if (model is OptionSettingViewModel { ManagesTunSettings: false } && property.Name.StartsWith("Tun", StringComparison.Ordinal)) continue;
             if (!property.CanRead || property.GetIndexParameters().Length != 0) continue;
             if (model is OptionSettingViewModel && property.Name is nameof(OptionSettingViewModel.OnlySourcesChanged) or nameof(OptionSettingViewModel.InitialSection)) continue;
             if (model is DNSSettingViewModel && property.Name is nameof(DNSSettingViewModel.EgressError)

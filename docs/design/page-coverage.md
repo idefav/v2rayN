@@ -1,5 +1,7 @@
 # v2rayN 页面设计覆盖审计
 
+2026-10-28 更新：新增独立 `TunSettingsWindow`，现为31个 AXAML 文件和2个动态页面。该页映射到 [Local Codex TUN 原型](tun-settings-opendesign/index.html)，已接入九类 TUN 能力、平台联动、预设及离线帮助，详见[实现与验证记录](tun-settings-opendesign/implementation-notes.md)。下方保留此前轮次的覆盖与验证记录。
+
 2026-10-25，覆盖当前 Avalonia `Views/` 下30个 AXAML 文件，以及C#动态构建的关于、应用工具两页。复用同一套配色、按钮和表格样式，不等于该页面已有完整的字段分组、交互与状态设计。
 
 ## 已有专门设计并完成客户端主要适配

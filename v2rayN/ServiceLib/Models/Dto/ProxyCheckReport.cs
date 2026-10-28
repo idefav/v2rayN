@@ -20,6 +20,7 @@ public sealed class ProxyCheckOptions
 	public ObserverProfile? Observer { get; set; }
 	[JsonIgnore] public string ObserverCredential { get; set; } = "";
     public string ExpectedEgress { get; set; } = "";
+    public List<string> ExpectedCountryCodes { get; set; } = [];
     // Exact hostname or host:port -> comma-separated IP addresses / CIDRs.
     public Dictionary<string, string> TargetExpectations { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public string HttpsUrl { get; set; } = "https://www.cloudflare.com/cdn-cgi/trace";
@@ -49,6 +50,9 @@ public sealed class ProxyDiagnosticResult
     public string Egress { get; set; } = "";
     // Unsigned geolocation metadata is separate from the observed address and signed receipts.
     public List<EgressLocation> EgressLocations { get; set; } = [];
+    // Snapshot of advisory expectations, separate from the signed/IP verdict.
+    public List<string> ExpectedCountryCodes { get; set; } = [];
+    public string RegionComparison => ProxyCheckCountries.Compare(this);
     [JsonIgnore] public string LocationState { get; set; } = "";
     public string Expected { get; set; } = "";
     public string Protocol { get; set; } = "";
