@@ -9,7 +9,17 @@ public sealed class ProxyCheckResultRow(ProxyDiagnosticResult source)
     public string Target => Source.Target;
     public string Path => Source.Path;
     public string Family => Source.Family;
-    public string Detail => Source.Detail;
+    public string Detail => Source.Detail + (Source.EgressLocations.Count == 0 ? "" : "\n" + LocationHint);
+    public bool HasLocation => Source.ObservationType != "not-applicable" && Source.Egress.Length > 0;
+    public string LocationLabel => Source.EgressLocations.Count > 0
+        ? string.Join("\n", Source.Egress.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).Distinct()
+            .Select(ip => (Source.Egress.Contains(',') ? ip + ": " : "")
+                + (Source.EgressLocations.FirstOrDefault(l => SameAddress(l.Ip, ip))?.Label ?? T("地域未知", "Location unavailable"))))
+        : Source.LocationState == "loading" ? T("地域查询中…", "Looking up location…") : T("地域未知", "Location unavailable");
+    public string LocationHint => T("IP 地域为第三方数据库信息，仅供参考；不属于服务端签名证据。", "IP location is approximate third-party metadata, separate from signed server evidence.")
+        + string.Concat(Source.EgressLocations.Select(l => $"\n{l.Ip} · {l.Label} · {l.Provider} · {l.CheckedAt.ToLocalTime():g}"));
+    private static bool SameAddress(string first, string second) => IPAddress.TryParse(first, out var a) && IPAddress.TryParse(second, out var b)
+        && (a.IsIPv4MappedToIPv6 ? a.MapToIPv4() : a).Equals(b.IsIPv4MappedToIPv6 ? b.MapToIPv4() : b);
     public string Conclusion => (Source.State switch { "passed" => "✓ ", "failed" => "× ", "unknown" => "? ", "unsupported" => "⊘ ", "skipped" => "— ", _ => "" }) + ProxyCheckText.State(Source.State);
     public bool HasExpectation => !string.IsNullOrWhiteSpace(Source.Expected);
     public string ExpectedLabel => HasExpectation ? T("预期：", "Expected: ") + Source.Expected : "";

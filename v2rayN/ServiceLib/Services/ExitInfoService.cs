@@ -281,7 +281,7 @@ public sealed class ExitInfoService
             Country = country, Region = Field(location, "region", "regionName", "state"), City = Field(location, "city", "city_name") };
     }
 
-    private static bool IsPublicAddress(IPAddress address)
+    internal static bool IsPublicAddress(IPAddress address)
     {
         if (address.IsIPv4MappedToIPv6) address = address.MapToIPv4();
         if (IPAddress.IsLoopback(address) || address.Equals(IPAddress.Any) || address.Equals(IPAddress.IPv6Any) || address.IsIPv6LinkLocal || address.IsIPv6Multicast || address.IsIPv6SiteLocal) return false;

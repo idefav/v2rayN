@@ -303,6 +303,7 @@ public partial class ReviewApp : v2rayN.Desktop.App
                         Id = id, Group = group, Name = id, State = rowState, Connectivity = rowState == "failed" ? "passed" : rowState,
                         Path = id == "dns" ? "System resolver" : "SOCKS5", Target = "api.check.example.net:443", Family = id == "ipv6" ? "IPv6" : "IPv4", Attempts = observed ? 3 : 0,
                         Successes = observed ? 3 : 0, Elapsed = observed ? 42 : 0, Egress = observed && id != "capture" ? "198.51.100.7" : "",
+                        EgressLocations = observed && id != "capture" ? [new("198.51.100.7", "JP", "Japan", "Tokyo", "Tokyo", "fixture.invalid", DateTimeOffset.UnixEpoch)] : [],
                         ObservationType = id == "capture" ? "not-applicable" : id == "dns" ? "recursive-resolver" : "unavailable",
                         EgressState = id is "capture" or "dns" or "ipv6" ? "not-applicable" : !observed ? "unknown" : rowState == "failed" ? "failed" : "passed",
                         Expected = !observed || id is "capture" or "dns" ? "" : rowState == "failed" ? "203.0.113.0/24" : "198.51.100.7",
@@ -321,6 +322,10 @@ public partial class ReviewApp : v2rayN.Desktop.App
                 var scroll = page.FindControl<ScrollViewer>("pageScroll")!;
                 if (capability.TranslatePoint(default, scroll) is { } origin) scroll.Offset += new Vector(0, origin.Y - 60);
                 await CaptureAsync("proxy-check-capability", "Capability is not traffic · UI fixture", _main);
+                var located = model.ResultGroups.SelectMany(g => g.Rows).Single(r => r.Source.Id == "tcp");
+                Check(located.LocationLabel.Contains("Tokyo") && located.IsPassed, "IP location is displayed without changing the diagnostic conclusion");
+                Check(model.ResultGroups.SelectMany(g => g.Rows).Single(r => r.Source.Id == "dns").EvidenceKind == ProxyCheckText.T("递归解析器出口", "Resolver egress"), "resolver geolocation retains its evidence category");
+                await CaptureAsync("proxy-check-location", "Observed IP locations · UI fixture", _main);
                 scroll.Offset = default;
             }
         }

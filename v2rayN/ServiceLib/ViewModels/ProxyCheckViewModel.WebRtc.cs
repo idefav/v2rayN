@@ -30,6 +30,7 @@ public partial class ProxyCheckViewModel
             var tickets = new List<ObserverTicket>();
             for (var i = 0; i < count; i++) tickets.Add(await session.IssueAsync("webrtc", "", ct));
             // Start a separate report: do not mix old core/configuration evidence with a new browser run.
+            BeginLocationLookups();
             Results.Clear(); _report = report;
             foreach (var ticket in tickets)
             {

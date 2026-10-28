@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace ServiceLib.Common;
 
 /// <summary>
@@ -5,6 +7,25 @@ namespace ServiceLib.Common;
 /// </summary>
 public static class CountryExtension
 {
+    public static string? CountryDisplayName(string? code, string? fallback)
+    {
+        code = code?.ToUpperInvariant();
+        var chinese = CultureInfo.CurrentUICulture.Name.StartsWith("zh", StringComparison.OrdinalIgnoreCase);
+        var name = fallback;
+        if (code?.Length == 2)
+            try { name = chinese ? new RegionInfo(code).DisplayName : new RegionInfo(code).EnglishName; }
+            catch (ArgumentException) { }
+        if (chinese)
+            name = code switch
+            {
+                "US" => "美国", "JP" => "日本", "SG" => "新加坡", "HK" => "香港", "TW" => "台湾",
+                "CN" => "中国", "DE" => "德国", "GB" => "英国", "FR" => "法国", "CA" => "加拿大",
+                "AU" => "澳大利亚", "KR" => "韩国", "NL" => "荷兰", "IN" => "印度", "RU" => "俄罗斯",
+                _ => name
+            };
+        return name ?? code;
+    }
+
     /// <summary>
     /// Country code to emoji flag mapping for common countries
     /// </summary>

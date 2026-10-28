@@ -5,7 +5,6 @@ using Avalonia.Layout;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using ServiceLib.Services;
-using System.Globalization;
 
 namespace v2rayN.Desktop.Common;
 
@@ -25,11 +24,7 @@ public static class ExitPresentation
     public static string Location(ExitInfoItem? item)
     {
         if (item?.Ip == null) return State(item);
-        var country = item.Country;
-        if (item.CountryCode is { Length: 2 } code)
-            try { country = CultureInfo.CurrentUICulture.Name.StartsWith("zh", StringComparison.OrdinalIgnoreCase) ? new RegionInfo(code).DisplayName : new RegionInfo(code).EnglishName; } catch (ArgumentException) { }
-        if (CultureInfo.CurrentUICulture.Name.StartsWith("zh", StringComparison.OrdinalIgnoreCase))
-            country = item.CountryCode switch { "US" => "美国", "JP" => "日本", "SG" => "新加坡", "HK" => "香港", "TW" => "台湾", "CN" => "中国", "DE" => "德国", "GB" => "英国", "FR" => "法国", "CA" => "加拿大", "AU" => "澳大利亚", "KR" => "韩国", "NL" => "荷兰", "IN" => "印度", "RU" => "俄罗斯", _ => country };
+        var country = CountryExtension.CountryDisplayName(item.CountryCode, item.Country);
         return string.Join(" · ", new[] { country ?? item.CountryCode ?? "—", item.City ?? item.Region }.Where(s => !string.IsNullOrWhiteSpace(s)).Distinct());
     }
     public static string Details(ExitInfoItem? item)
