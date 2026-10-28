@@ -6,6 +6,17 @@ namespace ServiceLib.Tests.Services;
 public class ProxyCheckTests
 {
     [Test]
+    public async Task PublicMatrixExcludesStaticLimitsAndKeepsRealUdpProbes()
+    {
+        var probes = ProxyCheckService.CreateProbes(new() { LocalDnsTarget = "127.0.0.1:1053" }, 10808);
+        await probes.Any(p => ProxyCheckPathCapabilities.IsFixedUnsupported(p.Path, p.Kind)).Should().BeFalse();
+        foreach (var path in new[] { "socks", "native" })
+            foreach (var kind in new[] { "stun", "dns-udp", "h3" })
+                await probes.Any(p => p.Path == path && p.Kind == kind).Should().BeTrue();
+        await probes.Any(p => p.Path == "http-connect" && p.Kind == "https").Should().BeTrue();
+    }
+
+    [Test]
     public async Task DefaultOptionsAndIPv6TargetsAreValid()
     {
         ProxyCheckService.Validate(new());

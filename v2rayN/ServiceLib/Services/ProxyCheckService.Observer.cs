@@ -13,10 +13,12 @@ public sealed partial class ProxyCheckService
         {
             var proxy = path == "native" ? "" : $"{(path == "socks" ? "socks5" : "http")}://127.0.0.1:{port}";
             foreach (var (kind, target) in new[] { ("tcp", o.TcpTarget), ("tls", o.TlsTarget), ("http", o.HttpUrl), ("https", o.HttpsUrl), ("udp", o.UdpTarget), ("stun", o.StunTarget), ("h3", o.Http3Url) })
-                probes.Add(new($"observer-{path}-{kind}", kind is "udp" or "stun" ? "UDP" : kind == "h3" ? "QUIC/HTTP3" : "TCP/TLS", kind, target, path, proxy, "4"));
+                if (!ProxyCheckPathCapabilities.IsFixedUnsupported(path, kind))
+                    probes.Add(new($"observer-{path}-{kind}", kind is "udp" or "stun" ? "UDP" : kind == "h3" ? "QUIC/HTTP3" : "TCP/TLS", kind, target, path, proxy, "4"));
             foreach (var kind in new[] { "dns-udp", "dns-tcp" })
-                foreach (var query in new[] { "A", "AAAA", "NXDOMAIN", "TRUNCATED" })
-                    probes.Add(new($"observer-{path}-{kind}-{query}", "DNS", kind, o.DnsTarget, path, proxy, "4", query));
+                if (!ProxyCheckPathCapabilities.IsFixedUnsupported(path, kind))
+                    foreach (var query in new[] { "A", "AAAA", "NXDOMAIN", "TRUNCATED" })
+                        probes.Add(new($"observer-{path}-{kind}-{query}", "DNS", kind, o.DnsTarget, path, proxy, "4", query));
         }
         probes.Add(new("system-proxy", T("网络接管", "Network capture"), "system-proxy", o.HttpsUrl, "system"));
         probes.Add(new("observer-system-http", "TCP/TLS", "system-http", o.HttpUrl, "system", "", "4"));
@@ -42,7 +44,7 @@ public sealed partial class ProxyCheckService
         }
         var row = NewResult(p);
         if (p.Kind == "uncovered") { row.State = row.Connectivity = "skipped"; row.EgressState = "not-applicable"; row.Evidence = T("未覆盖：独立探测服务首版仅提供 IPv4。AAAA 查询不代表 IPv6 传输出口已验证。", "Not covered: this observer is IPv4 only. AAAA queries do not verify IPv6 transport."); return row; }
-        if (p.Path == "http-connect" && p.Kind is "udp" or "stun" or "h3" or "dns-udp") { row.State = row.Connectivity = "unsupported"; row.EgressState = "not-applicable"; row.Evidence = T("HTTP CONNECT 不支持普通 UDP，未回退到其他路径。", "HTTP CONNECT does not support UDP; no fallback."); return row; }
+        if (ProxyCheckPathCapabilities.IsFixedUnsupported(p.Path, p.Kind)) { row.State = row.Connectivity = "unsupported"; row.EgressState = "not-applicable"; row.Evidence = T("HTTP CONNECT 不支持普通 UDP，未回退到其他路径。", "HTTP CONNECT does not support UDP; no fallback."); return row; }
         var recursive = p.Kind == "system-dns" || p.Path == "local-dns";
         row.ObservationType = recursive ? "recursive-resolver" : "direct-peer";
         row.Expected = recursive ? "" : ExpectedFor(p.Target, options, p.Kind, p.Path);

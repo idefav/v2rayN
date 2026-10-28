@@ -59,15 +59,29 @@ public sealed class ProxyCheckResultRow(ProxyDiagnosticResult source)
 
 public sealed class ProxyCheckResultGroup(string name, IReadOnlyList<ProxyCheckResultRow> rows) : System.ComponentModel.INotifyPropertyChanged
 {
+    private bool _isExpanded;
+    private IReadOnlyList<ProxyCheckResultRow> _summaryRows = rows;
+    public bool IsExpanded
+    {
+        get => _isExpanded;
+        set { if (_isExpanded == value) return; _isExpanded = value; PropertyChanged?.Invoke(this, new(nameof(IsExpanded))); }
+    }
     public string Name { get; } = name;
     public ObservableCollection<ProxyCheckResultRow> Rows { get; } = new(rows);
-    public string CountLabel => $"{Rows.Count}";
-    public string Summary => $"{Rows.Count(r => r.IsFinished)}/{Rows.Count} " + ProxyCheckText.T("项已完成", "completed")
-        + (Rows.Any(r => r.Source.State == "cancelled") ? $" · {Rows.Count(r => r.Source.State == "cancelled")} " + ProxyCheckText.T("项已取消", "cancelled") : "");
+    public string CountLabel => Rows.Count == _summaryRows.Count ? $"{Rows.Count}" : $"{Rows.Count}/{_summaryRows.Count} " + ProxyCheckText.T("匹配", "matching");
+    public int AttentionCount => _summaryRows.Count(r => r.NeedsAttention);
+    public bool HasAttention => AttentionCount > 0;
+    public string AttentionLabel => ProxyCheckText.T("需关注 ", "Needs attention ") + AttentionCount;
+    public string Summary => $"{_summaryRows.Count(r => r.IsFinished)}/{_summaryRows.Count} " + ProxyCheckText.T("项已完成", "completed")
+        + (_summaryRows.Any(r => r.Source.State == "cancelled") ? $" · {_summaryRows.Count(r => r.Source.State == "cancelled")} " + ProxyCheckText.T("项已取消", "cancelled") : "");
     public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
-    public void NotifySummaryChanged()
+    public void NotifySummaryChanged(IReadOnlyList<ProxyCheckResultRow>? allRows = null)
     {
+        _summaryRows = allRows ?? Rows;
         PropertyChanged?.Invoke(this, new(nameof(CountLabel)));
         PropertyChanged?.Invoke(this, new(nameof(Summary)));
+        PropertyChanged?.Invoke(this, new(nameof(AttentionCount)));
+        PropertyChanged?.Invoke(this, new(nameof(HasAttention)));
+        PropertyChanged?.Invoke(this, new(nameof(AttentionLabel)));
     }
 }

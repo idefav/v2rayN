@@ -5,6 +5,56 @@ namespace ServiceLib.Tests.Services;
 public class ProxyCheckPresentationTests
 {
     [Test]
+    public async Task CategoryFoldsSurviveUpdatesFilteringAndRetryReplacements()
+    {
+        using var model = new ProxyCheckViewModel(); model.Results.Clear();
+        model.Results.Add(new() { Id = "udp", Group = "UDP", State = "failed", Connectivity = "failed" });
+        model.Results.Add(new() { Id = "stun", Group = "UDP", State = "passed", Connectivity = "passed", EgressState = "passed" });
+        model.Results.Add(new() { Id = "tcp", Group = "TCP/TLS", State = "running" });
+        await model.ResultGroups.All(g => !g.IsExpanded).Should().BeTrue();
+        var udp = model.ResultGroups.Single(g => g.Name == "UDP");
+        udp.IsExpanded = true; udp.Rows[0].IsExpanded = true; model.IsPathCapabilitiesExpanded = true;
+        model.SearchText = "not-found";
+        await model.HasVisibleResults.Should().BeFalse();
+        model.SearchText = "";
+        await ReferenceEquals(model.ResultGroups.Single(g => g.Name == "UDP"), udp).Should().BeTrue();
+        await udp.IsExpanded.Should().BeTrue();
+        await udp.Rows[0].IsExpanded.Should().BeTrue();
+        model.SelectedFilter = 2;
+        await udp.Rows.Count.Should().BeEqualTo(1);
+        await udp.CountLabel.StartsWith("1/2 ").Should().BeTrue();
+        await udp.Summary.StartsWith("2/2 ").Should().BeTrue();
+        await udp.AttentionCount.Should().BeEqualTo(1);
+        model.SelectedFilter = 0;
+        model.Results[0] = new() { Id = "udp", Group = "UDP", State = "running" };
+        await udp.IsExpanded.Should().BeTrue();
+        await udp.Rows[0].IsExpanded.Should().BeTrue();
+        await model.IsPathCapabilitiesExpanded.Should().BeTrue();
+        await model.ResultGroups.Single(g => g.Name == "TCP/TLS").IsExpanded.Should().BeFalse();
+        model.Results.Clear();
+        model.Results.Add(new() { Id = "udp", Group = "UDP", State = "pending" });
+        await model.ResultGroups[0].IsExpanded.Should().BeFalse();
+        await model.ResultGroups[0].Rows[0].IsExpanded.Should().BeFalse();
+        await model.IsPathCapabilitiesExpanded.Should().BeFalse();
+    }
+
+    [Test]
+    public async Task RuntimeUdpFailuresRemainVisibleAndCapabilityNotesDoNotAffectCounts()
+    {
+        using var model = new ProxyCheckViewModel(); model.Results.Clear();
+        model.Results.Add(new() { Id = "socks-udp", Group = "UDP", State = "unsupported", Connectivity = "unsupported" });
+        model.Results.Add(new() { Id = "native-stun", Group = "UDP", State = "failed", Connectivity = "failed" });
+        model.IsPathCapabilitiesExpanded = true; model.RefreshPresentation();
+        await model.TotalCount.Should().BeEqualTo(2);
+        await model.FinishedCount.Should().BeEqualTo(2);
+        await model.AttentionCount.Should().BeEqualTo(1);
+        await model.UncoveredCount.Should().BeEqualTo(1);
+        await model.ResultGroups[0].Rows.Count.Should().BeEqualTo(2);
+        await ProxyCheckPathCapabilities.NativePath(false).Contains(ProxyCheckText.T("TUN 关闭", "TUN off")).Should().BeTrue();
+        await ProxyCheckPathCapabilities.NativePath(true).Contains(ProxyCheckText.T("TUN 开启", "TUN on")).Should().BeTrue();
+    }
+
+    [Test]
     public async Task CapabilityChecksDoNotClaimTrafficConnectivity()
     {
         var result = new ProxyDiagnosticResult { State = "passed", Connectivity = "passed", ObservationType = "not-applicable", EgressState = "not-applicable" };
