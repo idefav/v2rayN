@@ -47,6 +47,9 @@ public sealed class ProxyDiagnosticResult
     public string Connectivity { get; set; } = "pending";
     public string EgressState { get; set; } = "unknown";
     public string Egress { get; set; } = "";
+    // Unsigned geolocation metadata is separate from the observed address and signed receipts.
+    public List<EgressLocation> EgressLocations { get; set; } = [];
+    [JsonIgnore] public string LocationState { get; set; } = "";
     public string Expected { get; set; } = "";
     public string Protocol { get; set; } = "";
     public int Attempts { get; set; }

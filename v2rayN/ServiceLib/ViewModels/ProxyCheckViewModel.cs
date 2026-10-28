@@ -118,6 +118,7 @@ public partial class ProxyCheckViewModel : MyReactiveObject, IDisposable
             }
             _cancel.Token.ThrowIfCancellationRequested();
             AtomicSave(Utils.GetConfigPath("proxy-check-options.json"), JsonSerializer.Serialize(options, ProxyCheckService.Json));
+            BeginLocationLookups();
             IsRunning = true; CanExport = false;
             LastChecked = DateTimeOffset.Now.ToString("g");
             if (!retry) { Results.Clear(); _report = null; }
@@ -151,6 +152,7 @@ public partial class ProxyCheckViewModel : MyReactiveObject, IDisposable
     {
         _cancel?.Cancel();
         _observerCancel?.Cancel();
+        CancelLocationLookups();
     }
     public string ExportReport()
     {
@@ -226,6 +228,7 @@ public partial class ProxyCheckViewModel : MyReactiveObject, IDisposable
     {
         if (_disposed) return;
         _disposed = true; Cancel(); _exit.Dispose(); _presentation?.Dispose(); _observerSettings?.Dispose();
+        _locationCancel?.Dispose(); _locationCancel = null;
         Results.CollectionChanged -= ResultsChanged; ObserverPairingCode = ""; CanStart = CanRetry = CanExport = false;
     }
 }

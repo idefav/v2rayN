@@ -89,7 +89,12 @@ public partial class ProxyCheckViewModel
         RefreshPresentation();
     }
 
-    private void ResultsChanged(object? sender, NotifyCollectionChangedEventArgs e) => RefreshPresentation();
+    private void ResultsChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        RefreshPresentation();
+        if (e.NewItems != null)
+            foreach (ProxyDiagnosticResult row in e.NewItems) QueueLocationLookup(row);
+    }
 
     public void RefreshPresentation()
     {
@@ -105,7 +110,7 @@ public partial class ProxyCheckViewModel
         });
         rows = SelectedFilter switch { 1 => rows.Where(r => r.NeedsAttention), 2 => rows.Where(r => r.IsPassed), 3 => rows.Where(r => r.IsUncovered), _ => rows };
         if (!string.IsNullOrWhiteSpace(SearchText))
-            rows = rows.Where(r => string.Join(' ', r.Name, r.Target, r.Path, r.Source.Egress, r.Source.Group, r.Source.Protocol).Contains(SearchText.Trim(), StringComparison.CurrentCultureIgnoreCase));
+            rows = rows.Where(r => string.Join(' ', r.Name, r.Target, r.Path, r.Source.Egress, r.Source.Group, r.Source.Protocol, r.LocationLabel).Contains(SearchText.Trim(), StringComparison.CurrentCultureIgnoreCase));
         var groups = rows.GroupBy(r => r.Source.Group).OrderBy(g => g.Key switch { "TCP/TLS" => 1, "DNS" => 2, "UDP" => 3, "QUIC/HTTP3" => 4, "IPv4" => 5, "IPv6" => 6, _ => 0 }).ToArray();
         var desired = new List<ProxyCheckResultGroup>();
         foreach (var group in groups)

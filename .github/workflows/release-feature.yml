@@ -98,6 +98,8 @@ jobs:
           dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/preview-ui/en-dark --primer-only --headless --language=en --theme=dark --width=600
           dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/preview-ui/sources-zh --update-sources-only --headless --language=zh-Hans --theme=light --width=1200
           dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/preview-ui/sources-en --update-sources-only --headless --language=en --theme=dark --width=980
+          dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/preview-ui/egress-zh --proxy-check-only --headless --language=zh-Hans --theme=light --width=1440
+          dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/preview-ui/egress-en --proxy-check-only --headless --language=en --theme=dark --width=600
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -259,6 +261,7 @@ jobs:
           - 修复局域网 .local 域名解析：macOS 使用系统 mDNS，连接在全局模式下也走局域网直连，兼容末尾句点，避免公共 DNS 返回 NXDOMAIN 刷屏。
           - 新增 Avalonia“代理检查”：区分系统路径、HTTP CONNECT、SOCKS5 与普通套接字，验证 TCP/TLS、DNS、STUN 普通 UDP、真实 HTTP3 和 IPv4/IPv6；支持预期出口、基线及 JSON 报告。
           - 新增独立出口观察服务接入：验证服务端签名证据，分别展示通信、实际出口与预期比较；控制接口成功不等于各协议已验证。
+          - 代理检查的实际出口 IP 自动补充国家、地区与城市，支持 IPv4/IPv6、多地址及查询缓存；第三方地域信息独立于签名证据，查询失败不影响检测结论。
           - 独立探测服务支持域名加一次性配对串，控制接口使用 mTLS，设备凭证保存到系统安全存储；旧 API Key 不再支持。
           - 新增真实浏览器 WebRTC 数据通道出口检查、DNS 按节点及分流规则选择出口、代理 UDP 与 QUIC 阻断选项。
           - 配置服务与高级检查选项在独立弹窗打开；修复配对取消、并发解绑、会话撤销及 DNS 签名证据校验。
