@@ -286,6 +286,8 @@ public partial class MainWindowViewModel : MyReactiveObject
             CheckUpdateViewModel.ReloadRequested.AsObservable(),
         };
 
+        CheckUpdateViewModel.RestartCoreAsync = reason => ReloadCoreAsync(null, CancellationToken.None, reason);
+
         foreach (var reloadRequested in vmReloadRequestedList)
         {
             reloadRequested
@@ -590,7 +592,7 @@ public partial class MainWindowViewModel : MyReactiveObject
     {
         var settingViewModel = new OptionSettingViewModel();
         var ret = await AppManager.Instance.WindowDialog.ShowDialogAsync(settingViewModel);
-        if (ret == true)
+        if (ret == true && !settingViewModel.OnlySourcesChanged)
         {
             await ApplySettingsChangesAsync("Options");
         }

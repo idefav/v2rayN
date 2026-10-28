@@ -50,6 +50,7 @@ internal static class Program
     public static bool ProxyCheckLive;
     public static bool PrimerOnly;
     public static bool SshUdpOnly;
+    public static bool UpdateSourcesOnly;
     public static bool LegacyColumns;
     public static string Language = "zh-Hans";
     public static string Theme = "Light";
@@ -74,6 +75,7 @@ internal static class Program
         ProxyCheckLive = args.Contains("--proxy-check-live");
         PrimerOnly = args.Contains("--primer-only");
         SshUdpOnly = args.Contains("--ssh-udp-only");
+        UpdateSourcesOnly = args.Contains("--update-sources-only");
         LegacyColumns = args.Contains("--legacy-columns");
         foreach (var argument in args.Skip(1))
         {
@@ -464,6 +466,46 @@ public partial class ReviewApp : v2rayN.Desktop.App
             await CheckDnsEgressAsync();
             File.WriteAllText(Path.Combine(Program.Output, "manifest.json"), JsonSerializer.Serialize(new { fixtureData = true, screenshots = _shots, checks = _checks }, new JsonSerializerOptions { WriteIndented = true }));
             Console.WriteLine($"Reviewed {_shots.Count} DNS screens; {_checks.Count} checks passed.");
+            return;
+        }
+        if (Program.UpdateSourcesOnly)
+        {
+            await _main.OpenSettingsAsync("Sources");
+            await Task.Delay(250);
+            var page = _main.GetLogicalDescendants().OfType<OptionSettingWindow>().Single();
+            var settings = page.ViewModel!;
+            await settings.Initialization;
+            Check(settings.Sources.Count == 7, "seven update sources visible in shared settings");
+            var before = EditorSnapshot.Capture(settings);
+            settings.Sources[3].Value = "https://github.com/idefav/sing-box/releases";
+            Check(before != EditorSnapshot.Capture(settings), "source edits participate in unsaved-draft tracking");
+            await settings.Sources[3].ResetCmd.Execute().ToTask();
+            Check(string.IsNullOrEmpty(settings.Sources[3].Value), "single-row restore default clears only that draft");
+            settings.Sources[3].Value = "https://github.com/idefav/sing-box/releases";
+            Check(UpdateSources.Repository(AppManager.Instance.Config, ECoreType.sing_box) == "SagerNet/sing-box", "editing does not change live configuration");
+            await CaptureAsync("update-sources", "Update and resource sources", _main);
+            var sourceScroll = page.GetLogicalDescendants().OfType<ScrollViewer>()
+                .First(s => s.IsVisible && s.Content is StackPanel p && p.Children.OfType<ItemsControl>().Any());
+            sourceScroll.ScrollToEnd();
+            await CaptureAsync("update-sources-rules", "Rule resource sources", _main);
+            await settings.SaveCmd.Execute().ToTask();
+            Check(settings.OnlySourcesChanged, "source-only save does not request core reload");
+            Check(UpdateSources.Repository(AppManager.Instance.Config, ECoreType.sing_box) == "idefav/sing-box", "repository URL normalized on save");
+            var fresh = new OptionSettingViewModel();
+            await fresh.Initialization;
+            await fresh.ResetSourcesCmd.Execute().ToTask();
+            Check(UpdateSources.Repository(AppManager.Instance.Config, ECoreType.sing_box) == "idefav/sing-box", "reset remains a draft before save");
+            await fresh.SaveCmd.Execute().ToTask();
+            Check(fresh.OnlySourcesChanged && UpdateSources.Repository(AppManager.Instance.Config, ECoreType.sing_box) == "SagerNet/sing-box", "reset restores official source without reloading");
+            var reloaded = ConfigHandler.LoadConfig();
+            Check(UpdateSources.Repository(reloaded!, ECoreType.sing_box) == "SagerNet/sing-box", "defaults persist after reloading config");
+            await _main.OpenSettingsAsync("Updates");
+            await Task.Delay(250);
+            Check(_vm.CheckUpdateViewModel.CheckUpdateModels.First(m => m.CoreType == ECoreType.v2rayN).CurrentVersion is not (null or "—" or "0.0.0"), "application version falls back to assembly version without a CI release tag");
+            Check(!_vm.BlNewUpdate, "saving sources does not claim a new update is available");
+            await Task.Delay(5500); // Let save notifications expire before capturing the table.
+            await CaptureAsync("update-sources-list", "Update list with repositories", _main);
+            File.WriteAllText(Path.Combine(Program.Output, "manifest.json"), JsonSerializer.Serialize(new { fixtureData = true, screenshots = _shots, checks = _checks }, new JsonSerializerOptions { WriteIndented = true }));
             return;
         }
         if (Program.SshUdpOnly)

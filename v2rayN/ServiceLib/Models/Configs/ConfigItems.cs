@@ -243,6 +243,7 @@ public class WebDavItem
 [Serializable]
 public class CheckUpdateItem
 {
+    public Dictionary<string, string> RepositoryOverrides { get; set; } = new();
     public bool UpdateViaProxy { get; set; } = true;
     public List<string>? SelectedCoreTypes { get; set; }
     public List<string>? CheckPreReleaseCoreTypes { get; set; }

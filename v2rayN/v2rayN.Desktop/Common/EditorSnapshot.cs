@@ -15,9 +15,12 @@ public static class EditorSnapshot
                 Password = backup.SelectedSource.Password ?? "", DirName = backup.SelectedSource.DirName ?? ""
             });
         var values = new SortedDictionary<string, object?>();
+        if (model is OptionSettingViewModel options)
+            values["Sources"] = options.Sources.Select(r => new { r.Key, Value = r.Value ?? "" }).ToArray();
         foreach (var property in model.GetType().GetProperties())
         {
             if (!property.CanRead || property.GetIndexParameters().Length != 0) continue;
+            if (model is OptionSettingViewModel && property.Name is nameof(OptionSettingViewModel.OnlySourcesChanged) or nameof(OptionSettingViewModel.InitialSection)) continue;
             if (model is DNSSettingViewModel && property.Name is nameof(DNSSettingViewModel.EgressError)
                 or nameof(DNSSettingViewModel.NodeCapability)) continue;
             var type = Nullable.GetUnderlyingType(property.PropertyType) ?? property.PropertyType;

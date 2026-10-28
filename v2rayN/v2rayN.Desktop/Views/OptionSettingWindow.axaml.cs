@@ -75,9 +75,6 @@ public partial class OptionSettingWindow : PageBase<OptionSettingViewModel>
         cmbSpeedPingTestUrl.ItemsSource = Global.SpeedPingTestUrls;
         cmbUdpTestTarget.ItemsSource = Global.UdpTestTargets;
         cmbSubConvertUrl.ItemsSource = Global.SubConvertUrls;
-        cmbGetFilesSourceUrl.ItemsSource = Global.GeoFilesSources;
-        cmbSrsFilesSourceUrl.ItemsSource = Global.SingboxRulesetSources;
-        cmbRoutingRulesSourceUrl.ItemsSource = Global.RoutingRulesSources;
         cmbIPAPIUrl.ItemsSource = Global.IPAPIUrls;
         cmbRootCertificateProvider.ItemsSource = Global.RootCertProviders;
 
@@ -135,9 +132,6 @@ public partial class OptionSettingWindow : PageBase<OptionSettingViewModel>
             this.Bind(ViewModel, vm => vm.UdpTestTarget, v => v.cmbUdpTestTarget.Text).DisposeWith(disposables);
             this.Bind(ViewModel, vm => vm.MixedConcurrencyCount, v => v.cmbMixedConcurrencyCount.SelectedValue).DisposeWith(disposables);
             this.Bind(ViewModel, vm => vm.SubConvertUrl, v => v.cmbSubConvertUrl.Text).DisposeWith(disposables);
-            this.Bind(ViewModel, vm => vm.GeoFileSourceUrl, v => v.cmbGetFilesSourceUrl.Text).DisposeWith(disposables);
-            this.Bind(ViewModel, vm => vm.SrsFileSourceUrl, v => v.cmbSrsFilesSourceUrl.Text).DisposeWith(disposables);
-            this.Bind(ViewModel, vm => vm.RoutingRulesSourceUrl, v => v.cmbRoutingRulesSourceUrl.Text).DisposeWith(disposables);
             this.Bind(ViewModel, vm => vm.IPAPIUrl, v => v.cmbIPAPIUrl.Text).DisposeWith(disposables);
             var autoExit = new CheckBox { Content = WorkspaceText.T("自动检测新增或变更节点的出口地区", "Automatically check exit locations for new or changed servers"), Margin = new Thickness(8) };
             if (cmbIPAPIUrl.Parent is Panel exitPanel) exitPanel.Children.Add(autoExit);

@@ -1,5 +1,15 @@
 <Project>
 
+    <ItemGroup Condition="'$(GITHUB_REPOSITORY)' != ''">
+        <AssemblyMetadata Include="BuildRepository" Value="$(GITHUB_REPOSITORY)" />
+    </ItemGroup>
+    <PropertyGroup>
+        <BuildReleaseTag Condition="'$(BuildReleaseTag)' == '' and '$(GITHUB_REF_TYPE)' == 'tag'">$(GITHUB_REF_NAME)</BuildReleaseTag>
+    </PropertyGroup>
+    <ItemGroup Condition="'$(BuildReleaseTag)' != ''">
+        <AssemblyMetadata Include="BuildReleaseTag" Value="$(BuildReleaseTag)" />
+    </ItemGroup>
+
     <PropertyGroup>
         <Version>7.25.6</Version>
     </PropertyGroup>

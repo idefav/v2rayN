@@ -33,6 +33,11 @@ public sealed class CoreInfoManager
     {
         var fileName = string.Empty;
         msg = string.Empty;
+        if (coreInfo != null && UpdateSources.Programs.Contains(coreInfo.CoreType) && coreInfo.CoreType != ECoreType.v2rayN)
+        {
+            var store = InstalledUpdateStore.For(coreInfo.CoreType);
+            if (store.Read() is { } update) return store.Resolve(update.Executable);
+        }
         var bundled = BundledSshCore.TryResolve(coreInfo?.CoreType, Utils.GetBaseDirectory("bin"));
         if (bundled != null) return bundled;
         foreach (var name in coreInfo?.CoreExes)
@@ -92,6 +97,8 @@ public sealed class CoreInfoManager
         {
             ECoreType.v2rayN => preRelease,
             ECoreType.Xray => preRelease,
+            ECoreType.mihomo => preRelease,
+            ECoreType.sing_box => preRelease,
             _ => false,
         };
     }

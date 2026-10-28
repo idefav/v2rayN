@@ -50,9 +50,6 @@ public partial class OptionSettingWindow
         cmbSpeedPingTestUrl.ItemsSource = Global.SpeedPingTestUrls;
         cmbUdpTestTarget.ItemsSource = Global.UdpTestTargets;
         cmbSubConvertUrl.ItemsSource = Global.SubConvertUrls;
-        cmbGetFilesSourceUrl.ItemsSource = Global.GeoFilesSources;
-        cmbSrsFilesSourceUrl.ItemsSource = Global.SingboxRulesetSources;
-        cmbRoutingRulesSourceUrl.ItemsSource = Global.RoutingRulesSources;
         cmbIPAPIUrl.ItemsSource = Global.IPAPIUrls;
         cmbRootCertificateProvider.ItemsSource = Global.RootCertProviders;
 
@@ -62,6 +59,7 @@ public partial class OptionSettingWindow
 
         this.WhenActivated(disposables =>
         {
+            pageTabs.SelectedIndex = ViewModel?.InitialSection ?? 0;
             this.Bind(ViewModel, vm => vm.LocalPort, v => v.txtlocalPort.Text).DisposeWith(disposables);
             this.Bind(ViewModel, vm => vm.SecondLocalPortEnabled, v => v.togSecondLocalPortEnabled.IsChecked).DisposeWith(disposables);
             this.Bind(ViewModel, vm => vm.UdpEnabled, v => v.togudpEnabled.IsChecked).DisposeWith(disposables);
@@ -112,9 +110,6 @@ public partial class OptionSettingWindow
             this.Bind(ViewModel, vm => vm.EnableHWA, v => v.togEnableHWA.IsChecked).DisposeWith(disposables);
             this.Bind(ViewModel, vm => vm.SubConvertUrl, v => v.cmbSubConvertUrl.Text).DisposeWith(disposables);
             this.Bind(ViewModel, vm => vm.MainGirdOrientation, v => v.cmbMainGirdOrientation.SelectedIndex).DisposeWith(disposables);
-            this.Bind(ViewModel, vm => vm.GeoFileSourceUrl, v => v.cmbGetFilesSourceUrl.Text).DisposeWith(disposables);
-            this.Bind(ViewModel, vm => vm.SrsFileSourceUrl, v => v.cmbSrsFilesSourceUrl.Text).DisposeWith(disposables);
-            this.Bind(ViewModel, vm => vm.RoutingRulesSourceUrl, v => v.cmbRoutingRulesSourceUrl.Text).DisposeWith(disposables);
             this.Bind(ViewModel, vm => vm.IPAPIUrl, v => v.cmbIPAPIUrl.Text).DisposeWith(disposables);
             this.Bind(ViewModel, vm => vm.RootCertProvider, v => v.cmbRootCertificateProvider.Text).DisposeWith(disposables);
 

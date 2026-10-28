@@ -100,6 +100,7 @@ public sealed class AppManager
 
     public bool InitComponents()
     {
+        AppUpdateProvenance.ConfirmStartup();
         Logging.SaveLog($"v2rayN start up | {Utils.GetRuntimeInfo()}");
         Logging.LoggingEnabled(_config.GuiItem.EnableLog);
 

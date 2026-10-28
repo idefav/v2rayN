@@ -118,7 +118,7 @@ sudo ss -lntp
 
 **安装升级陷阱**：原 CoreManager 初始化不会覆盖用户 bin，旧原版核心可能留在 Application Support 中；仅看到 App 已安装不代表实际启动了 App 内核心。典型报错是 `outbounds[0].udp_forwarding: json: unknown field "udp_forwarding"`。
 
-修订版新增 BundledSshCore：只在 `bin/sing_box/ssh-udp-core.json` 的 schema、专用版本和二进制 SHA-256 均匹配时，优先调用随包核心。普通未标记安装、其他核心和无效清单走原选择逻辑。不要自行拿上游原版覆盖随包专用核心；核心不匹配时重新安装正确预览包。
+修订版新增 BundledSshCore：只在 `bin/sing_box/ssh-udp-core.json` 的 schema、专用版本和二进制 SHA-256 均匹配时，优先于旧用户目录核心调用随包核心。通过[更新与资源来源](update-sources.zh-Hans.md)显式安装并验证成功的更新核心具有更高优先级；旧用户目录文件不会自动获得此优先级。启用 SSH UDP 时应使用兼容扩展的核心，例如将更新仓库配置为 `idefav/sing-box`；官方源为默认值，但无法加载当前扩展配置的更新会被拒绝。
 
 macOS 核实实际路径，而非只查安装目录版本：
 

@@ -6,6 +6,10 @@ public class UpdateResult
     public string? Msg { get; set; }
     public SemanticVersion? Version { get; set; }
     public string? Url { get; set; }
+    public string? Repository { get; set; }
+    public string? Tag { get; set; }
+    public bool IsSourceSwitch { get; set; }
+    public string? FileName { get; set; }
 
     public UpdateResult(bool success, string? msg)
     {
