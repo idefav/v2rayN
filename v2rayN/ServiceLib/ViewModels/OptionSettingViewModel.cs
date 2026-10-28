@@ -62,9 +62,11 @@ public partial class OptionSettingViewModel : MyReactiveObject, ICloseable
     [Reactive] public partial bool EnableHWA { get; set; }
     [Reactive] public partial string SubConvertUrl { get; set; }
     [Reactive] public partial int MainGirdOrientation { get; set; }
-    [Reactive] public partial string GeoFileSourceUrl { get; set; }
-    [Reactive] public partial string SrsFileSourceUrl { get; set; }
-    [Reactive] public partial string RoutingRulesSourceUrl { get; set; }
+    public List<UpdateSourceItem> Sources { get; }
+    public ReactiveCommand<RxVoid, RxVoid> ResetSourcesCmd { get; }
+    public int InitialSection { get; init; }
+    public bool OnlySourcesChanged { get; private set; }
+    private string? _initialOtherSettings;
     [Reactive] public partial string IPAPIUrl { get; set; }
     [Reactive] public partial bool AutoDetectExit { get; set; }
     [Reactive] public partial string RootCertProvider { get; set; }
@@ -124,6 +126,8 @@ public partial class OptionSettingViewModel : MyReactiveObject, ICloseable
     public OptionSettingViewModel()
     {
         _config = AppManager.Instance.Config;
+        Sources = UpdateSourceItem.Create(_config);
+        ResetSourcesCmd = ReactiveCommand.Create(() => { foreach (var row in Sources) row.Value = ""; });
         BlIsWindows = Utils.IsWindows();
         BlIsLinux = Utils.IsLinux();
         BlIsIsMacOS = Utils.IsMacOS();
@@ -197,9 +201,6 @@ public partial class OptionSettingViewModel : MyReactiveObject, ICloseable
         EnableHWA = _config.GuiItem.EnableHWA;
         SubConvertUrl = _config.ConstItem.SubConvertUrl;
         MainGirdOrientation = (int)_config.UiItem.MainGirdOrientation;
-        GeoFileSourceUrl = _config.ConstItem.GeoSourceUrl;
-        SrsFileSourceUrl = _config.ConstItem.SrsSourceUrl;
-        RoutingRulesSourceUrl = _config.ConstItem.RouteRulesTemplateSourceUrl;
         IPAPIUrl = _config.SpeedTestItem.IPAPIUrl;
         AutoDetectExit = _config.SpeedTestItem.AutoDetectExit;
         RootCertProvider = _config.GuiItem.RootCertProvider;
@@ -232,6 +233,7 @@ public partial class OptionSettingViewModel : MyReactiveObject, ICloseable
         #endregion Tun mode
 
         await InitCoreType();
+        _initialOtherSettings = OtherSettingsSnapshot();
     }
 
     private async Task InitCoreType()
@@ -298,6 +300,34 @@ public partial class OptionSettingViewModel : MyReactiveObject, ICloseable
 
     private async Task SaveSettingAsync()
     {
+        var sourceDraft = JsonUtils.Deserialize<Config>(JsonSerializer.Serialize(_config))!;
+        try { UpdateSourceItem.Apply(Sources, sourceDraft); }
+        catch (Exception ex) when (ex is ArgumentException or FormatException)
+        {
+            NoticeManager.Instance.Enqueue(ex.Message);
+            return;
+        }
+        var changedSources = UpdateSources.Programs.Where(t =>
+            _config.CheckUpdateItem.RepositoryOverrides?.GetValueOrDefault(t.ToString()) != sourceDraft.CheckUpdateItem.RepositoryOverrides.GetValueOrDefault(t.ToString())).ToArray();
+        OnlySourcesChanged = _initialOtherSettings == OtherSettingsSnapshot();
+        if (OnlySourcesChanged)
+        {
+            if (await ConfigHandler.SaveConfig(sourceDraft) != 0)
+            {
+                NoticeManager.Instance.Enqueue(ResUI.OperationFailed);
+                return;
+            }
+            foreach (var type in changedSources) AppManager.Instance.LastCheckUpdateResults.Remove(type);
+            _config.CheckUpdateItem.RepositoryOverrides = sourceDraft.CheckUpdateItem.RepositoryOverrides;
+            _config.ConstItem.GeoSourceUrl = sourceDraft.ConstItem.GeoSourceUrl;
+            _config.ConstItem.SrsSourceUrl = sourceDraft.ConstItem.SrsSourceUrl;
+            _config.ConstItem.RouteRulesTemplateSourceUrl = sourceDraft.ConstItem.RouteRulesTemplateSourceUrl;
+            if (changedSources.Length > 0) AppEvents.HasUpdateNotified.Publish(false);
+            AppEvents.UpdateSourcesChanged.Publish();
+            NoticeManager.Instance.Enqueue(ResUI.OperationSuccess);
+            RequestClose?.Invoke(this, EventArgs.Empty);
+            return;
+        }
         if (LocalPort.ToString().IsNullOrEmpty() || !Utils.IsNumeric(LocalPort.ToString())
            || LocalPort <= 0 || LocalPort >= Global.MaxPort)
         {
@@ -377,9 +407,10 @@ public partial class OptionSettingViewModel : MyReactiveObject, ICloseable
         _config.GuiItem.EnableHWA = EnableHWA;
         _config.ConstItem.SubConvertUrl = SubConvertUrl;
         _config.UiItem.MainGirdOrientation = (EGirdOrientation)MainGirdOrientation;
-        _config.ConstItem.GeoSourceUrl = GeoFileSourceUrl;
-        _config.ConstItem.SrsSourceUrl = SrsFileSourceUrl;
-        _config.ConstItem.RouteRulesTemplateSourceUrl = RoutingRulesSourceUrl;
+        _config.CheckUpdateItem.RepositoryOverrides = sourceDraft.CheckUpdateItem.RepositoryOverrides;
+        _config.ConstItem.GeoSourceUrl = sourceDraft.ConstItem.GeoSourceUrl;
+        _config.ConstItem.SrsSourceUrl = sourceDraft.ConstItem.SrsSourceUrl;
+        _config.ConstItem.RouteRulesTemplateSourceUrl = sourceDraft.ConstItem.RouteRulesTemplateSourceUrl;
         _config.SpeedTestItem.IPAPIUrl = IPAPIUrl;
         _config.SpeedTestItem.AutoDetectExit = AutoDetectExit;
         _config.GuiItem.RootCertProvider = RootCertProvider;
@@ -408,8 +439,14 @@ public partial class OptionSettingViewModel : MyReactiveObject, ICloseable
 
         if (await ConfigHandler.SaveConfig(_config) == 0)
         {
-            await AutoStartupHandler.UpdateTask(_config);
-            AppManager.Instance.Reset();
+            if (!OnlySourcesChanged)
+            {
+                await AutoStartupHandler.UpdateTask(_config);
+                AppManager.Instance.Reset();
+            }
+            foreach (var type in changedSources) AppManager.Instance.LastCheckUpdateResults.Remove(type);
+            if (changedSources.Length > 0) AppEvents.HasUpdateNotified.Publish(false);
+            AppEvents.UpdateSourcesChanged.Publish();
 
             NoticeManager.Instance.Enqueue(needReboot ? ResUI.NeedRebootTips : ResUI.OperationSuccess);
             RequestClose?.Invoke(this, EventArgs.Empty);
@@ -418,6 +455,14 @@ public partial class OptionSettingViewModel : MyReactiveObject, ICloseable
         {
             NoticeManager.Instance.Enqueue(ResUI.OperationFailed);
         }
+    }
+
+    private string OtherSettingsSnapshot()
+    {
+        var values = GetType().GetProperties().Where(p => p.SetMethod?.IsPublic == true && p.Name != nameof(InitialSection))
+            .Where(p => (Nullable.GetUnderlyingType(p.PropertyType) ?? p.PropertyType).IsPrimitive || p.PropertyType.IsEnum || p.PropertyType == typeof(string) || p.Name == nameof(DestOverride))
+            .OrderBy(p => p.Name).ToDictionary(p => p.Name, p => p.PropertyType == typeof(string) ? p.GetValue(this) ?? "" : p.GetValue(this));
+        return JsonSerializer.Serialize(values);
     }
 
     private async Task SaveCoreType()

@@ -82,6 +82,7 @@ jobs:
           docker build -t v2rayn-ssh-test v2rayN/ServiceLib.Tests/Fixtures/openssh-key-setup
           echo "SSH_TEST_PYTHON=$RUNNER_TEMP/ssh-python/bin/python" >> "$GITHUB_ENV"
           echo "SSH_TEST_SINGBOX=$core" >> "$GITHUB_ENV"
+          echo "V2RAYN_UPDATE_TEST_CORE=$core" >> "$GITHUB_ENV"
           echo 'SSH_SETUP_DOCKER_IMAGE=v2rayn-ssh-test' >> "$GITHUB_ENV"
       - name: Run unit and SSH integration tests
         run: dotnet test --project ./v2rayN/ServiceLib.Tests -c Release --results-directory ./TestResults -- --report-trx
@@ -95,6 +96,8 @@ jobs:
           dotnet build v2rayN/v2rayN.Desktop.Review -c Release -p:UsedAvaloniaProducts=
           dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/preview-ui/zh-light --primer-only --headless --language=zh-Hans --theme=light --width=1440
           dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/preview-ui/en-dark --primer-only --headless --language=en --theme=dark --width=600
+          dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/preview-ui/sources-zh --update-sources-only --headless --language=zh-Hans --theme=light --width=1200
+          dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/preview-ui/sources-en --update-sources-only --headless --language=en --theme=dark --width=980
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -130,6 +133,7 @@ jobs:
       target: ${{ matrix.platform }}
       project: ${{ matrix.project }}
       artifact_prefix: preview-build-${{ matrix.target }}-
+      release_tag: ${{ needs.validate.outputs.tag }}
 
   package-zip:
     needs: [validate, build]
@@ -262,7 +266,8 @@ jobs:
           - 修复取消进度、通过筛选、观察端状态失效、停止内核说明及大字号关于窗口；补齐次级页面与动态页面设计，原生接入进度见设计覆盖清单。
           - macOS 锁屏或显示会话不可用时延后原生 UI 初始化，避免启动阶段的 CoreVideo RenderTimer -6661；原生 AppKit 窗口双主题验收现为发布必需门禁。
           - SSH 节点新增默认关闭的 UDP over SSH 与允许 HTTP3 选项；使用 idefav/sing-box 固定提交构建专用核心，远端需要 OpenSSH UDP 扩展，失败不回退直连。
-          - 核心清单与 SHA-256 校验优先选择随包专用核心，修复升级后用户目录旧核心不识别 udp_forwarding 导致重启失败。
+          - 新增“更新与资源来源”：v2rayN、Xray、mihomo、sing-box 及 Geo、SRS、路由模板可自定义来源，支持单项和全部恢复默认，保存来源不会重启代理。
+          - 显式安装的核心更新优先于随包专用核心；验证版本、SHA-256 和当前配置，启动失败恢复旧核心。更新页面区分更新来源与已安装来源，支持手动切换仓库。
           - macOS 安装盘保留可复制的拦截处理命令与安装说明。服务器独立端口部署、中继迁移、协议与排障记录见下方部署文档。
           - Windows WPF / Avalonia、Linux、macOS：x64 / arm64 ZIP；macOS 另有 DMG。
           - 安装包包含运行时及代理核心；\`SHA256SUMS\` 用于校验下载文件。
@@ -277,6 +282,7 @@ jobs:
           · [UI 与出口检测说明](https://github.com/$GH_REPO/blob/$RELEASE_TAG/docs/exit-info-preview.zh-Hans.md)
           · [macOS 网络恢复说明](https://github.com/$GH_REPO/blob/$RELEASE_TAG/docs/macos-network-recovery.md)
           · [SSH UDP 服务部署与扩展记录](https://github.com/$GH_REPO/blob/$RELEASE_TAG/docs/ssh-udp-deployment.zh-Hans.md)
+          · [更新与资源来源说明](https://github.com/$GH_REPO/blob/$RELEASE_TAG/docs/update-sources.zh-Hans.md)
           · [Primer 页面设计与实施范围](https://github.com/$GH_REPO/blob/$RELEASE_TAG/docs/design/page-coverage.md)
           · [macOS 原生启动与验收](https://github.com/$GH_REPO/blob/$RELEASE_TAG/docs/macos-native-rendering.zh-Hans.md)
           · [探测服务部署与端口](https://github.com/idefav/egress-probe#deploy-on-linux)

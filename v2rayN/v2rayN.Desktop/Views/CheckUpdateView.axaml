@@ -2,6 +2,7 @@
  xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
  xmlns:resx="clr-namespace:ServiceLib.Resx;assembly=ServiceLib"
  xmlns:ws="clr-namespace:v2rayN.Desktop.Common" xmlns:vms="clr-namespace:ServiceLib.ViewModels;assembly=ServiceLib"
+ xmlns:services="clr-namespace:ServiceLib.Services;assembly=ServiceLib"
  x:DataType="vms:CheckUpdateViewModel">
  <DockPanel>
   <Border Classes="surface" DockPanel.Dock="Bottom" Margin="0,16,0,0">
@@ -10,17 +11,26 @@
     <ToggleSwitch x:Name="togEnableUpdateViaProxy" Margin="0,0,24,8"/>
     <Button x:Name="btnCheckOnly" Content="{x:Static resx:ResUI.menuCheckOnly}" Margin="0,0,12,8"/>
     <Button x:Name="btnCheckUpdate" Classes="primary" Content="{x:Static resx:ResUI.menuCheckAndUpdate}" Margin="0,0,0,8"/>
+    <Button x:Name="btnSources" Content="{x:Static services:UpdateSourceText.Title}" Margin="12,0,0,8"/>
    </WrapPanel>
   </Border>
   <DataGrid x:Name="lstCheckUpdates" AutoGenerateColumns="False" IsReadOnly="True" GridLinesVisibility="Horizontal"
     BorderThickness="1" BorderBrush="{DynamicResource WorkspaceBorder}" ItemsSource="{Binding CheckUpdateModels}">
    <DataGrid.Columns>
     <DataGridTemplateColumn Width="48"><DataGridTemplateColumn.CellTemplate><DataTemplate><CheckBox IsChecked="{Binding IsSelected}" HorizontalAlignment="Center" VerticalAlignment="Center"/></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
-    <DataGridTextColumn Header="{x:Static ws:WorkspaceText.Component}" Binding="{Binding CoreTypeForStorage}" Width="*" MinWidth="120"/>
-    <DataGridTemplateColumn Header="{x:Static ws:WorkspaceText.CurrentVersion}" Width="*" MinWidth="120"/>
-    <DataGridTextColumn Header="{x:Static ws:WorkspaceText.UpdateState}" Binding="{Binding Remarks}" Width="2*" MinWidth="160"/>
-    <DataGridTemplateColumn Header="Pre-Release" Width="160">
+    <DataGridTextColumn Header="{x:Static ws:WorkspaceText.Component}" Binding="{Binding CoreTypeForStorage}" Width="100"/>
+    <DataGridTextColumn Header="{x:Static ws:WorkspaceText.CurrentVersion}" Binding="{Binding CurrentVersion}" Width="110"/>
+    <DataGridTextColumn Header="{x:Static ws:WorkspaceText.UpdateState}" Binding="{Binding Remarks}" Width="*" MinWidth="120"/>
+    <DataGridTemplateColumn Header="Pre-Release" Width="110">
      <DataGridTemplateColumn.CellTemplate><DataTemplate><ToggleSwitch IsChecked="{Binding IsCheckPreRelease}" IsVisible="{Binding ShowCheckPreRelease}" VerticalAlignment="Center" /></DataTemplate></DataGridTemplateColumn.CellTemplate>
+    </DataGridTemplateColumn>
+    <DataGridTemplateColumn Header="{x:Static services:UpdateSourceText.Source}" Width="200">
+     <DataGridTemplateColumn.CellTemplate><DataTemplate>
+      <StackPanel Margin="0,6">
+       <TextBlock Text="{Binding Source}" TextWrapping="Wrap" />
+       <TextBlock IsVisible="{Binding !IsGeoFile}" Opacity="0.65" TextWrapping="Wrap"><Run Text="{x:Static services:UpdateSourceText.Installed}" /><Run Text=": " /><Run Text="{Binding InstalledSource}" /></TextBlock>
+      </StackPanel>
+     </DataTemplate></DataGridTemplateColumn.CellTemplate>
     </DataGridTemplateColumn>
    </DataGrid.Columns>
   </DataGrid>

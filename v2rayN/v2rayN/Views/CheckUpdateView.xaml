@@ -9,6 +9,7 @@
     xmlns:reactiveui="http://reactiveui.net"
     xmlns:resx="clr-namespace:ServiceLib.Resx;assembly=ServiceLib"
     xmlns:vms="clr-namespace:ServiceLib.ViewModels;assembly=ServiceLib"
+    xmlns:services="clr-namespace:ServiceLib.Services;assembly=ServiceLib"
     d:DesignHeight="450"
     d:DesignWidth="800"
     x:TypeArguments="vms:CheckUpdateViewModel"
@@ -18,7 +19,7 @@
         <BooleanToVisibilityConverter x:Key="BoolToVisConverter" />
     </UserControl.Resources>
     <DockPanel Margin="{StaticResource Margin8}">
-        <StackPanel
+        <WrapPanel
             Margin="{StaticResource Margin8}"
             HorizontalAlignment="Right"
             DockPanel.Dock="Bottom"
@@ -48,7 +49,8 @@
                 Content="{x:Static resx:ResUI.menuCheckAndUpdate}"
                 IsDefault="True"
                 Style="{StaticResource DefButton}" />
-        </StackPanel>
+            <Button x:Name="btnSources" Content="{x:Static services:UpdateSourceText.Title}" Margin="8" />
+        </WrapPanel>
 
         <StackPanel>
             <ListView
@@ -70,6 +72,7 @@
                             <Grid>
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
                                 </Grid.RowDefinitions>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="1*" />
@@ -77,6 +80,11 @@
                                     <ColumnDefinition Width="1*" />
                                     <ColumnDefinition Width="3*" />
                                 </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Row="1" Grid.ColumnSpan="4">
+                                    <TextBlock Text="{Binding CurrentVersion}" />
+                                    <TextBlock Text="{Binding Source}" ToolTip="{x:Static services:UpdateSourceText.Source}" />
+                                    <TextBlock Text="{Binding InstalledSource}" ToolTip="{x:Static services:UpdateSourceText.Installed}" Opacity="0.7" />
+                                </StackPanel>
                                 <ToggleButton
                                     x:Name="togAutoRefresh"
                                     Grid.Column="0"

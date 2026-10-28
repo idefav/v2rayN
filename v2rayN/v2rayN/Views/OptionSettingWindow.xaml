@@ -9,6 +9,7 @@
     xmlns:reactiveui="http://reactiveui.net"
     xmlns:resx="clr-namespace:ServiceLib.Resx;assembly=ServiceLib"
     xmlns:vms="clr-namespace:ServiceLib.ViewModels;assembly=ServiceLib"
+    xmlns:services="clr-namespace:ServiceLib.Services;assembly=ServiceLib"
     Title="{x:Static resx:ResUI.menuSetting}"
     Width="1000"
     Height="700"
@@ -45,7 +46,7 @@
                 Style="{StaticResource DefButton}" />
         </StackPanel>
 
-        <TabControl HorizontalContentAlignment="Left">
+        <TabControl x:Name="pageTabs" HorizontalContentAlignment="Stretch">
             <TabItem Header="{x:Static resx:ResUI.TbSettingsCore}">
                 <ScrollViewer VerticalScrollBarVisibility="Visible">
                     <Grid Margin="{StaticResource Margin8}">
@@ -1115,77 +1116,6 @@
                             Margin="{StaticResource Margin8}"
                             Style="{StaticResource DefComboBox}" />
 
-                        <TextBlock
-                            Grid.Row="25"
-                            Grid.Column="0"
-                            Margin="{StaticResource Margin8}"
-                            VerticalAlignment="Center"
-                            Style="{StaticResource ToolbarTextBlock}"
-                            Text="{x:Static resx:ResUI.TbSettingsGeoFilesSource}" />
-                        <ComboBox
-                            x:Name="cmbGetFilesSourceUrl"
-                            Grid.Row="25"
-                            Grid.Column="1"
-                            Width="300"
-                            Margin="{StaticResource Margin8}"
-                            IsEditable="True"
-                            Style="{StaticResource DefComboBox}" />
-                        <TextBlock
-                            Grid.Row="25"
-                            Grid.Column="2"
-                            Margin="{StaticResource Margin4}"
-                            VerticalAlignment="Center"
-                            Style="{StaticResource ToolbarTextBlock}"
-                            Text="{x:Static resx:ResUI.TbSettingsChinaUserTip}"
-                            TextWrapping="Wrap" />
-
-                        <TextBlock
-                            Grid.Row="26"
-                            Grid.Column="0"
-                            Margin="{StaticResource Margin8}"
-                            VerticalAlignment="Center"
-                            Style="{StaticResource ToolbarTextBlock}"
-                            Text="{x:Static resx:ResUI.TbSettingsSrsFilesSource}" />
-                        <ComboBox
-                            x:Name="cmbSrsFilesSourceUrl"
-                            Grid.Row="26"
-                            Grid.Column="1"
-                            Width="300"
-                            Margin="{StaticResource Margin8}"
-                            IsEditable="True"
-                            Style="{StaticResource DefComboBox}" />
-                        <TextBlock
-                            Grid.Row="26"
-                            Grid.Column="2"
-                            Margin="{StaticResource Margin4}"
-                            VerticalAlignment="Center"
-                            Style="{StaticResource ToolbarTextBlock}"
-                            Text="{x:Static resx:ResUI.TbSettingsChinaUserTip}"
-                            TextWrapping="Wrap" />
-
-                        <TextBlock
-                            Grid.Row="27"
-                            Grid.Column="0"
-                            Margin="{StaticResource Margin8}"
-                            VerticalAlignment="Center"
-                            Style="{StaticResource ToolbarTextBlock}"
-                            Text="{x:Static resx:ResUI.TbSettingsRoutingRulesSource}" />
-                        <ComboBox
-                            x:Name="cmbRoutingRulesSourceUrl"
-                            Grid.Row="27"
-                            Grid.Column="1"
-                            Width="300"
-                            Margin="{StaticResource Margin8}"
-                            IsEditable="True"
-                            Style="{StaticResource DefComboBox}" />
-                        <TextBlock
-                            Grid.Row="27"
-                            Grid.Column="2"
-                            Margin="{StaticResource Margin4}"
-                            VerticalAlignment="Center"
-                            Style="{StaticResource ToolbarTextBlock}"
-                            Text="{x:Static resx:ResUI.TbSettingsChinaUserTip}"
-                            TextWrapping="Wrap" />
                     </Grid>
                 </ScrollViewer>
             </TabItem>
@@ -1614,6 +1544,31 @@
                         Margin="{StaticResource Margin8}"
                         Style="{StaticResource DefComboBox}" />
                 </Grid>
+            </TabItem>
+            <TabItem Header="{x:Static services:UpdateSourceText.Title}">
+                <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="12">
+                        <TextBlock Text="{x:Static services:UpdateSourceText.Help}" TextWrapping="Wrap" Margin="0,0,0,12" />
+                        <Button Content="{x:Static services:UpdateSourceText.ResetAll}" Command="{Binding ResetSourcesCmd}" HorizontalAlignment="Left" Margin="0,0,0,12" />
+                        <ItemsControl ItemsSource="{Binding Sources}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type vms:UpdateSourceItem}">
+                                    <Border BorderThickness="1" BorderBrush="Gray" Margin="0,0,0,12" Padding="12">
+                                        <StackPanel>
+                                            <DockPanel Margin="0,0,0,8">
+                                                <Button DockPanel.Dock="Right" Content="{x:Static services:UpdateSourceText.Reset}" Command="{Binding ResetCmd}" Margin="12,0,0,0" />
+                                                <TextBlock Text="{Binding Label}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                            </DockPanel>
+                                            <ComboBox ItemsSource="{Binding Presets}" Text="{Binding Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" IsEditable="True" HorizontalAlignment="Stretch" />
+                                            <TextBlock Text="{Binding DefaultLabel}" TextWrapping="Wrap" Margin="0,8,0,4" />
+                                            <TextBlock Text="{Binding Hint}" TextWrapping="Wrap" Opacity="0.7" />
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </ScrollViewer>
             </TabItem>
         </TabControl>
     </DockPanel>

@@ -330,7 +330,8 @@ public partial class MainWindow
     {
         try
         {
-            await ViewModel!.ApplySettingsChangesAsync(session.Key);
+            if (session.Model is not OptionSettingViewModel { OnlySourcesChanged: true })
+                await ViewModel!.ApplySettingsChangesAsync(session.Key);
             session.Snapshot = EditorSnapshot.Capture(session.Model);
             NoticeManager.Instance.Enqueue(ResUI.OperationSuccess);
         }
@@ -383,6 +384,7 @@ public partial class MainWindow
             ("Engines", WorkspaceText.T("核心分配", "Core assignment")), ("DNS", WorkspaceText.T("DNS 与流量出口", "DNS & traffic egress")),
             ("Templates", WorkspaceText.T("配置模板", "Config templates")), ("Appearance", WorkspaceText.T("外观", "Appearance")),
             ("Backup", ResUI.menuBackupAndRestore), ("Updates", ResUI.menuCheckUpdate),
+            ("Sources", ServiceLib.Services.UpdateSourceText.Title),
             ("Utilities", WorkspaceText.T("应用工具", "Application tools"))
         };
         if (Utils.IsWindows()) sections.Add(("Hotkeys", ResUI.menuGlobalHotkeySetting));
@@ -431,7 +433,7 @@ public partial class MainWindow
             default:
                 var options = (OptionSettingWindow)GetSession("Options").View;
                 _settingsBody.Content = options;
-                options.SelectSection(Array.IndexOf(new[] { "Core", "Application", "SystemProxy", "Tun", "Engines" }, key));
+                options.SelectSection(Array.IndexOf(new[] { "Core", "Application", "SystemProxy", "Tun", "Engines", "Sources" }, key));
                 break;
         }
         _settingsNavigation.SelectedItem = navigationItem;

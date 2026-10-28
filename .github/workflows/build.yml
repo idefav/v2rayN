@@ -14,6 +14,10 @@ on:
         required: false
         type: string
         default: ''
+      release_tag:
+        required: false
+        type: string
+        default: ''
 
 jobs:
   build:
@@ -31,6 +35,7 @@ jobs:
         )
       }}
     env:
+      BuildReleaseTag: ${{ inputs.release_tag }}
       Output: "${{ github.workspace }}/${{ matrix.arch }}"
       RID: |-
         ${{
