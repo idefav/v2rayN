@@ -46,7 +46,7 @@ public partial class ProxyCheckView : UserControl
         forgetObserver.Content = T("仅删除本地凭证（未撤销）", "Delete locally only (not revoked)");
         testObserver.Content = T("测试控制接口", "Test control connection");
         observerCredentialLabel.Text = T("一次性配对串（由服务器管理员生成，成功后清空）", "One-time pairing string (provided by the administrator; cleared after pairing)");
-        expectedLabel.Text = T("预期出口 IP / CIDR（多个值以逗号分隔）", "Expected egress IP / CIDR (comma-separated)");
+        expectedLabel.Text = T("预期出口 IP / CIDR（英文逗号分隔，匹配任意一个即可）", "Expected egress IP / CIDR (comma-separated; any one may match)");
         rulesLabel.Text = T("分流预期：目标=IP/CIDR；精确规则：目标|协议|路径=IP/CIDR（路径：socks/native/http-connect/system/browser；WebRTC 协议：webrtc）", "Expectations: target=IP/CIDR; scoped: target|protocol|path=IP/CIDR (paths: socks/native/http-connect/system/browser; WebRTC protocol: webrtc)");
         dnsLabel.Text = T("公共 DNS（host:port）", "Public DNS (host:port)");
         localDnsLabel.Text = T("本地 DNS（留空自动发现；系统解析单独检查）", "Local DNS (empty to discover; system resolver is checked separately)");
@@ -68,7 +68,7 @@ public partial class ProxyCheckView : UserControl
         forgetObserver.Click += async (_, _) => await Model.UnpairObserverAsync(true);
         configureObserver.Click += async (_, _) => await ShowOptionsAsync(observerSection, T("独立出口探测服务", "Independent egress observer"), configureObserver);
         settingsButton.Click += async (_, _) => await ShowOptionsAsync(advanced, T("检查选项", "Check options"), settingsButton);
-        SizeChanged += (_, _) => { var compact = Bounds.Width < 960; Classes.Set("compact", compact); ProxyCheckGrid.SetCompact(this, compact); };
+        SizeChanged += (_, _) => { var compact = Bounds.Width < 960; Classes.Set("compact", compact); ProxyCheckGrid.SetCompact(this, compact); resultColumns.IsVisible = !compact; };
         AttachedToVisualTree += async (_, _) => await Model.RefreshEnvironmentAsync();
         DetachedFromVisualTree += (_, _) => _optionsWindow?.Close();
     }

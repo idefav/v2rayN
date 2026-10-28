@@ -11,8 +11,8 @@
   <Style Selector="TextBlock.check-accent"><Setter Property="Foreground" Value="{DynamicResource WorkspaceAccent}"/></Style>
   <Style Selector="Border.check-chip"><Setter Property="Background" Value="{DynamicResource WorkspaceSidebar}"/><Setter Property="CornerRadius" Value="6"/><Setter Property="Padding" Value="8,4"/></Style>
   <Style Selector="Expander.probe-row"><Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="Padding" Value="0"/></Style>
+  <Style Selector="Expander.probe-group"><Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="Padding" Value="0"/><Setter Property="Background" Value="{DynamicResource WorkspaceSidebar}"/></Style>
   <Style Selector="Expander.probe-row.failed"><Setter Property="Background" Value="{DynamicResource WorkspaceSidebar}"/></Style>
-  <Style Selector="UserControl.compact Grid.list-columns"><Setter Property="IsVisible" Value="False"/></Style>
   <Style Selector="TextBlock.compact-label"><Setter Property="IsVisible" Value="{Binding (views:ProxyCheckGrid.Compact), RelativeSource={RelativeSource Self}}"/></Style>
  </UserControl.Styles>
  <Grid>
@@ -72,11 +72,12 @@
      <ComboBox x:Name="resultFilter" ItemsSource="{Binding ResultFilters}" SelectedIndex="{Binding SelectedFilter}" MinWidth="150" Margin="0,0,12,8"/>
      <TextBox x:Name="resultSearch" Text="{Binding SearchText}" MinWidth="220" MaxWidth="360" Margin="0,0,0,8"/>
     </WrapPanel>
-    <Grid Classes="list-columns" ColumnDefinitions="2*,1.05*,1*,1.25*,1.35*,60" Margin="20,0,50,12">
+    <Grid x:Name="resultColumns" Classes="list-columns" ColumnDefinitions="2*,1.05*,1*,1.25*,1.35*,60" Margin="20,0,50,12">
      <TextBlock x:Name="targetColumn" Classes="check-caption"/><TextBlock x:Name="pathColumn" Grid.Column="1" Classes="check-caption"/><TextBlock x:Name="communicationColumn" Grid.Column="2" Classes="check-caption"/><TextBlock x:Name="egressColumn" Grid.Column="3" Classes="check-caption"/><TextBlock x:Name="comparisonColumn" Grid.Column="4" Classes="check-caption"/><TextBlock x:Name="elapsedColumn" Grid.Column="5" Classes="check-caption" HorizontalAlignment="Right"/>
     </Grid>
-    <ItemsControl ItemsSource="{Binding ResultGroups}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="dto:ProxyCheckResultGroup"><StackPanel>
-     <Border Background="{DynamicResource WorkspaceSidebar}" Padding="20,9"><Grid ColumnDefinitions="Auto,Auto,*"><TextBlock Text="{Binding Name}" FontSize="12" FontWeight="SemiBold"/><TextBlock Text="{Binding CountLabel}" Grid.Column="1" Margin="8,0,0,0" Classes="check-caption"/><TextBlock Text="{Binding Summary}" Grid.Column="2" HorizontalAlignment="Right" Classes="check-caption"/></Grid></Border>
+    <ItemsControl ItemsSource="{Binding ResultGroups}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="dto:ProxyCheckResultGroup"><Expander Classes="probe-group" IsExpanded="{Binding IsExpanded, Mode=TwoWay}" HorizontalAlignment="Stretch">
+     <Expander.Header><Grid ColumnDefinitions="*,Auto" Margin="4,8,8,8"><WrapPanel VerticalAlignment="Center"><TextBlock Text="{Binding Name}" FontSize="12" FontWeight="SemiBold"/><TextBlock Text="{Binding CountLabel}" Margin="8,0,12,0" Classes="check-caption"/></WrapPanel><StackPanel Grid.Column="1" Spacing="3" VerticalAlignment="Center"><TextBlock Text="{Binding Summary}" Classes="check-caption" HorizontalAlignment="Right"/><TextBlock Text="{Binding AttentionLabel}" Classes="check-caption" Classes.check-error="{Binding HasAttention}" HorizontalAlignment="Right"/></StackPanel></Grid></Expander.Header>
+     <Border Background="{DynamicResource WorkspaceSurface}">
      <ItemsControl ItemsSource="{Binding Rows}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="dto:ProxyCheckResultRow">
       <Border BorderBrush="{DynamicResource WorkspaceBorder}" BorderThickness="0,0,0,1"><Expander Classes="probe-row" Classes.failed="{Binding IsFailed}" IsExpanded="{Binding IsExpanded, Mode=TwoWay}" HorizontalAlignment="Stretch">
        <Expander.Header><views:ProxyCheckGrid Classes="result-line" HorizontalAlignment="Stretch" Margin="0,4">
@@ -90,9 +91,14 @@
        <Border Background="{DynamicResource WorkspaceSidebar}" Padding="20,16"><SelectableTextBlock Text="{Binding Detail}" TextWrapping="Wrap" FontSize="12"/></Border>
       </Expander></Border>
      </DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
-    </StackPanel></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+     </Border>
+    </Expander></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
     <StackPanel Margin="24,28" Spacing="8" IsVisible="{Binding !HasVisibleResults}"><TextBlock x:Name="emptyTitle" HorizontalAlignment="Center" FontWeight="SemiBold"/><TextBlock x:Name="emptyHint" Classes="check-caption" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="420"/></StackPanel>
    </StackPanel></Border>
+   <Border Classes="check-panel"><Expander x:Name="pathCapabilities" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" IsExpanded="{Binding IsPathCapabilitiesExpanded, Mode=TwoWay}" Padding="12">
+    <Expander.Header><StackPanel Spacing="4"><TextBlock Text="{Binding PathCapabilitiesTitle}" FontWeight="SemiBold"/><TextBlock Text="{Binding PathCapabilitiesSummary}" Classes="check-caption" TextWrapping="Wrap"/></StackPanel></Expander.Header>
+    <SelectableTextBlock Text="{Binding PathCapabilitiesDescription}" TextWrapping="Wrap" Margin="12" FontSize="12"/>
+   </Expander></Border>
    <TextBlock x:Name="limits" Classes="check-caption" TextWrapping="Wrap"/>
   </StackPanel>
  </ScrollViewer>

@@ -88,7 +88,13 @@ public class ObserverTests
         using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var probes = ProxyCheckService.CreateProbes(new() { Observer = Profile(key), LocalDnsTarget = "127.0.0.1:1053" }, 10808);
         foreach (var kind in new[] { "tcp", "tls", "udp", "stun", "h3", "dns-udp", "dns-tcp" })
+        {
             await probes.Any(p => p.Kind == kind && p.Path == "socks").Should().BeTrue();
+            await probes.Any(p => p.Kind == kind && p.Path == "native").Should().BeTrue();
+        }
+        await probes.Any(p => ProxyCheckPathCapabilities.IsFixedUnsupported(p.Path, p.Kind)).Should().BeFalse();
+        foreach (var kind in new[] { "tcp", "tls", "http", "https", "dns-tcp" })
+            await probes.Any(p => p.Kind == kind && p.Path == "http-connect").Should().BeTrue();
         await probes.Any(p => p.Kind == "uncovered" && p.Family == "6").Should().BeTrue();
         await probes.Any(p => p.Path == "local-dns").Should().BeTrue();
     }

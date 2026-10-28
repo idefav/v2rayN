@@ -8,6 +8,11 @@ public partial class ProxyCheckViewModel
     private IDisposable? _observerSettings;
     private readonly HashSet<string> _expandedRows = [];
     private readonly Dictionary<string, ProxyCheckResultRow> _rowCache = [];
+    private readonly Dictionary<string, ProxyCheckResultGroup> _groupCache = [];
+    public string PathCapabilitiesTitle => ProxyCheckPathCapabilities.Title;
+    public string PathCapabilitiesSummary => ProxyCheckPathCapabilities.Summary;
+    public string PathCapabilitiesDescription => ProxyCheckPathCapabilities.Description;
+    [Reactive] public partial bool IsPathCapabilitiesExpanded { get; set; }
     [Reactive] public partial string SearchText { get; set; } = "";
     [Reactive] public partial int SelectedFilter { get; set; }
     [Reactive] public partial string LastChecked { get; set; } = ProxyCheckText.T("尚未运行", "Not run yet");
@@ -91,6 +96,12 @@ public partial class ProxyCheckViewModel
 
     private void ResultsChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
+        if (e.Action == NotifyCollectionChangedAction.Reset)
+        {
+            _groupCache.Clear(); _rowCache.Clear(); _expandedRows.Clear();
+            ResultGroups.Clear();
+            IsPathCapabilitiesExpanded = false;
+        }
         RefreshPresentation();
         if (e.NewItems != null)
             foreach (ProxyDiagnosticResult row in e.NewItems) QueueLocationLookup(row);
@@ -102,12 +113,13 @@ public partial class ProxyCheckViewModel
             if (row.IsExpanded) _expandedRows.Add(row.Source.Id); else _expandedRows.Remove(row.Source.Id);
         var ids = Results.Select(r => r.Id).ToHashSet();
         foreach (var id in _rowCache.Keys.Where(id => !ids.Contains(id)).ToArray()) _rowCache.Remove(id);
-        var rows = Results.Select(r =>
+        var allRows = Results.Select(r =>
         {
             if (!_rowCache.TryGetValue(r.Id, out var row) || !ReferenceEquals(row.Source, r))
                 _rowCache[r.Id] = row = new ProxyCheckResultRow(r) { IsExpanded = _expandedRows.Contains(r.Id) };
             return row;
-        });
+        }).ToArray();
+        IEnumerable<ProxyCheckResultRow> rows = allRows;
         rows = SelectedFilter switch { 1 => rows.Where(r => r.NeedsAttention), 2 => rows.Where(r => r.IsPassed), 3 => rows.Where(r => r.IsUncovered), _ => rows };
         if (!string.IsNullOrWhiteSpace(SearchText))
             rows = rows.Where(r => string.Join(' ', r.Name, r.Target, r.Path, r.Source.Egress, r.Source.Group, r.Source.Protocol, r.LocationLabel).Contains(SearchText.Trim(), StringComparison.CurrentCultureIgnoreCase));
@@ -115,8 +127,10 @@ public partial class ProxyCheckViewModel
         var desired = new List<ProxyCheckResultGroup>();
         foreach (var group in groups)
         {
-            var existing = ResultGroups.FirstOrDefault(g => g.Name == group.Key) ?? new(group.Key, []);
-            Synchronize(existing.Rows, group.ToArray()); existing.NotifySummaryChanged(); desired.Add(existing);
+            if (!_groupCache.TryGetValue(group.Key, out var existing))
+                _groupCache[group.Key] = existing = new(group.Key, []);
+            Synchronize(existing.Rows, group.ToArray());
+            existing.NotifySummaryChanged(allRows.Where(r => r.Source.Group == group.Key).ToArray()); desired.Add(existing);
         }
         Synchronize(ResultGroups, desired);
         foreach (var property in new[] { nameof(ResultGroups), nameof(ReachableCount), nameof(MatchedCount), nameof(AttentionCount), nameof(UncoveredCount), nameof(FinishedCount), nameof(CancelledCount), nameof(TotalCount), nameof(CompletionPercent), nameof(HasResults), nameof(IsBusy), nameof(HasVisibleResults), nameof(ProgressLabel), nameof(VisibleCountLabel), nameof(CheckStatus), nameof(MetricReachable), nameof(MetricMatched), nameof(MetricAttention), nameof(MetricUncovered), nameof(ObserverHost), nameof(ObserverCoverage), nameof(ObserverConnectionLabel) })

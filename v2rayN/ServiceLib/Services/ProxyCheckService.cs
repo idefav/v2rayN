@@ -6,7 +6,7 @@ namespace ServiceLib.Services;
 
 public sealed partial class ProxyCheckService
 {
-    internal sealed record Probe(string Id, string Group, string Kind, string Target, string Path, string Proxy = "", string Family = "", string Query = "");
+    internal sealed record Probe(string Id, string Group, string Kind, string Target, string Path, string Proxy = "", string Family = "", string Query = "", bool? TunEnabled = null);
     internal sealed class WorkerResult
     {
         public List<ObserverReceipt> Receipts { get; set; } = [];
@@ -168,7 +168,6 @@ public sealed partial class ProxyCheckService
                     result.Add(new($"{path}-{kind}-{query}", "DNS", kind, options.DnsTarget, path, proxy, "", query));
         }
         result.Add(new("http-connect", "TCP/TLS", "https", options.HttpsUrl, "http-connect", $"http://127.0.0.1:{port}"));
-        result.Add(new("http-no-udp", "UDP", "stun", options.StunTarget, "http-connect", $"http://127.0.0.1:{port}"));
         result.Add(new("system-http", "TCP/TLS", "system-http", options.HttpUrl, "system"));
         result.Add(new("system-https", "TCP/TLS", "system-http", options.HttpsUrl, "system"));
         result.Add(new("system-proxy", T("网络接管", "Network capture"), "system-proxy", options.HttpsUrl, "system"));
@@ -187,9 +186,11 @@ public sealed partial class ProxyCheckService
         IProgress<DiagnosticResult> progress, CancellationToken ct, ISet<string>? retry = null)
     {
         Validate(options);
+        var tunEnabled = AppManager.Instance.Config.TunModeItem.EnableTun;
         var report = new ProxyCheckReport { Observer = options.Observer, Environment = await DescribeEnvironmentAsync(), Fingerprint = Fingerprint(), OptionsFingerprint = OptionsFingerprint(options), RuntimeState = await RuntimeStateAsync(ct) };
         await using var observer = options.Observer == null ? null : await ObserverSession.OpenAsync(options, ct);
         var probes = CreateProbes(options, AppManager.Instance.GetLocalPort(EInboundProtocol.socks))
+            .Select(p => p with { TunEnabled = tunEnabled })
             .Where(p => retry == null || retry.Contains(p.Id))
             .OrderBy(p => p.Kind == "system-proxy" ? 0 : p.Group switch { "TCP/TLS" => 1, "DNS" => 2, "UDP" => 3, "QUIC/HTTP3" => 4, "IPv4" => 5, _ => 6 }).ToList();
         foreach (var p in probes) progress.Report(NewResult(p));
@@ -245,7 +246,7 @@ public sealed partial class ProxyCheckService
         Id = p.Id, Group = p.Group,
         Name = (p.Kind switch { "system-proxy" => T("系统代理设置", "System proxy settings"), "system-dns" => T("系统解析", "System resolver"), "system-http" => T("系统 HTTP 请求", "System HTTP request"), "missing" => T("本地 DNS 发现", "Local DNS discovery"), _ => p.Kind.ToUpperInvariant() }) + (p.Query.Length > 0 ? " / " + p.Query : ""), Target = p.Target,
         Family = p.Family.Length > 0 ? "IPv" + p.Family : T("自动", "Auto"),
-        Path = p.Path switch { "ssh" => T("SSH 扩展协商", "SSH capability negotiation"), "socks" => "SOCKS5", "native" => T("普通套接字 / TUN", "Native sockets / TUN"), "system" => T("系统实际路径", "Actual system path"), "local-dns" => T("本地 DNS 入口", "Local DNS ingress"), _ => "HTTP CONNECT" }
+        Path = p.Path switch { "ssh" => T("SSH 扩展协商", "SSH capability negotiation"), "socks" => "SOCKS5", "native" => p.TunEnabled is bool tun ? ProxyCheckPathCapabilities.NativePath(tun) : T("普通套接字 / TUN", "Native sockets / TUN"), "system" => T("系统实际路径", "Actual system path"), "local-dns" => T("本地 DNS 入口", "Local DNS ingress"), _ => "HTTP CONNECT" }
     };
 
     private static async Task<DiagnosticResult> CheckAsync(Probe p, ProxyCheckOptions options, CancellationToken ct)
@@ -259,7 +260,7 @@ public sealed partial class ProxyCheckService
             row.Evidence = T("本机没有可用的非链路本地 IPv6 地址，此路径未验证；SOCKS 远端 IPv6 仍单独检查。", "No usable non-link-local local IPv6 address; this path is unverified. Remote IPv6 via SOCKS is checked separately.");
             return row;
         }
-        if (p.Proxy.StartsWith("http:") && p.Kind == "stun") { row.State = row.Connectivity = "unsupported"; row.Evidence = T("HTTP CONNECT 不支持普通 UDP，未改走本机网络。", "HTTP CONNECT does not support ordinary UDP; no direct fallback was attempted."); return row; }
+        if (ProxyCheckPathCapabilities.IsFixedUnsupported(p.Path, p.Kind)) { row.State = row.Connectivity = "unsupported"; row.EgressState = "not-applicable"; row.Evidence = T("HTTP CONNECT 不支持普通 UDP，未改走本机网络。", "HTTP CONNECT does not support ordinary UDP; no direct fallback was attempted."); return row; }
         var exits = new List<string>(); var errors = new List<string>();
         for (var i = 0; i < (p.Kind == "ssh-capability" ? 1 : options.Samples); i++)
         {

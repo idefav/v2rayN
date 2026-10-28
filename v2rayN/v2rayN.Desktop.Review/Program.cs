@@ -4,6 +4,7 @@ using ReactiveUI.Primitives;
 using System.Text.Json;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.LogicalTree;
 using Avalonia.Headless;
@@ -311,10 +312,38 @@ public partial class ReviewApp : v2rayN.Desktop.App
                     });
                 }
             await CaptureAsync("proxy-check-" + state, "Proxy check · " + state, _main);
+            Check(model.ResultGroups.All(g => !g.IsExpanded), "protocol categories start collapsed: " + state);
+            if (state == "partial")
+            {
+                Check(model.ResultGroups.Single(g => g.Name == "UDP").AttentionCount == 1,
+                    "collapsed categories retain attention counts");
+                var resultScroll = page.FindControl<ScrollViewer>("pageScroll")!;
+                var firstCategory = page.GetVisualDescendants().OfType<Expander>().First(e => e.Classes.Contains("probe-group"));
+                if (firstCategory.TranslatePoint(default, resultScroll) is { } groupOrigin)
+                    resultScroll.Offset += new Vector(0, groupOrigin.Y - 100);
+                await CaptureAsync("proxy-check-collapsed-categories", "Collapsed categories with attention counts · UI fixture", _main);
+                var groupExpander = page.GetVisualDescendants().OfType<Expander>()
+                    .Single(e => e.Classes.Contains("probe-group") && e.DataContext is ProxyCheckResultGroup { Name: "UDP" });
+                var header = groupExpander.GetVisualDescendants().OfType<ToggleButton>().First();
+                header.Focus();
+                if (Program.Headless)
+                {
+                    _main.KeyPressQwerty(PhysicalKey.Space, RawInputModifiers.None);
+                    _main.KeyReleaseQwerty(PhysicalKey.Space, RawInputModifiers.None);
+                }
+                else header.IsChecked = true;
+                await Task.Delay(100);
+                Check(model.ResultGroups.Single(g => g.Name == "UDP").IsExpanded,
+                    "category header supports keyboard expansion with two-way state");
+                await CaptureAsync("proxy-check-expanded-category", "Expanded UDP category · UI fixture", _main);
+                resultScroll.Offset = default;
+            }
             Check(page.GetLogicalDescendants().OfType<Button>().Single(b => b.Name == "start").IsEnabled == !model.IsRunning, "proxy check start enabled: " + state);
             Check(page.GetLogicalDescendants().OfType<Button>().Single(b => b.Name == "cancel").IsEnabled == model.IsRunning, "proxy check cancel enabled: " + state);
             if (state == "complete")
             {
+                foreach (var group in model.ResultGroups) group.IsExpanded = true;
+                await Task.Delay(100);
                 var row = model.ResultGroups.SelectMany(group => group.Rows).Single(row => row.Source.Id == "capture");
                 Check(!row.IsCommunicationPassed && row.Communication == ProxyCheckText.T("已核对（非通信）", "Checked (not traffic)"),
                     "configuration capability checks cannot claim successful network traffic");
@@ -330,18 +359,32 @@ public partial class ReviewApp : v2rayN.Desktop.App
             }
         }
         model.IsRunning = false; model.CanStart = true;
+        foreach (var group in model.ResultGroups) group.IsExpanded = true;
         await Task.Delay(100);
         var resultLayouts = page.GetVisualDescendants().OfType<ProxyCheckGrid>().Where(g => g.LayoutKind == "results").ToArray();
         Check(resultLayouts.Length == model.Results.Count && resultLayouts.All(g => g.Bounds.Width > 0 && g.Children.All(c => c.Bounds.X >= -1 && c.Bounds.Right <= g.Bounds.Width + 1)),
             "all six result fields remain within their row bounds");
         Check(resultLayouts.All(g => g.RowDefinitions.Count == (page.Bounds.Width < 960 ? 3 : 1)),
             "result fields reflow for the current viewport width");
+        Check(page.FindControl<Grid>("resultColumns")!.IsVisible == (page.Bounds.Width >= 960),
+            "narrow result cards hide the desktop column headings");
         var compactLabels = resultLayouts.First().GetVisualDescendants().OfType<TextBlock>().Where(text => text.Classes.Contains("compact-label")).ToArray();
         Check(compactLabels.Length == 4 && compactLabels.All(text => text.IsVisible == (page.Bounds.Width < 960)),
             "compact diagnostic cards label communication, path, observed exit and expectation explicitly");
         var firstResult = resultLayouts.First().TranslatePoint(default, page.FindControl<ScrollViewer>("pageScroll")!);
         if (firstResult != null) page.FindControl<ScrollViewer>("pageScroll")!.Offset += new Vector(0, firstResult.Value.Y - 60);
         await CaptureAsync("proxy-check-results", "Result row layout · UI fixture", _main);
+        foreach (var group in model.ResultGroups) group.IsExpanded = false;
+        var notes = page.FindControl<Expander>("pathCapabilities")!;
+        Check(!notes.IsExpanded, "path capability notes start collapsed");
+        model.IsPathCapabilitiesExpanded = true;
+        await Task.Delay(100);
+        if (notes.TranslatePoint(default, page.FindControl<ScrollViewer>("pageScroll")!) is { } notesOrigin)
+            page.FindControl<ScrollViewer>("pageScroll")!.Offset += new Vector(0, notesOrigin.Y - 60);
+        await CaptureAsync("proxy-check-path-capabilities", "Static path limits · excluded from counts", _main);
+        Check(notes.IsExpanded && model.TotalCount == 6 && model.ResultGroups.All(g => !g.IsExpanded),
+            "capability notes expand independently without changing probe totals");
+        model.IsPathCapabilitiesExpanded = false;
         page.FindControl<ScrollViewer>("pageScroll")!.Offset = default;
         await Task.Delay(100);
         var baselineButton = page.FindControl<Button>("baselineMenu")!;
