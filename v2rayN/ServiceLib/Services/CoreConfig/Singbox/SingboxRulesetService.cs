@@ -14,6 +14,12 @@ public partial class CoreConfigSingboxService
         var geosite = "geosite";
         var geoip = "geoip";
         var ruleSets = new List<string>();
+        foreach (var inbound in _coreConfig.inbounds.Where(i => i.type == "tun"))
+        {
+            AddRuleSets(ruleSets, inbound.route_address_set);
+            AddRuleSets(ruleSets, inbound.route_exclude_address_set);
+        }
+        var tunReferences = ruleSets.ToHashSet(StringComparer.Ordinal);
 
         //convert route geosite & geoip to ruleset
         foreach (var rule in _coreConfig.route.rules.Where(t => t.geosite?.Count > 0).ToList() ?? [])
@@ -74,6 +80,24 @@ public partial class CoreConfigSingboxService
             }
         }
 
+        // Definitions and references belong to one graph; a selected TUN tag must be loaded
+        // even when no ordinary route or DNS rule happens to reference it.
+        foreach (var source in context.FullConfigTemplate?.Enabled == true ? [] : _config.TunModeItem.Singbox?.RuleSets ?? [])
+        {
+            if (!ruleSets.Contains(source.Tag)) continue;
+            if (customRulesets.Any(r => r.tag == source.Tag))
+                throw new TunConfigurationException($"rule_sets: {TunSettingsText.T("规则集名称与当前路由重复", "Rule-set tag conflicts with the current routing definitions")}: {source.Tag}");
+            var localPath = source.Type == "local" ? Path.GetFullPath(source.Path!, Utils.GetBinConfigPath()) : null;
+            if (localPath != null && !File.Exists(localPath))
+                throw new TunConfigurationException($"rule_sets: {TunSettingsText.T("找不到规则集文件", "Rule-set file not found")}: {source.Tag}");
+            customRulesets.Add(new()
+            {
+                tag = source.Tag, type = source.Type, format = source.Format,
+                path = localPath, url = source.Type == "remote" ? source.Url : null,
+                http_client = source.Type == "remote" ? Global.SingboxSrsDownloadHttpClientTag : null,
+            });
+        }
+
         //Local srs files address
         var localSrss = Utils.GetBinPath("srss");
 
@@ -85,6 +109,7 @@ public partial class CoreConfigSingboxService
             if (item.IsNullOrEmpty())
             { continue; }
             var customRuleset = customRulesets.FirstOrDefault(t => t.tag != null && t.tag.Equals(item));
+            if (customRuleset?.type == "remote") containRemoteRuleset = true;
             if (customRuleset is null)
             {
                 var pathSrs = Path.Combine(localSrss, $"{item}.srs");
@@ -100,6 +125,8 @@ public partial class CoreConfigSingboxService
                 }
                 else
                 {
+                    if (tunReferences.Contains(item) && !item.StartsWith("geoip-", StringComparison.Ordinal) && !item.StartsWith("geosite-", StringComparison.Ordinal))
+                        throw new TunConfigurationException($"rule_sets: {TunSettingsText.T("请先添加规则集来源", "Add the rule-set source before selecting its tag")}: {item}");
                     containRemoteRuleset = true;
 
                     var srsUrl = string.IsNullOrEmpty(_config.ConstItem.SrsSourceUrl)

@@ -84,7 +84,18 @@
         <StackPanel Spacing="3" Margin="0,0,12,0"><TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="13" TextWrapping="Wrap"/><TextBlock Text="{Binding Target}" Classes="check-caption" TextWrapping="Wrap"/><TextBlock Text="{Binding Conclusion}" Classes="check-caption" Classes.check-error="{Binding IsFailed}" Classes.check-success="{Binding IsPassed}" TextWrapping="Wrap"/></StackPanel>
         <StackPanel Classes="row-path" Grid.Column="1" Spacing="3" Margin="0,0,12,0"><TextBlock Text="{x:Static ws:WorkspaceText.CheckPath}" Classes="check-caption compact-label"/><TextBlock Text="{Binding Path}" FontSize="12" TextWrapping="Wrap"/><TextBlock Text="{Binding Family}" Classes="check-caption"/></StackPanel>
         <StackPanel Classes="row-communication" Grid.Column="2" Spacing="3" Margin="0,0,12,0"><TextBlock Text="{x:Static ws:WorkspaceText.Connectivity}" Classes="check-caption compact-label"/><TextBlock Text="{Binding Communication}" Classes.check-error="{Binding IsCommunicationFailed}" Classes.check-success="{Binding IsCommunicationPassed}" FontSize="12"/><TextBlock Text="{Binding Sampling}" Classes="check-caption check-mono"/></StackPanel>
-        <StackPanel Classes="row-address" Grid.Column="3" Spacing="3" Margin="0,0,12,0"><TextBlock Text="{x:Static ws:WorkspaceText.ObservedExit}" Classes="check-caption compact-label"/><TextBlock Text="{Binding Address}" Classes="check-mono" FontSize="12" TextWrapping="Wrap"/><TextBlock Text="{Binding LocationLabel}" IsVisible="{Binding HasLocation}" ToolTip.Tip="{Binding LocationHint}" Classes="check-caption" TextWrapping="Wrap"/><TextBlock Text="{Binding EvidenceKind}" Classes="check-caption" TextWrapping="Wrap"/></StackPanel>
+        <StackPanel Classes="row-address" Grid.Column="3" Spacing="5" Margin="0,0,12,0">
+         <TextBlock Text="{x:Static ws:WorkspaceText.ObservedExit}" Classes="check-caption compact-label"/>
+         <TextBlock Text="{Binding Address}" IsVisible="{Binding !HasLocation}" Classes="check-mono" FontSize="12" TextWrapping="Wrap"/>
+         <ItemsControl ItemsSource="{Binding ExitAddresses}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="dto:ProxyCheckExitAddress">
+          <StackPanel Spacing="4" Margin="0,0,0,5" ToolTip.Tip="{Binding Hint}">
+           <TextBlock Text="{Binding Address}" Classes="check-mono" FontSize="12" TextWrapping="Wrap"/>
+           <Grid ColumnDefinitions="22,*"><views:CountryFlag Code="{Binding CountryCode}" VerticalAlignment="Center"/><TextBlock Text="{Binding LocationLabel}" Grid.Column="1" Margin="6,0,0,0" Classes="check-caption" TextWrapping="Wrap"/></Grid>
+           <TextBlock Text="{Binding RegionLabel}" IsVisible="{Binding ShowRegionComparison}" Classes="check-caption" Classes.check-success="{Binding RegionMatches}" Classes.check-warning="{Binding RegionDiffers}" TextWrapping="Wrap"/>
+          </StackPanel>
+         </DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+         <TextBlock Text="{Binding EvidenceKind}" Classes="check-caption" TextWrapping="Wrap"/>
+        </StackPanel>
         <StackPanel Classes="row-comparison" Grid.Column="4" Spacing="3" Margin="0,0,12,0"><TextBlock Text="{x:Static ws:WorkspaceText.ExpectedComparison}" Classes="check-caption compact-label"/><TextBlock Text="{Binding Comparison}" Classes.check-error="{Binding HasComparisonFailure}" Classes.check-success="{Binding HasComparisonMatch}" FontSize="12" TextWrapping="Wrap"/><TextBlock Text="{Binding ExpectedLabel}" IsVisible="{Binding HasExpectation}" Classes="check-caption check-mono" TextWrapping="Wrap"/></StackPanel>
         <TextBlock Classes="check-caption check-mono row-latency" Text="{Binding Elapsed}" Grid.Column="5" HorizontalAlignment="Right"/>
        </views:ProxyCheckGrid></Expander.Header>
@@ -116,6 +127,20 @@
    </StackPanel></Border>
    <Border x:Name="advanced" Classes="check-panel" Padding="20"><StackPanel Spacing="10" IsEnabled="{Binding CanStart}">
     <TextBlock x:Name="expectedLabel" Classes="check-caption" TextWrapping="Wrap"/><TextBox Text="{Binding ExpectedEgress}" PlaceholderText="203.0.113.10, 2001:db8::/32"/>
+    <TextBlock Text="{Binding RegionOptionsTitle}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+    <TextBlock Text="{Binding RegionOptionsHint}" Classes="check-caption" TextWrapping="Wrap"/>
+    <Expander x:Name="regionPicker" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Header="{Binding SelectedCountriesLabel}">
+     <StackPanel Spacing="8" Margin="0,8,0,0">
+      <TextBox x:Name="countrySearch" Text="{Binding CountrySearch}" PlaceholderText="{Binding RegionSearchHint}"/>
+      <ScrollViewer MaxHeight="210" HorizontalScrollBarVisibility="Disabled"><ItemsControl ItemsSource="{Binding FilteredCountries}"><ItemsControl.ItemTemplate><DataTemplate x:DataType="dto:ProxyCheckCountryChoice">
+       <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,2">
+        <Grid ColumnDefinitions="22,*,Auto"><views:CountryFlag Code="{Binding Code}" VerticalAlignment="Center"/><TextBlock Text="{Binding Name}" Grid.Column="1" Margin="8,0" TextWrapping="Wrap"/><TextBlock Text="{Binding Code}" Grid.Column="2" Classes="check-caption" VerticalAlignment="Center"/></Grid>
+       </CheckBox>
+      </DataTemplate></ItemsControl.ItemTemplate></ItemsControl></ScrollViewer>
+      <TextBlock Text="{Binding RegionNoMatches}" IsVisible="{Binding !HasCountryMatches}" Classes="check-caption"/>
+      <Button x:Name="clearCountries" Content="{Binding RegionClearLabel}" HorizontalAlignment="Left"/>
+     </StackPanel>
+    </Expander>
     <TextBlock x:Name="rulesLabel" Classes="check-caption" TextWrapping="Wrap"/><TextBox Text="{Binding TargetRules}" AcceptsReturn="True" MinHeight="70" PlaceholderText="example.net|https|socks=203.0.113.0/24"/>
     <TextBlock Text="HTTPS / HTTP3" Classes="check-caption"/><TextBox Text="{Binding HttpsUrl}"/>
     <TextBlock Text="HTTP" Classes="check-caption"/><TextBox Text="{Binding HttpUrl}"/>

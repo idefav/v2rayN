@@ -68,7 +68,7 @@ public partial class CoreConfigSingboxService
                 var lstDirectExe = BuildRoutingDirectExe();
                 if (lstDirectExe.Count > 0)
                 {
-                    _coreConfig.route.rules.Add(new()
+                    AddDnsHijackRule(new()
                     {
                         port = [53],
                         action = "hijack-dns",
@@ -119,7 +119,7 @@ public partial class CoreConfigSingboxService
                 {
                     action = "sniff"
                 });
-                _coreConfig.route.rules.Add(new()
+                AddDnsHijackRule(new()
                 {
                     type = "logical",
                     mode = "or",
@@ -142,7 +142,7 @@ public partial class CoreConfigSingboxService
             }
             else
             {
-                _coreConfig.route.rules.Add(new()
+                AddDnsHijackRule(new()
                 {
                     port = [53],
                     action = "hijack-dns",
@@ -292,6 +292,36 @@ public partial class CoreConfigSingboxService
         {
             Logging.SaveLog(_tag, ex);
             if (ManagedEgress) throw;
+        }
+    }
+
+    private void AddDnsHijackRule(Rule4Sbox rule)
+    {
+        var mode = _config.TunModeItem.Singbox?.DnsMode;
+        if (!context.IsTunEnabled || string.IsNullOrEmpty(mode) || mode == "hijack")
+        {
+            _coreConfig.route.rules.Add(rule);
+            return;
+        }
+        // Explicit TUN DNS modes must not alter DNS handling on the local mixed ports.
+        var mixed = _coreConfig.inbounds.Where(i => i.type != "tun").Select(i => i.tag).ToList();
+        if (mixed.Count > 0) _coreConfig.route.rules.Add(Qualify(rule, mixed, null));
+        if (mode == "native")
+        {
+            var addresses = SingboxTunSettings.DnsAddresses(_config.TunModeItem)
+                .Select(a => $"{a}/{(a.Contains(':') ? 128 : 32)}").ToList();
+            if (addresses.Count > 0) _coreConfig.route.rules.Add(Qualify(rule, ["tun"], addresses));
+        }
+
+        static Rule4Sbox Qualify(Rule4Sbox source, List<string> inbounds, List<string>? addresses)
+        {
+            var match = JsonUtils.DeepCopy(source);
+            match.action = null;
+            return new()
+            {
+                type = "logical", mode = "and", action = "hijack-dns",
+                rules = [new() { inbound = inbounds, ip_cidr = addresses }, match],
+            };
         }
     }
 

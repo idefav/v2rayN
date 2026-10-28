@@ -123,8 +123,14 @@ public partial class OptionSettingViewModel : MyReactiveObject, ICloseable
 
     public ReactiveCommand<RxVoid, RxVoid> SaveCmd { get; }
 
-    public OptionSettingViewModel()
+    private readonly bool _manageTunSettings;
+    public bool ManagesTunSettings => _manageTunSettings;
+
+    public OptionSettingViewModel() : this(true) { }
+
+    public OptionSettingViewModel(bool manageTunSettings)
     {
+        _manageTunSettings = manageTunSettings;
         _config = AppManager.Instance.Config;
         Sources = UpdateSourceItem.Create(_config);
         ResetSourcesCmd = ReactiveCommand.Create(() => { foreach (var row in Sources) row.Value = ""; });
@@ -423,16 +429,19 @@ public partial class OptionSettingViewModel : MyReactiveObject, ICloseable
         _config.SystemProxyItem.CustomSystemProxyScriptPath = CustomSystemProxyScriptPath;
 
         //tun mode
-        _config.TunModeItem.AutoRoute = TunAutoRoute;
-        _config.TunModeItem.StrictRoute = TunStrictRoute;
-        _config.TunModeItem.Stack = TunStack;
-        _config.TunModeItem.Mtu = TunMtu;
-        _config.TunModeItem.EnableIPv6Address = TunEnableIPv6Address;
-        _config.TunModeItem.IcmpRouting = TunIcmpRouting;
-        _config.TunModeItem.EnableLegacyProtect = TunEnableLegacyProtect;
-        _config.TunModeItem.RouteExcludeAddress = Utils.String2List(TunRouteExcludeAddress);
-        _config.TunModeItem.IPv4Address = TunIPv4Address;
-        _config.TunModeItem.IPv6Address = TunIPv6Address;
+        if (_manageTunSettings)
+        {
+            _config.TunModeItem.AutoRoute = TunAutoRoute;
+            _config.TunModeItem.StrictRoute = TunStrictRoute;
+            _config.TunModeItem.Stack = TunStack;
+            _config.TunModeItem.Mtu = TunMtu;
+            _config.TunModeItem.EnableIPv6Address = TunEnableIPv6Address;
+            _config.TunModeItem.IcmpRouting = TunIcmpRouting;
+            _config.TunModeItem.EnableLegacyProtect = TunEnableLegacyProtect;
+            _config.TunModeItem.RouteExcludeAddress = Utils.String2List(TunRouteExcludeAddress);
+            _config.TunModeItem.IPv4Address = TunIPv4Address;
+            _config.TunModeItem.IPv6Address = TunIPv6Address;
+        }
 
         //coreType
         await SaveCoreType();
@@ -460,6 +469,7 @@ public partial class OptionSettingViewModel : MyReactiveObject, ICloseable
     private string OtherSettingsSnapshot()
     {
         var values = GetType().GetProperties().Where(p => p.SetMethod?.IsPublic == true && p.Name != nameof(InitialSection))
+            .Where(p => _manageTunSettings || !p.Name.StartsWith("Tun", StringComparison.Ordinal))
             .Where(p => (Nullable.GetUnderlyingType(p.PropertyType) ?? p.PropertyType).IsPrimitive || p.PropertyType.IsEnum || p.PropertyType == typeof(string) || p.Name == nameof(DestOverride))
             .OrderBy(p => p.Name).ToDictionary(p => p.Name, p => p.PropertyType == typeof(string) ? p.GetValue(this) ?? "" : p.GetValue(this));
         return JsonSerializer.Serialize(values);

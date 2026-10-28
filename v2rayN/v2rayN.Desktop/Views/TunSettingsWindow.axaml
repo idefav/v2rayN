@@ -1,0 +1,61 @@
+<UserControl
+    x:Class="v2rayN.Desktop.Views.TunSettingsWindow"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vms="clr-namespace:ServiceLib.ViewModels;assembly=ServiceLib"
+    x:DataType="vms:TunSettingsViewModel"
+    Tag="sing-box TUN">
+    <Grid x:Name="pageRoot" RowDefinitions="Auto,*,Auto" Margin="8">
+        <StackPanel Spacing="10" Margin="0,0,0,16">
+            <TextBlock Text="sing-box TUN" FontSize="24" FontWeight="SemiBold" />
+            <TextBlock x:Name="pageNote" TextWrapping="Wrap" Opacity="0.75" />
+            <Border BorderBrush="{DynamicResource WorkspaceBorder}" BorderThickness="1" CornerRadius="6" Padding="12">
+                <TextBlock Text="{Binding RuntimeSummary}" TextWrapping="Wrap" FontSize="12" />
+            </Border>
+            <WrapPanel>
+                <CheckBox x:Name="showOtherPlatforms" Margin="0,0,12,0" />
+                <Button x:Name="searchHelp" Margin="0,0,8,0" />
+                <Button x:Name="jumpToDns" />
+            </WrapPanel>
+            <Border x:Name="templateBanner" IsVisible="{Binding IsTemplateOwned}"
+                    BorderBrush="{DynamicResource WorkspaceWarning}" BorderThickness="1" CornerRadius="6" Padding="12">
+                <StackPanel Spacing="8">
+                    <TextBlock x:Name="templateNote" TextWrapping="Wrap" />
+                    <Button x:Name="jumpToTemplate" HorizontalAlignment="Left" />
+                </StackPanel>
+            </Border>
+        </StackPanel>
+        <Grid x:Name="workbench" Grid.Row="1" ColumnDefinitions="132,*,280" RowDefinitions="*">
+            <ScrollViewer x:Name="navigationScroll" HorizontalScrollBarVisibility="Disabled">
+                <WrapPanel x:Name="groupNavigation" Orientation="Vertical" Margin="0,0,12,0" />
+            </ScrollViewer>
+            <ScrollViewer x:Name="editorScroll" Grid.Column="1" HorizontalScrollBarVisibility="Disabled" Margin="0,0,16,0">
+                <StackPanel x:Name="editorBody" Spacing="12" />
+            </ScrollViewer>
+            <Border x:Name="helpDock" Grid.Column="2" BorderBrush="{DynamicResource WorkspaceBorder}" BorderThickness="1,0,0,0" Padding="16,0,0,0">
+                <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel x:Name="helpBody" Spacing="10" />
+                </ScrollViewer>
+            </Border>
+        </Grid>
+        <StackPanel Grid.Row="2" Spacing="8" Margin="0,12,0,0">
+            <TextBlock x:Name="statusText" TextWrapping="Wrap" FontSize="12" />
+            <WrapPanel x:Name="footerActions" HorizontalAlignment="Right">
+                <Button x:Name="jumpToError" Margin="0,0,8,8" />
+                <Button x:Name="resetGroup" Margin="0,0,8,8" />
+                <Button x:Name="discardChanges" Margin="0,0,8,8" />
+                <Button x:Name="saveChanges" Margin="0,0,0,8" Classes="primary" />
+            </WrapPanel>
+        </StackPanel>
+        <Border x:Name="helpOverlay" Grid.RowSpan="3" IsVisible="False" HorizontalAlignment="Right"
+                Background="{DynamicResource WorkspaceSurface}" BorderBrush="{DynamicResource WorkspaceBorder}"
+                BorderThickness="1" CornerRadius="6" Padding="16" ZIndex="10">
+            <DockPanel>
+                <Button x:Name="closeHelp" DockPanel.Dock="Top" HorizontalAlignment="Right" Margin="0,0,0,10" />
+                <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel x:Name="overlayBody" Spacing="10" />
+                </ScrollViewer>
+            </DockPanel>
+        </Border>
+    </Grid>
+</UserControl>

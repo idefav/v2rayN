@@ -14,6 +14,7 @@
     "RoutingRuleSettingWindow.axaml": "page-designs.html#ruleset-edit",
     "RoutingRuleDetailsWindow.axaml": "page-designs.html#rule-edit",
     "DNSSettingWindow.axaml": "page-designs.html#dns",
+    "TunSettingsWindow.axaml": "../tun-settings-opendesign/index.html",
     "FullConfigTemplateWindow.axaml": "page-designs.html#template",
     "AddServerWindow.axaml": "page-designs.html#node-editor/VLESS",
     "AddSshServerWindow.axaml": "page-designs.html#node-editor/SSH",

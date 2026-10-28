@@ -84,6 +84,17 @@ jobs:
           echo "SSH_TEST_SINGBOX=$core" >> "$GITHUB_ENV"
           echo "V2RAYN_UPDATE_TEST_CORE=$core" >> "$GITHUB_ENV"
           echo 'SSH_SETUP_DOCKER_IMAGE=v2rayn-ssh-test' >> "$GITHUB_ENV"
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: proxy-check/go.mod
+          cache-dependency-path: proxy-check/go.sum
+      - name: Build the bundled core for TUN configuration checks
+        run: |
+          set -euo pipefail
+          core="$RUNNER_TEMP/tun-core/sing-box"
+          bash packaging/build-ssh-core.sh linux amd64 "$core"
+          "$core" version
+          echo "TUN_TEST_SINGBOX=$core" >> "$GITHUB_ENV"
       - name: Run unit and SSH integration tests
         run: dotnet test --project ./v2rayN/ServiceLib.Tests -c Release --results-directory ./TestResults -- --report-trx
       - name: Verify Primer designs and native page coverage
@@ -91,6 +102,7 @@ jobs:
           node docs/design/main-primer-opendesign/tests/prototype-check.cjs
           node docs/design/main-primer-opendesign/tests/secondary-pages-check.cjs
           node docs/design/main-primer-opendesign/tests/native-coverage-check.cjs
+          node docs/design/tun-settings-opendesign/tests/prototype-check.cjs
       - name: Review desktop controls with Skia
         run: |
           dotnet build v2rayN/v2rayN.Desktop.Review -c Release -p:UsedAvaloniaProducts=
@@ -100,6 +112,8 @@ jobs:
           dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/preview-ui/sources-en --update-sources-only --headless --language=en --theme=dark --width=980
           dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/preview-ui/egress-zh --proxy-check-only --headless --language=zh-Hans --theme=light --width=1440
           dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/preview-ui/egress-en --proxy-check-only --headless --language=en --theme=dark --width=600
+          dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/preview-ui/tun-zh --tun-settings-only --headless --language=zh-Hans --theme=light --width=1440
+          dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/preview-ui/tun-en --tun-settings-only --headless --language=en --theme=dark --width=600
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -263,6 +277,9 @@ jobs:
           - 新增独立出口观察服务接入：验证服务端签名证据，分别展示通信、实际出口与预期比较；控制接口成功不等于各协议已验证。
           - 代理检查的实际出口 IP 自动补充国家、地区与城市，支持 IPv4/IPv6、多地址及查询缓存；第三方地域信息独立于签名证据，查询失败不影响检测结论。
           - 代理检查分类默认折叠，保留完成进度和异常计数；固定 HTTP CONNECT/UDP 限制移入独立路径能力说明，不再计入检测任务。路径名称区分 TUN 开启/关闭，多预期 IP 按“任意一个匹配”提示。
+          - 实际出口逐 IP 展示国旗、地域与独立匹配结果；预期地域支持国家/地区搜索、多选，不影响原有 IP 判定、通过/失败计数或重试资格。
+          - 新增 Avalonia 独立 TUN 设置页：DNS 接管、UDP NAT、捕获范围与规则集、多地址、设备名和 Linux 高级接管，提供预设、平台联动及可搜索导出的中英文离线说明。
+          - TUN 设置保存前检查实际内核配置，失败保留草稿并尝试恢复原配置；保存不会自动开启 TUN，有效配置未变化时保留连接。真实接管仍需在对应系统验证。
           - 独立探测服务支持域名加一次性配对串，控制接口使用 mTLS，设备凭证保存到系统安全存储；旧 API Key 不再支持。
           - 新增真实浏览器 WebRTC 数据通道出口检查、DNS 按节点及分流规则选择出口、代理 UDP 与 QUIC 阻断选项。
           - 配置服务与高级检查选项在独立弹窗打开；修复配对取消、并发解绑、会话撤销及 DNS 签名证据校验。
@@ -287,6 +304,7 @@ jobs:
           · [macOS 网络恢复说明](https://github.com/$GH_REPO/blob/$RELEASE_TAG/docs/macos-network-recovery.md)
           · [SSH UDP 服务部署与扩展记录](https://github.com/$GH_REPO/blob/$RELEASE_TAG/docs/ssh-udp-deployment.zh-Hans.md)
           · [更新与资源来源说明](https://github.com/$GH_REPO/blob/$RELEASE_TAG/docs/update-sources.zh-Hans.md)
+          · [TUN 设置使用说明](https://github.com/$GH_REPO/blob/$RELEASE_TAG/docs/tun-settings.zh-Hans.md)
           · [Primer 页面设计与实施范围](https://github.com/$GH_REPO/blob/$RELEASE_TAG/docs/design/page-coverage.md)
           · [macOS 原生启动与验收](https://github.com/$GH_REPO/blob/$RELEASE_TAG/docs/macos-native-rendering.zh-Hans.md)
           · [探测服务部署与端口](https://github.com/idefav/egress-probe#deploy-on-linux)

@@ -44,6 +44,11 @@ public partial class CoreConfigSingboxService(CoreConfigContext context)
                 return ret;
             }
 
+            if (context.IsTunEnabled && context.FullConfigTemplate?.Enabled != true)
+            {
+                var issues = SingboxTunSettings.Validate(_config.TunModeItem, SingboxTunSettings.Platform(context));
+                if (issues.Count > 0) throw new TunConfigurationException(string.Join(Environment.NewLine, issues.Select(i => $"{i.Key}: {i.Message}")));
+            }
             GenLog();
 
             GenInbounds();
@@ -68,7 +73,7 @@ public partial class CoreConfigSingboxService(CoreConfigContext context)
             ret.Success = true;
             return ret;
         }
-        catch (SshConfigurationException ex)
+        catch (Exception ex) when (ex is SshConfigurationException or TunConfigurationException)
         {
             ret.Success = false;
             ret.Msg = ex.Message;

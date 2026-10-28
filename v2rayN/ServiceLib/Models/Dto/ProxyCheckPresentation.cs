@@ -9,7 +9,13 @@ public sealed class ProxyCheckResultRow(ProxyDiagnosticResult source)
     public string Target => Source.Target;
     public string Path => Source.Path;
     public string Family => Source.Family;
-    public string Detail => Source.Detail + (Source.EgressLocations.Count == 0 ? "" : "\n" + LocationHint);
+    public string Detail => Source.Detail + (Source.EgressLocations.Count == 0 ? "" : "\n" + LocationHint)
+        + "\n" + ProxyCheckText.T("本轮预期地域（独立比较）：", "Run region expectation (independent): ")
+        + (Source.ExpectedCountryCodes is { Count: > 0 } ? string.Join(" / ", Source.ExpectedCountryCodes.Select(ProxyCheckCountries.Name)) : T("未配置", "Not configured"))
+        + " · " + ProxyCheckCountries.Label(Source.RegionComparison, Source.ObservationType == "recursive-resolver");
+    public IReadOnlyList<ProxyCheckExitAddress> ExitAddresses => HasLocation
+        ? Source.Egress.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).Distinct()
+            .Select(ip => new ProxyCheckExitAddress(Source, ip)).ToArray() : [];
     public bool HasLocation => Source.ObservationType != "not-applicable" && Source.Egress.Length > 0;
     public string LocationLabel => Source.EgressLocations.Count > 0
         ? string.Join("\n", Source.Egress.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).Distinct()

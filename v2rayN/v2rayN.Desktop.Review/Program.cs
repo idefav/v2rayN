@@ -52,6 +52,7 @@ internal static class Program
     public static bool PrimerOnly;
     public static bool SshUdpOnly;
     public static bool UpdateSourcesOnly;
+    public static bool TunSettingsOnly;
     public static bool LegacyColumns;
     public static string Language = "zh-Hans";
     public static string Theme = "Light";
@@ -77,6 +78,7 @@ internal static class Program
         PrimerOnly = args.Contains("--primer-only");
         SshUdpOnly = args.Contains("--ssh-udp-only");
         UpdateSourcesOnly = args.Contains("--update-sources-only");
+        TunSettingsOnly = args.Contains("--tun-settings-only");
         LegacyColumns = args.Contains("--legacy-columns");
         foreach (var argument in args.Skip(1))
         {
@@ -305,6 +307,7 @@ public partial class ReviewApp : v2rayN.Desktop.App
                         Path = id == "dns" ? "System resolver" : "SOCKS5", Target = "api.check.example.net:443", Family = id == "ipv6" ? "IPv6" : "IPv4", Attempts = observed ? 3 : 0,
                         Successes = observed ? 3 : 0, Elapsed = observed ? 42 : 0, Egress = observed && id != "capture" ? "198.51.100.7" : "",
                         EgressLocations = observed && id != "capture" ? [new("198.51.100.7", "JP", "Japan", "Tokyo", "Tokyo", "fixture.invalid", DateTimeOffset.UnixEpoch)] : [],
+                        ExpectedCountryCodes = id == "udp" ? ["JP", "SG"] : ["SG"],
                         ObservationType = id == "capture" ? "not-applicable" : id == "dns" ? "recursive-resolver" : "unavailable",
                         EgressState = id is "capture" or "dns" or "ipv6" ? "not-applicable" : !observed ? "unknown" : rowState == "failed" ? "failed" : "passed",
                         Expected = !observed || id is "capture" or "dns" ? "" : rowState == "failed" ? "203.0.113.0/24" : "198.51.100.7",
@@ -354,7 +357,24 @@ public partial class ReviewApp : v2rayN.Desktop.App
                 var located = model.ResultGroups.SelectMany(g => g.Rows).Single(r => r.Source.Id == "tcp");
                 Check(located.LocationLabel.Contains("Tokyo") && located.IsPassed, "IP location is displayed without changing the diagnostic conclusion");
                 Check(model.ResultGroups.SelectMany(g => g.Rows).Single(r => r.Source.Id == "dns").EvidenceKind == ProxyCheckText.T("递归解析器出口", "Resolver egress"), "resolver geolocation retains its evidence category");
+                Check(located.IsPassed && located.Source.RegionComparison == "failed" && model.AttentionCount == 0,
+                    "region mismatch stays independent of IP verdict and attention counts");
+                Check(page.GetVisualDescendants().OfType<CountryFlag>().Any(f => f.Code == "JP" && f.GetVisualDescendants().OfType<Image>().Any(i => i.Source != null)),
+                    "observed IP region renders a bundled country flag bitmap");
+                Check(new CountryFlag { Code = "ZZ" }.Child is TextBlock,
+                    "unknown country uses a neutral placeholder instead of a guessed flag");
+                var tcpLayout = page.GetVisualDescendants().OfType<ProxyCheckGrid>().Single(g => g.LayoutKind == "results" && g.DataContext is ProxyCheckResultRow { Source.Id: "tcp" });
+                if (tcpLayout.TranslatePoint(default, scroll) is { } tcpOrigin) scroll.Offset += new Vector(0, tcpOrigin.Y - 60);
                 await CaptureAsync("proxy-check-location", "Observed IP locations · UI fixture", _main);
+                var multi = JsonSerializer.Deserialize<ProxyDiagnosticResult>(JsonSerializer.Serialize(located.Source, ProxyCheckService.Json), ProxyCheckService.Json)!;
+                multi.Egress += ", 203.0.113.9, 192.0.2.8";
+                multi.EgressLocations.Add(new("203.0.113.9", "SG", "Singapore", null, null, "fixture.invalid", DateTimeOffset.UnixEpoch));
+                model.Results[model.Results.IndexOf(located.Source)] = multi;
+                await Task.Delay(100);
+                var addresses = model.ResultGroups.SelectMany(g => g.Rows).Single(r => r.Source.Id == "tcp").ExitAddresses;
+                Check(addresses.Count == 3 && addresses[0].RegionDiffers && addresses[1].RegionMatches && addresses[2].CountryCode == null,
+                    "multiple observed addresses retain their own region, match and unknown flag");
+                await CaptureAsync("proxy-check-region-multiple", "Per-address advisory comparison · UI fixture", _main);
                 scroll.Offset = default;
             }
         }
@@ -405,6 +425,22 @@ public partial class ReviewApp : v2rayN.Desktop.App
         var desktop = (IClassicDesktopStyleApplicationLifetime)ApplicationLifetime!;
         Window OptionsWindow() => desktop.Windows.Single(window => window.Name == "proxyCheckOptionsWindow");
         var optionsWindow = OptionsWindow();
+        var regionPicker = page.FindControl<Expander>("regionPicker")!;
+        regionPicker.IsExpanded = true;
+        model.CountrySearch = "SG";
+        await Task.Delay(100);
+        var countryBox = optionsWindow.GetLogicalDescendants().OfType<CheckBox>().Single(c => c.DataContext is ProxyCheckCountryChoice { Code: "SG" });
+        countryBox.IsChecked = true;
+        model.CountryChoices.Single(c => c.Code == "JP").IsSelected = true;
+        Check(model.SelectedCountryCodes.Contains("SG"), "region picker searches and selects a country through its checkbox");
+        Check(model.Results.Single(r => r.Id == "tcp").ExpectedCountryCodes.SequenceEqual(new[] { "SG" }),
+            "changing next-run region selection does not rewrite existing row snapshots");
+        await CaptureAsync("proxy-check-region-options", "Region picker · independent comparison", optionsWindow);
+        page.FindControl<Button>("clearCountries")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        Check(model.SelectedCountryCodes.Count == 0, "region picker can clear all selections");
+        model.CountrySearch = "not-a-region";
+        Check(!model.HasCountryMatches, "region picker exposes an empty search state");
+        model.CountrySearch = ""; regionPicker.IsExpanded = false;
         await CaptureAsync("proxy-check-options-jump", "Check options · owned modal window", optionsWindow);
         Check(optionsWindow.Owner == _main && optionsWindow.IsVisible && !optionsWindow.ShowInTaskbar,
             "check options open in an owned modal window instead of expanding the page");
@@ -514,6 +550,17 @@ public partial class ReviewApp : v2rayN.Desktop.App
             await CheckDnsEgressAsync();
             File.WriteAllText(Path.Combine(Program.Output, "manifest.json"), JsonSerializer.Serialize(new { fixtureData = true, screenshots = _shots, checks = _checks }, new JsonSerializerOptions { WriteIndented = true }));
             Console.WriteLine($"Reviewed {_shots.Count} DNS screens; {_checks.Count} checks passed.");
+            return;
+        }
+        if (Program.TunSettingsOnly)
+        {
+            await ReviewTunSettingsAsync();
+            File.WriteAllText(Path.Combine(Program.Output, "manifest.json"), JsonSerializer.Serialize(new
+            {
+                fixtureData = true, renderer = Program.Headless ? "Avalonia.Headless + Skia" : "native",
+                Program.Language, Program.Theme, Program.Width, screenshots = _shots, checks = _checks
+            }, new JsonSerializerOptions { WriteIndented = true }));
+            Console.WriteLine($"Reviewed {_shots.Count} TUN screens; {_checks.Count} scenarios passed.");
             return;
         }
         if (Program.UpdateSourcesOnly)
@@ -728,7 +775,7 @@ public partial class ReviewApp : v2rayN.Desktop.App
                 templates.GetLogicalDescendants().OfType<TabControl>().First().SelectedIndex = index - 5;
             }
             await CaptureAsync((32 + index).ToString("00"), settings[index], _main);
-            if (index < 5)
+            if (index < 5 && settings[index] != "Tun")
             {
                 var tabs = _main.GetLogicalDescendants().OfType<OptionSettingWindow>().Single().FindControl<TabControl>("pageTabs")!;
                 var selected = (TabItem)tabs.Items[index]!;

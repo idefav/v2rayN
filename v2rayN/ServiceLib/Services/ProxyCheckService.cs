@@ -24,6 +24,8 @@ public sealed partial class ProxyCheckService
 
     public static void Validate(ProxyCheckOptions options)
     {
+        if (options.ExpectedCountryCodes == null || options.ExpectedCountryCodes.Any(c => ProxyCheckCountries.Normalize(c) == null))
+            throw new ArgumentException(T("请选择有效的国家/地区。", "Select valid countries or regions."));
         if (options.Observer != null) ObserverSession.Validate(options.Observer);
         if (options.Samples is < 1 or > 10 || options.Timeout is < 1 or > 120 || options.Http3Timeout is < 1 or > 120)
             throw new ArgumentException(T("采样次数需为 1–10，超时需为 1–120 秒。", "Samples must be 1–10 and timeouts 1–120 seconds."));
@@ -193,7 +195,7 @@ public sealed partial class ProxyCheckService
             .Select(p => p with { TunEnabled = tunEnabled })
             .Where(p => retry == null || retry.Contains(p.Id))
             .OrderBy(p => p.Kind == "system-proxy" ? 0 : p.Group switch { "TCP/TLS" => 1, "DNS" => 2, "UDP" => 3, "QUIC/HTTP3" => 4, "IPv4" => 5, _ => 6 }).ToList();
-        foreach (var p in probes) progress.Report(NewResult(p));
+        foreach (var p in probes) progress.Report(NewResult(p, options));
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct);
         var changed = false;
         var watch = Task.Run(async () =>
@@ -215,7 +217,7 @@ public sealed partial class ProxyCheckService
         {
             await Parallel.ForEachAsync(probes, new ParallelOptions { MaxDegreeOfParallelism = 4, CancellationToken = linked.Token }, async (p, token) =>
             {
-                var row = NewResult(p); row.State = "running"; progress.Report(row);
+                var row = NewResult(p, options); row.State = "running"; progress.Report(row);
                 row = observer == null ? await CheckAsync(p, options, token) : await CheckObserverAsync(p, options, observer, token);
                 var old = baseline?.Results?.FirstOrDefault(x => x.Id == row.Id);
                 if (old != null && old.Target != row.Target)
@@ -234,15 +236,16 @@ public sealed partial class ProxyCheckService
         finally { linked.Cancel(); await watch; }
         foreach (var p in probes.Where(p => report.Results.All(r => r.Id != p.Id)))
         {
-            var row = NewResult(p); row.State = row.Connectivity = "cancelled";
+            var row = NewResult(p, options); row.State = row.Connectivity = "cancelled";
             row.Advice = changed ? T("运行配置已变化，请重新检查。", "Running configuration changed. Run the checks again.") : "";
             report.Results.Add(row); progress.Report(row);
         }
         return report;
     }
 
-    private static DiagnosticResult NewResult(Probe p) => new()
+    internal static DiagnosticResult NewResult(Probe p, ProxyCheckOptions options) => new()
     {
+        ExpectedCountryCodes = options.ExpectedCountryCodes.Select(c => ProxyCheckCountries.Normalize(c)!).Distinct().ToList(),
         Id = p.Id, Group = p.Group,
         Name = (p.Kind switch { "system-proxy" => T("系统代理设置", "System proxy settings"), "system-dns" => T("系统解析", "System resolver"), "system-http" => T("系统 HTTP 请求", "System HTTP request"), "missing" => T("本地 DNS 发现", "Local DNS discovery"), _ => p.Kind.ToUpperInvariant() }) + (p.Query.Length > 0 ? " / " + p.Query : ""), Target = p.Target,
         Family = p.Family.Length > 0 ? "IPv" + p.Family : T("自动", "Auto"),
@@ -251,7 +254,7 @@ public sealed partial class ProxyCheckService
 
     private static async Task<DiagnosticResult> CheckAsync(Probe p, ProxyCheckOptions options, CancellationToken ct)
     {
-        var row = NewResult(p);
+        var row = NewResult(p, options);
         row.Expected = p.Kind is "system-dns" or "missing" or "ssh-capability" ? "" : ExpectedFor(p.Target, options);
         if (p.Kind == "missing") { row.State = row.Connectivity = "skipped"; row.Evidence = T("未发现独立 DNS 监听；可在高级选项指定。", "No separate DNS listener discovered; specify one in advanced options."); return row; }
         if (p.Path == "native" && p.Family == "6" && !NetworkInterface.GetAllNetworkInterfaces().Where(n => n.OperationalStatus == OperationalStatus.Up).SelectMany(n => n.GetIPProperties().UnicastAddresses).Any(a => a.Address.AddressFamily == AddressFamily.InterNetworkV6 && !a.Address.IsIPv6LinkLocal && !IPAddress.IsLoopback(a.Address)))
