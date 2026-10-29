@@ -70,12 +70,12 @@ public static class TunSettingsCatalog
         new("additional_addresses", "AdditionalAddresses", "basic", true, TunFieldKind.List, "额外 TUN 地址", "Additional TUN addresses",
             "为同一设备添加额外 CIDR 地址，保留顺序；关闭 IPv6 时不输出 IPv6 条目。", "Add ordered CIDR addresses to the same device; IPv6 entries are retained but not emitted while IPv6 is off.",
             "10.77.0.1/30", "empty"),
-        new("dns_mode", "DnsMode", "dns", true, TunFieldKind.Choice, "DNS 接管方式", "DNS handling",
-            "自动保留原行为；原生仅处理虚拟 DNS；关闭停止自动接管该 TUN 入站，混合代理端口不受影响。", "Automatic preserves existing behavior; native handles the virtual DNS only; disabled stops automatic DNS interception on TUN, not the mixed ports.",
+        new("dns_mode", "DnsMode", "dns", true, TunFieldKind.Choice, "DNS 处理方式", "DNS handling",
+            "控制 TUN 内的 DNS 入口与自动接管行为。", "Control DNS entry points and automatic interception in TUN.",
             "hijack", "automatic",
-            [Auto, C("hijack", "劫持 · 接管 DNS 流量", "Hijack · intercept DNS"), C("native", "原生 · 只配置接口 DNS", "Native · interface DNS"), C("disabled", "关闭 · 交给其他服务", "Disabled · external management")]),
-        new("dns_address", "DnsAddress", "dns", true, TunFieldKind.List, "虚拟 DNS 地址", "Virtual DNS addresses",
-            "留空自动推导。这是 TUN 的 DNS 入口，上游解析服务器请在“DNS 与流量出口”设置。", "Leave empty to derive addresses. These are TUN DNS entry points; configure upstream resolvers in DNS & traffic egress.",
+            [C("", "自动 · 沿用现有行为", "Automatic · keep existing behavior"), C("hijack", "接管 TUN 内的 DNS", "Intercept TUN DNS"), C("native", "仅处理虚拟 DNS 入口", "Virtual DNS entry only"), C("disabled", "不配置 TUN DNS", "Do not configure TUN DNS")]),
+        new("dns_address", "DnsAddress", "dns", true, TunFieldKind.List, "虚拟 DNS 入口", "Virtual DNS entry",
+            "TUN 内部接收 DNS 请求的地址，不是公共 DNS 上游。", "TUN's internal DNS entry points, not public upstream resolvers.",
             "172.18.0.2", "next TUN address", [C("172.18.0.2", "172.18.0.2", "172.18.0.2")], Dependency: "dns"),
         new("udp_mapping", "UdpMapping", "udp", true, TunFieldKind.Choice, "UDP 映射方式", "UDP mapping",
             "端点无关会对同一来源端口复用映射；其余方式按目标 IP 或 IP 与端口分别建立映射。", "Endpoint-independent mapping reuses a source-port mapping; the other modes separate mappings by destination address or address and port.",
@@ -177,8 +177,18 @@ public static class TunSettingsCatalog
     public static string Help(TunFieldDefinition field)
     {
         var t = TunSettingsText.T;
-        var choices = field.Choices.Count == 0 ? ""
-            : "\n\n" + t("可选值", "Options") + "\n" + string.Join("\n", field.Choices.Select(c => $"• {c.Label} ({(c.Value.Length == 0 ? "auto" : c.Value)})"));
+        var choices = field.Choices.Count == 0
+            ? t("可逐条添加、修改或移除；留空时保留自动或默认范围。", "Add, edit or remove individual entries. Empty retains the automatic or default scope.")
+            : string.Join("\n", field.Choices.Select(c => $"• {c.Label} ({(c.Value.Length == 0 ? "auto" : c.Value)})"));
+        if (field.Key == "dns_mode") choices += "\n" + t("auto 保留旧行为；hijack 接管 TUN DNS；native 仅处理发往虚拟入口的请求；disabled 不自动配置或接管 TUN DNS。四者均不改变混合端口 DNS。", "Auto preserves existing behavior; hijack intercepts TUN DNS; native handles only requests sent to the virtual entry; disabled does not automatically configure or intercept TUN DNS. Mixed-port DNS is unchanged.");
+        var scenario = field.Group switch
+        {
+            "dns" => t("需要明确 DNS 接管边界，或排查部分域名解析异常时。", "When defining DNS capture boundaries or troubleshooting domain resolution."),
+            "udp" => t("语音、游戏或 UDP 会话遇到空闲断连、映射复用或资源占用问题时。", "When calls, games or UDP sessions have idle disconnects, mapping reuse or resource issues."),
+            "routes" => t("只接管指定网络，或为局域网、公司网络和已有 VPN 保留原路径时。", "When capturing specific networks or retaining LAN, corporate-network or existing VPN routes."),
+            "linux" => t("在 Linux 主机或网关上按来源管理接管范围，或调整与现有防火墙的协作时。", "When managing capture by source on a Linux host or gateway, or integrating with an existing firewall."),
+            _ => t("首次配置 TUN，或排查路由、协议栈、接口地址及网络兼容问题时。", "When configuring TUN or troubleshooting routes, stacks, interface addresses or compatibility."),
+        };
         var dependency = field.Dependency switch
         {
             "auto_route" => t("需要启用自动路由。", "Requires auto route."),
@@ -205,7 +215,7 @@ public static class TunSettingsCatalog
             "next TUN address" => t("同网段的下一个可用 TUN 地址", "Next usable TUN address in the prefix"),
             _ => field.Default
         };
-        return $"{field.Title}\n{field.Key}\n\n{t("用途", "Purpose")}\n{field.Hint}\n\n{t("默认值", "Default")}\n{defaultText}{choices}\n\n{t("适用平台与依赖", "Platform & requirements")}\n{(field.LinuxOnly ? "Linux" : field.NotOnMac ? "Windows / Linux" : "macOS / Windows / Linux")}{(field.Singbox ? " · sing-box · " + t("本页适配基线为 1.14+", "this page targets 1.14+") : "")}\n{dependency}\n\n{t("示例", "Example")}\n{field.Example}\n\n{t("影响与使用边界", "Impact & limits")}\n{effect}\n\n{t("排障", "Troubleshooting")}\n{t("先恢复本组选项默认值，检查字段错误、实际 TUN 内核及版本，再查看应用日志；避免同时修改多个接管层。", "Restore this group's defaults, check field errors and the actual TUN core/version, then inspect application logs; change one capture layer at a time.")}";
+        return $"{field.Title}\n{field.Key}\n\n{t("用途", "Purpose")}\n{field.Hint}\n\n{t("默认值", "Default")}\n{defaultText}\n\n{t("各选项区别", "Option differences")}\n{choices}\n\n{t("适用场景", "When to use")}\n{scenario}\n\n{t("平台 / 版本 / 依赖", "Platform / version / requirements")}\n{(field.LinuxOnly ? "Linux" : field.NotOnMac ? "Windows / Linux" : "macOS / Windows / Linux")}{(field.Singbox ? " · sing-box · " + t("本页适配基线为 1.14+", "this page targets 1.14+") : "")}\n{dependency}\n\n{t("修改影响", "Impact of changes")}\n{effect}\n\n{t("示例", "Example")}\n{field.Example}\n\n{t("故障排查", "Troubleshooting")}\n{t("先恢复本组选项默认值，检查字段错误、实际 TUN 内核及版本，再查看应用日志；避免同时修改多个接管层。", "Restore this group's defaults, check field errors and the actual TUN core/version, then inspect application logs; change one capture layer at a time.")}";
     }
 
     public static string Manual => "# " + TunSettingsText.T("TUN 设置使用说明", "TUN settings guide") + "\n\n"

@@ -74,12 +74,23 @@ public partial class TunSettingsViewModel : MyReactiveObject, ICloseable
     [Reactive] public partial bool IsSaving { get; set; }
     [Reactive] public partial bool IsTemplateOwned { get; set; }
     [Reactive] public partial string Status { get; set; } = "";
+    [Reactive] public partial bool SaveSucceeded { get; set; }
     [Reactive] public partial string RuntimeSummary { get; set; } = "";
+    [Reactive] public partial string RuntimeCore { get; set; } = TunSettingsText.T("内核与版本未确认", "Core/version unavailable");
     [Reactive] public partial string HelpQuery { get; set; } = "";
     public string DraftSnapshot => JsonSerializer.Serialize(Fields.ToDictionary(f => f.Definition.Key, f => f.Value));
     public bool IsDirty => DraftSnapshot != _savedSnapshot;
     public bool CanSave => !IsSaving && !IsTemplateOwned && IsDirty && Fields.All(f => f.Error.Length == 0);
     public bool SingboxAvailable => _singboxAvailable;
+    public bool TunEnabled => _appConfig.TunModeItem.EnableTun;
+    public IReadOnlyList<string> ModifiedFields
+    {
+        get
+        {
+            var saved = JsonSerializer.Deserialize<Dictionary<string, string>>(_savedSnapshot)!;
+            return Fields.Where(f => saved[f.Definition.Key] != f.Value).Select(f => f.Definition.Key).ToArray();
+        }
+    }
     public TunSettingField this[string key] => Fields.First(f => f.Definition.Key == key);
 
     public TunSettingsViewModel() : this(AppManager.Instance.Config, SingboxTunSettings.CurrentPlatform, true) { }
@@ -94,7 +105,7 @@ public partial class TunSettingsViewModel : MyReactiveObject, ICloseable
         Fields = TunSettingsCatalog.Fields.Select(f => new TunSettingField(f, values[f.Key])).ToArray();
         foreach (var field in Fields) field.Edited += _ =>
         {
-            if (!_suppress) Status = "";
+            if (!_suppress) { Status = ""; SaveSucceeded = false; }
             Refresh();
         };
         _savedSnapshot = DraftSnapshot;
@@ -107,7 +118,11 @@ public partial class TunSettingsViewModel : MyReactiveObject, ICloseable
         });
         Refresh();
         Initialization = loadRuntime ? InitializeAsync() : Task.CompletedTask;
-        if (!loadRuntime) RuntimeSummary = $"{platform} · sing-box 1.14+ · " + TunSettingsText.T("隔离评审配置", "Isolated review configuration");
+        if (!loadRuntime)
+        {
+            RuntimeCore = "sing-box 1.14+ · " + TunSettingsText.T("隔离评审", "isolated fixture");
+            RuntimeSummary = $"{platform} · {RuntimeCore}";
+        }
     }
 
     private async Task InitializeAsync()
@@ -143,6 +158,7 @@ public partial class TunSettingsViewModel : MyReactiveObject, ICloseable
                 ? TunSettingsText.T("TUN 配置开启；运行接管需通过代理检查验证", "TUN configured on; verify capture with Proxy check")
                 : TunSettingsText.T("TUN 已关闭 · 保存不会自动开启", "TUN is off · saving does not enable it");
             RuntimeSummary = $"{Platform} · {(core?.ToString() ?? TunSettingsText.T("尚未选择节点", "No selected node"))} {version}\n{state}";
+            RuntimeCore = (core?.ToString() ?? TunSettingsText.T("尚未选择节点", "No selected node")) + " " + version;
             AddRuntimeChoices();
         }
         catch (Exception ex)
@@ -247,7 +263,9 @@ public partial class TunSettingsViewModel : MyReactiveObject, ICloseable
                 : d.Dependency is "auto_route" or "auto_redirect" && this["auto_route"].Value != "true" ? TunSettingsText.T("需先开启自动路由。", "Enable auto route first.")
                 : d.Dependency == "auto_redirect" && this["auto_redirect"].Value != "true" ? TunSettingsText.T("需先开启自动重定向。", "Enable auto redirect first.") : "";
             field.UnavailableReason = reason;
-            field.Enabled = reason.Length == 0 && !IsSaving;
+            var canTurnOff = d.Key is "auto_redirect" or "exclude_mptcp" && field.Value == "true"
+                && Platform == TunPlatform.Linux && _singboxAvailable && !IsTemplateOwned;
+            field.Enabled = (reason.Length == 0 || canTurnOff) && !IsSaving;
         }
     }
 
@@ -260,20 +278,33 @@ public partial class TunSettingsViewModel : MyReactiveObject, ICloseable
         }
     }
 
+    private IEnumerable<TunSettingField> ResettableFields(string group) => Fields.Where(f => f.Definition.Group == group
+        && f.Definition.Key != "rule_sets"
+        && (!f.Definition.LinuxOnly || Platform == TunPlatform.Linux)
+        && (!f.Definition.NotOnMac || Platform != TunPlatform.MacOS) && (!f.Definition.Singbox || _singboxAvailable));
+
+    private static Dictionary<string, string> DefaultValues() => TunSettingsCodec.Read(new TunModeItem
+    {
+        Mtu = 9000, Stack = Global.TunStacks.First(), IcmpRouting = Global.TunIcmpRoutingPolicies.First()
+    });
+
+    public bool CanResetGroup(string group)
+    {
+        if (IsTemplateOwned || IsSaving) return false;
+        var defaults = DefaultValues();
+        return ResettableFields(group).Any(f => f.Value != defaults[f.Definition.Key]);
+    }
+
     public void ResetGroup(string group)
     {
         if (IsTemplateOwned || IsSaving) return;
+        SaveSucceeded = false;
         Status = "";
-        var defaults = TunSettingsCodec.Read(new TunModeItem
-        {
-            Mtu = 9000, Stack = Global.TunStacks.First(), IcmpRouting = Global.TunIcmpRoutingPolicies.First()
-        });
+        var defaults = DefaultValues();
         _suppress = true;
         try
         {
-            foreach (var field in Fields.Where(f => f.Definition.Group == group
-                && (!f.Definition.LinuxOnly || Platform == TunPlatform.Linux)
-                && (!f.Definition.NotOnMac || Platform != TunPlatform.MacOS) && (!f.Definition.Singbox || _singboxAvailable)))
+            foreach (var field in ResettableFields(group))
                 field.Restore(defaults[field.Definition.Key]);
         }
         finally { _suppress = false; RefreshRuleSetChoices(); Refresh(); }
@@ -282,6 +313,7 @@ public partial class TunSettingsViewModel : MyReactiveObject, ICloseable
     public void Discard()
     {
         if (IsSaving) return;
+        SaveSucceeded = false;
         _original = JsonUtils.DeepCopy(_appConfig.TunModeItem)!;
         var values = TunSettingsCodec.Read(_original);
         _suppress = true;
@@ -312,6 +344,7 @@ public partial class TunSettingsViewModel : MyReactiveObject, ICloseable
     public async Task<bool> SaveAsync()
     {
         if (IsSaving || IsTemplateOwned) return false;
+        SaveSucceeded = false;
         Refresh();
         var errors = ValidateDraft(out var draft);
         if (errors.Count > 0)
@@ -370,6 +403,7 @@ public partial class TunSettingsViewModel : MyReactiveObject, ICloseable
             if (result.Success && _loadRuntime && !checkedCore)
                 Status += "\n" + TunSettingsText.T("尚未选择节点，未执行内核预检。", "No node selected; core preflight has not been performed.");
             if (!result.Success) return false;
+            SaveSucceeded = true;
             _original = JsonUtils.DeepCopy(_appConfig.TunModeItem)!;
             _savedSnapshot = DraftSnapshot;
             this.RaisePropertyChanged(nameof(IsDirty));

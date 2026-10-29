@@ -2,6 +2,8 @@
 
 日期：2026-10-28。
 
+> UI 还原修订：最初发布的 preview.18 使用了通用表单和按钮布局，未达到此目录原稿的视觉要求。后续 `feature/tun-design-fidelity` 已按原稿重做布局；最新记录见 [UI 还原复查](fidelity-review.md)。下方原始测试计数保留为首次实现的历史记录。
+
 [交互原型](index.html) 由 Local Codex 生成，完整保留其视觉规范、交接说明和离线检查脚本。产品界面使用原生 Avalonia 控件实现，入口为“设置 → TUN 模式”。[使用说明](../../tun-settings.zh-Hans.md) 描述实际配置行为；页面内还提供逐字段的中英文帮助、搜索与 Markdown 导出。
 
 ## 实际接入
