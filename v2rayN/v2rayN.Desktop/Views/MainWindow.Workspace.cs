@@ -37,6 +37,7 @@ public partial class MainWindow
     private Grid? _settingsWorkspace;
     private ContentControl? _settingsBody;
     private ListBox? _settingsNavigation;
+    private ScrollViewer? _settingsRail;
     private Task _pendingSave = Task.CompletedTask;
 
     public async Task<bool> PrepareExitAsync()
@@ -62,6 +63,8 @@ public partial class MainWindow
         if (_workspaceInitialized || ViewModel == null) return;
         _workspaceInitialized = true;
         _appearance = new ThemeSettingView();
+        btnTunSettingsBack.Content = WorkspaceText.T("← 设置", "← Settings");
+        btnTunSettingsBack.Click += async (_, _) => await OpenSettingsAsync("Core");
         TablePresentation.TextIconButton(btnAppearance, WorkspaceText.T("外观与语言", "Appearance and language"),
             "M12,3 L12,1 M12,23 L12,21 M3,12 L1,12 M23,12 L21,12 M5,5 L3,3 M21,21 L19,19 M5,19 L3,21 M21,3 L19,5 M18,12 A6,6 0 1 1 6,12 A6,6 0 1 1 18,12", true);
         btnAppearance.Margin = Utils.IsWindows() ? new Thickness(0, 0, 128, 0) : new Thickness(0);
@@ -402,8 +405,8 @@ public partial class MainWindow
         _settingsBody = new ContentControl { MaxWidth = 1040, HorizontalAlignment = HorizontalAlignment.Stretch,
             HorizontalContentAlignment = HorizontalAlignment.Stretch, VerticalContentAlignment = VerticalAlignment.Stretch };
         _settingsWorkspace = new Grid { ColumnDefinitions = new ColumnDefinitions("180,*") };
-        var rail = new ScrollViewer { Content = _settingsNavigation, Margin = new Thickness(0, 0, 16, 0) };
-        _settingsWorkspace.Children.Add(rail);
+        _settingsRail = new ScrollViewer { Content = _settingsNavigation, Margin = new Thickness(0, 0, 16, 0) };
+        _settingsWorkspace.Children.Add(_settingsRail);
         Grid.SetColumn(_settingsBody, 1);
         _settingsWorkspace.Children.Add(_settingsBody);
     }
@@ -422,6 +425,10 @@ public partial class MainWindow
         if (key == _settingsKey && _settingsBody.Content != null) return Task.CompletedTask;
         _settingsBody.Content = null;
         _settingsKey = key;
+        var tunWorkbench = key == "Tun";
+        _settingsRail!.IsVisible = !tunWorkbench;
+        _settingsWorkspace!.ColumnDefinitions[0].Width = new GridLength(tunWorkbench ? 0 : 180);
+        _settingsBody.MaxWidth = tunWorkbench ? double.PositiveInfinity : 1040;
         HotkeyManager.Instance.IsPause = key == "Hotkeys";
         switch (key)
         {
@@ -500,6 +507,9 @@ public partial class MainWindow
 
     private void ResizeWorkspace()
     {
+        var tunWorkbench = _currentPage == "Settings" && _settingsKey == "Tun";
+        btnTunSettingsBack.IsVisible = tunWorkbench;
+        txtPageTitle.IsVisible = !tunWorkbench;
         var compact = Bounds.Width <= 900;
         var sidebarWidth = 196 + Math.Max(0, AppManager.Instance.Config.UiItem.CurrentFontSize - 14) * 6;
         shellGrid.ColumnDefinitions[0].Width = new GridLength(compact ? 64 : sidebarWidth);
@@ -528,6 +538,6 @@ public partial class MainWindow
         btnToggleLogs.Content = "×";
         _servers?.SetCompact(compact);
         if (_settingsWorkspace != null)
-            _settingsWorkspace.ColumnDefinitions[0].Width = new GridLength(Bounds.Width < 900 ? 120 : 180);
+            _settingsWorkspace.ColumnDefinitions[0].Width = new GridLength(tunWorkbench ? 0 : Bounds.Width < 900 ? 120 : 180);
     }
 }

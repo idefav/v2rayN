@@ -558,6 +558,7 @@ public partial class ReviewApp : v2rayN.Desktop.App
             File.WriteAllText(Path.Combine(Program.Output, "manifest.json"), JsonSerializer.Serialize(new
             {
                 fixtureData = true, renderer = Program.Headless ? "Avalonia.Headless + Skia" : "native",
+                actualTheme = _main.ActualThemeVariant.ToString(), actualWidth = _main.ClientSize.Width, actualHeight = _main.ClientSize.Height,
                 Program.Language, Program.Theme, Program.Width, screenshots = _shots, checks = _checks
             }, new JsonSerializerOptions { WriteIndented = true }));
             Console.WriteLine($"Reviewed {_shots.Count} TUN screens; {_checks.Count} scenarios passed.");

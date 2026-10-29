@@ -189,6 +189,27 @@ public class TunSettingsTests
         Check(timeout.IsCustom, "custom duration editor is unavailable");
         vm.ResetGroup("udp");
         Check(!timeout.IsCustom && timeout.SelectedChoice?.Value == "", "reset did not restore automatic editor mode");
+        vm.SetRuleSets([new() { Tag = "office-net", Type = "remote", Format = "source", Url = "https://example.com/office.json" }]);
+        var library = vm["rule_sets"].Value;
+        vm["route_address_set"].Value = "office-net";
+        Check(vm.CanResetGroup("routes"), "custom capture scope cannot be reset");
+        vm.ResetGroup("routes");
+        Check(vm["rule_sets"].Value == library && vm["route_address_set"].Value == "", "group reset deleted the shared rule-set library");
+        Check(!vm.CanResetGroup("routes"), "default scope remains resettable just because the library has resources");
+    }
+
+    [Test]
+    public void InvalidDownstreamToggleCanBeTurnedOffWithoutEnablingCapture()
+    {
+        var config = Configuration();
+        config.TunModeItem.EnableTun = false;
+        config.TunModeItem.AutoRoute = false;
+        config.TunModeItem.Singbox = new() { AutoRedirect = true, ExcludeMptcp = true };
+        var vm = new TunSettingsViewModel(config, TunPlatform.Linux);
+        Check(vm["auto_redirect"].Enabled && vm["exclude_mptcp"].Enabled, "active downstream toggles cannot be corrected");
+        vm["auto_redirect"].Value = "false";
+        vm["exclude_mptcp"].Value = "false";
+        Check(vm.CanSave && !config.TunModeItem.EnableTun && vm["auto_route"].Value == "false", "correcting a dependency enabled capture");
     }
 
     [Test]

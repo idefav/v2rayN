@@ -4,58 +4,200 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:vms="clr-namespace:ServiceLib.ViewModels;assembly=ServiceLib"
     x:DataType="vms:TunSettingsViewModel"
-    Tag="sing-box TUN">
-    <Grid x:Name="pageRoot" RowDefinitions="Auto,*,Auto" Margin="8">
-        <StackPanel Spacing="10" Margin="0,0,0,16">
-            <TextBlock Text="sing-box TUN" FontSize="24" FontWeight="SemiBold" />
-            <TextBlock x:Name="pageNote" TextWrapping="Wrap" Opacity="0.75" />
-            <Border BorderBrush="{DynamicResource WorkspaceBorder}" BorderThickness="1" CornerRadius="6" Padding="12">
-                <TextBlock Text="{Binding RuntimeSummary}" TextWrapping="Wrap" FontSize="12" />
-            </Border>
-            <WrapPanel>
-                <CheckBox x:Name="showOtherPlatforms" Margin="0,0,12,0" />
-                <Button x:Name="searchHelp" Margin="0,0,8,0" />
-                <Button x:Name="jumpToDns" />
-            </WrapPanel>
-            <Border x:Name="templateBanner" IsVisible="{Binding IsTemplateOwned}"
-                    BorderBrush="{DynamicResource WorkspaceWarning}" BorderThickness="1" CornerRadius="6" Padding="12">
-                <StackPanel Spacing="8">
-                    <TextBlock x:Name="templateNote" TextWrapping="Wrap" />
-                    <Button x:Name="jumpToTemplate" HorizontalAlignment="Left" />
+    Tag="sing-box TUN" Foreground="{DynamicResource TunText}">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Light">
+                    <SolidColorBrush x:Key="TunBackground">#FFFFFF</SolidColorBrush>
+                    <SolidColorBrush x:Key="TunSurface">#F6F8FA</SolidColorBrush>
+                    <SolidColorBrush x:Key="TunText">#1F2328</SolidColorBrush>
+                    <SolidColorBrush x:Key="TunMuted">#656D76</SolidColorBrush>
+                    <SolidColorBrush x:Key="TunBorder">#D0D7DE</SolidColorBrush>
+                    <SolidColorBrush x:Key="TunSoftBorder">#D8DEE4</SolidColorBrush>
+                    <SolidColorBrush x:Key="TunAccent">#0969DA</SolidColorBrush>
+                    <SolidColorBrush x:Key="TunAccentText">#FFFFFF</SolidColorBrush>
+                    <SolidColorBrush x:Key="TunSuccess">#1A7F37</SolidColorBrush>
+                    <SolidColorBrush x:Key="TunSuccessSurface">#F5FBF5</SolidColorBrush>
+                    <SolidColorBrush x:Key="TunWarning">#9A6700</SolidColorBrush>
+                    <SolidColorBrush x:Key="TunBackdrop">#591F2328</SolidColorBrush>
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Dark">
+                    <SolidColorBrush x:Key="TunBackground">#0D1117</SolidColorBrush>
+                    <SolidColorBrush x:Key="TunSurface">#151A22</SolidColorBrush>
+                    <SolidColorBrush x:Key="TunText">#E7EDF3</SolidColorBrush>
+                    <SolidColorBrush x:Key="TunMuted">#ABB2BB</SolidColorBrush>
+                    <SolidColorBrush x:Key="TunBorder">#424850</SolidColorBrush>
+                    <SolidColorBrush x:Key="TunSoftBorder">#333840</SolidColorBrush>
+                    <SolidColorBrush x:Key="TunAccent">#67A6FB</SolidColorBrush>
+                    <SolidColorBrush x:Key="TunAccentText">#0D1117</SolidColorBrush>
+                    <SolidColorBrush x:Key="TunSuccess">#64CF80</SolidColorBrush>
+                    <SolidColorBrush x:Key="TunSuccessSurface">#101A17</SolidColorBrush>
+                    <SolidColorBrush x:Key="TunWarning">#EBBD57</SolidColorBrush>
+                    <SolidColorBrush x:Key="TunBackdrop">#59E7EDF3</SolidColorBrush>
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+            <ControlTheme x:Key="TunButton" TargetType="Button">
+                <Setter Property="MinHeight" Value="44" />
+                <Setter Property="Padding" Value="14,8" />
+                <Setter Property="FontSize" Value="14" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="CornerRadius" Value="6" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="BorderBrush" Value="{DynamicResource TunBorder}" />
+                <Setter Property="Background" Value="{DynamicResource TunSurface}" />
+                <Setter Property="Foreground" Value="{DynamicResource TunText}" />
+                <Setter Property="HorizontalContentAlignment" Value="Center" />
+                <Setter Property="VerticalContentAlignment" Value="Center" />
+                <Setter Property="Template">
+                    <ControlTemplate>
+                        <ContentPresenter Name="PART_ContentPresenter" Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="{TemplateBinding CornerRadius}" Padding="{TemplateBinding Padding}"
+                            Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"
+                            HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                            VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
+                    </ControlTemplate>
+                </Setter>
+                <Style Selector="^:disabled"><Setter Property="Opacity" Value="0.52" /></Style>
+                <Style Selector="^:pointerover"><Setter Property="BorderBrush" Value="{DynamicResource TunMuted}" /></Style>
+            </ControlTheme>
+        </ResourceDictionary>
+    </UserControl.Resources>
+    <UserControl.Styles>
+        <Style Selector="Button">
+            <Setter Property="Theme" Value="{StaticResource TunButton}" /><Setter Property="MinHeight" Value="44" />
+            <Setter Property="Padding" Value="14,8" /><Setter Property="FontSize" Value="14" /><Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Background" Value="{DynamicResource TunSurface}" /><Setter Property="Foreground" Value="{DynamicResource TunText}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource TunBorder}" /><Setter Property="CornerRadius" Value="6" />
+        </Style>
+        <Style Selector="Button.tunNav">
+            <Setter Property="Background" Value="Transparent" /><Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="FontWeight" Value="Normal" /><Setter Property="Padding" Value="10" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        </Style>
+        <Style Selector="Button.tunNav:pointerover, Button.tunNav.isCurrent">
+            <Setter Property="Background" Value="{DynamicResource TunSurface}" />
+        </Style>
+        <Style Selector="Button.tunNav.isCurrent">
+            <Setter Property="BorderBrush" Value="{DynamicResource TunBorder}" /><Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="Button.tunNav.compact.isCurrent"><Setter Property="BorderBrush" Value="{DynamicResource TunText}" /></Style>
+        <Style Selector="Button.tunLink">
+            <Setter Property="Background" Value="Transparent" /><Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" /><Setter Property="FontWeight" Value="Normal" /><Setter Property="FontSize" Value="12" />
+        </Style>
+        <Style Selector="Button.tunGhost">
+            <Setter Property="Background" Value="Transparent" /><Setter Property="BorderBrush" Value="Transparent" />
+        </Style>
+        <Style Selector="Button.tunHelpResult">
+            <Setter Property="Background" Value="Transparent" /><Setter Property="BorderBrush" Value="{DynamicResource TunSoftBorder}" />
+            <Setter Property="BorderThickness" Value="0,0,0,1" /><Setter Property="CornerRadius" Value="0" /><Setter Property="Padding" Value="0,12" />
+        </Style>
+        <Style Selector="Button.tunPrimary">
+            <Setter Property="Background" Value="{DynamicResource TunAccent}" /><Setter Property="BorderBrush" Value="{DynamicResource TunAccent}" />
+            <Setter Property="Foreground" Value="{DynamicResource TunAccentText}" />
+        </Style>
+        <Style Selector="TextBox, ComboBox">
+            <Setter Property="MinHeight" Value="44" /><Setter Property="Padding" Value="11,9" />
+            <Setter Property="FontSize" Value="14" /><Setter Property="FontWeight" Value="Normal" />
+            <Setter Property="Background" Value="{DynamicResource TunBackground}" /><Setter Property="Foreground" Value="{DynamicResource TunText}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource TunBorder}" /><Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="6" />
+        </Style>
+        <Style Selector="CheckBox"><Setter Property="FontSize" Value="12" /><Setter Property="MinHeight" Value="44" /></Style>
+        <Style Selector="ScrollBar /template/ RepeatButton#PART_LineUpButton, ScrollBar /template/ RepeatButton#PART_LineDownButton"><Setter Property="IsVisible" Value="False" /></Style>
+        <Style Selector="TextBlock.tunMuted, SelectableTextBlock.tunMuted"><Setter Property="Foreground" Value="{DynamicResource TunMuted}" /></Style>
+        <Style Selector="TextBlock.tunWarning"><Setter Property="Foreground" Value="{DynamicResource TunWarning}" /></Style>
+        <Style Selector="Border.tunSuccess"><Setter Property="BorderBrush" Value="{DynamicResource TunSuccess}" /><Setter Property="Background" Value="{DynamicResource TunSuccessSurface}" /></Style>
+        <Style Selector="Border.tunSuccess TextBlock"><Setter Property="Foreground" Value="{DynamicResource TunSuccess}" /></Style>
+    </UserControl.Styles>
+    <Grid x:Name="pageRoot" RowDefinitions="Auto,*,Auto" MaxWidth="1328" Background="{DynamicResource TunBackground}">
+        <StackPanel x:Name="pageHeading" Margin="24,20,24,16">
+            <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Spacing="3">
+                    <TextBlock Text="sing-box TUN" FontSize="24" FontWeight="SemiBold" LineHeight="33.6" />
+                    <TextBlock x:Name="pageNote" TextWrapping="Wrap" Classes="tunMuted" LineHeight="21" />
                 </StackPanel>
+                <Button Grid.Column="1" x:Name="searchHelp" Classes="tunGhost" Width="44" Height="44" Padding="12" VerticalAlignment="Top" />
+            </Grid>
+            <Border Margin="0,16,0,0" BorderBrush="{DynamicResource TunBorder}" BorderThickness="1" CornerRadius="6" MinHeight="67">
+                <Grid x:Name="runtimeGrid" ColumnDefinitions="1.15*,0.9*,0.95*,1.45*">
+                    <StackPanel x:Name="runtimeCoreCell" Margin="16,10" VerticalAlignment="Center" Spacing="3">
+                        <TextBlock x:Name="runtimeCoreLabel" FontSize="12" Classes="tunMuted" />
+                        <TextBlock x:Name="runtimeCoreValue" Text="{Binding RuntimeCore}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                    </StackPanel>
+                    <Border x:Name="runtimeStateCell" Grid.Column="1" BorderBrush="{DynamicResource TunBorder}" BorderThickness="1,0,0,0" Padding="16,10">
+                        <StackPanel VerticalAlignment="Center" Spacing="3"><TextBlock x:Name="runtimeStateLabel" FontSize="12" Classes="tunMuted" /><StackPanel Orientation="Horizontal" Spacing="7"><Ellipse Width="7" Height="7" Fill="{DynamicResource TunMuted}" VerticalAlignment="Center" /><TextBlock x:Name="runtimeStateValue" FontWeight="SemiBold" TextWrapping="Wrap" /></StackPanel></StackPanel>
+                    </Border>
+                    <Border x:Name="runtimeConfigCell" Grid.Column="2" BorderBrush="{DynamicResource TunBorder}" BorderThickness="1,0,0,0" Padding="16,10">
+                        <StackPanel VerticalAlignment="Center" Spacing="3"><TextBlock x:Name="runtimeConfigLabel" FontSize="12" Classes="tunMuted" /><TextBlock x:Name="runtimeConfigValue" FontWeight="SemiBold" TextWrapping="Wrap" /></StackPanel>
+                    </Border>
+                    <Border x:Name="runtimeNoteCell" Grid.Column="3" BorderBrush="{DynamicResource TunBorder}" BorderThickness="1,0,0,0" Padding="16,10">
+                        <TextBlock x:Name="runtimeNote" FontSize="12" Classes="tunMuted" TextWrapping="Wrap" LineHeight="19" VerticalAlignment="Center" />
+                    </Border>
+                </Grid>
             </Border>
         </StackPanel>
-        <Grid x:Name="workbench" Grid.Row="1" ColumnDefinitions="132,*,280" RowDefinitions="*">
-            <ScrollViewer x:Name="navigationScroll" HorizontalScrollBarVisibility="Disabled">
-                <WrapPanel x:Name="groupNavigation" Orientation="Vertical" Margin="0,0,12,0" />
+        <Grid x:Name="workbench" Grid.Row="1" ColumnDefinitions="168,24,*,24,284" Margin="24,0">
+            <Border x:Name="navigationRail" BorderBrush="{DynamicResource TunBorder}" BorderThickness="0,0,1,0" Padding="0,4,16,16">
+                <DockPanel>
+                    <TextBlock x:Name="navigationLabel" DockPanel.Dock="Top" Margin="10,0,0,10" FontSize="12" Classes="tunMuted" />
+                    <StackPanel x:Name="navigationNote" DockPanel.Dock="Bottom" Margin="8,24,8,0">
+                        <TextBlock x:Name="navigationNoteTitle" FontSize="12" FontWeight="SemiBold" LineHeight="21.6" />
+                        <TextBlock x:Name="navigationNoteBody" FontSize="12" Classes="tunMuted" TextWrapping="Wrap" LineHeight="21.6" />
+                    </StackPanel>
+                    <ScrollViewer x:Name="navigationScroll" HorizontalScrollBarVisibility="Disabled" VerticalAlignment="Top"><Grid x:Name="groupNavigation" /></ScrollViewer>
+                </DockPanel>
+            </Border>
+            <ScrollViewer x:Name="editorScroll" Grid.Column="2" HorizontalScrollBarVisibility="Disabled" Padding="0,4,4,32">
+                <StackPanel>
+                    <Border BorderBrush="{DynamicResource TunBorder}" BorderThickness="0,0,0,1" Padding="0,0,0,16">
+                        <StackPanel Spacing="4">
+                            <Grid ColumnDefinitions="*,Auto"><TextBlock x:Name="groupTitle" FontSize="20" FontWeight="SemiBold" /><TextBlock x:Name="groupChangeCount" Grid.Column="1" FontSize="12" Classes="tunMuted" VerticalAlignment="Center" /></Grid>
+                            <TextBlock x:Name="groupDescription" FontSize="14" Classes="tunMuted" TextWrapping="Wrap" LineHeight="21" />
+                        </StackPanel>
+                    </Border>
+                    <WrapPanel x:Name="platformBar" Margin="0,12,0,0">
+                        <Border x:Name="platformBadge" BorderBrush="{DynamicResource TunBorder}" BorderThickness="1" CornerRadius="12" Padding="8,0" VerticalAlignment="Center" Margin="0,0,8,0"><TextBlock x:Name="platformLabel" FontSize="12" /></Border>
+                        <CheckBox x:Name="showOtherPlatforms" />
+                    </WrapPanel>
+                    <Border x:Name="templateBanner" IsVisible="{Binding IsTemplateOwned}" BorderBrush="{DynamicResource WorkspaceWarning}" BorderThickness="1" CornerRadius="6" Padding="16,12" Margin="0,16,0,0">
+                        <StackPanel Spacing="8"><TextBlock x:Name="templateNote" FontSize="12" TextWrapping="Wrap" /><Button x:Name="jumpToTemplate" HorizontalAlignment="Left" /></StackPanel>
+                    </Border>
+                    <Border x:Name="statusNotice" IsVisible="False" Background="{DynamicResource TunSurface}" BorderBrush="{DynamicResource TunBorder}" BorderThickness="1" CornerRadius="6" Padding="16,12" Margin="0,16,0,0"><TextBlock x:Name="noticeText" FontSize="12" TextWrapping="Wrap" LineHeight="20" /></Border>
+                    <Border x:Name="errorNotice" IsVisible="False" BorderBrush="{DynamicResource WorkspaceDanger}" BorderThickness="1" CornerRadius="6" Padding="16,12" Margin="0,16,0,0"><StackPanel Spacing="4"><TextBlock x:Name="errorSummary" FontSize="12" Foreground="{DynamicResource WorkspaceDanger}" TextWrapping="Wrap" /><Button x:Name="jumpToError" Classes="tunLink" HorizontalAlignment="Left" /></StackPanel></Border>
+                    <StackPanel x:Name="editorBody" />
+                </StackPanel>
             </ScrollViewer>
-            <ScrollViewer x:Name="editorScroll" Grid.Column="1" HorizontalScrollBarVisibility="Disabled" Margin="0,0,16,0">
-                <StackPanel x:Name="editorBody" Spacing="12" />
-            </ScrollViewer>
-            <Border x:Name="helpDock" Grid.Column="2" BorderBrush="{DynamicResource WorkspaceBorder}" BorderThickness="1,0,0,0" Padding="16,0,0,0">
-                <ScrollViewer HorizontalScrollBarVisibility="Disabled">
-                    <StackPanel x:Name="helpBody" Spacing="10" />
-                </ScrollViewer>
+            <Border x:Name="helpDock" Grid.Column="4" BorderBrush="{DynamicResource TunBorder}" BorderThickness="1,0,0,0" Padding="20,4,0,28">
+                <ScrollViewer HorizontalScrollBarVisibility="Disabled"><StackPanel x:Name="helpBody" /></ScrollViewer>
             </Border>
         </Grid>
-        <StackPanel Grid.Row="2" Spacing="8" Margin="0,12,0,0">
-            <TextBlock x:Name="statusText" TextWrapping="Wrap" FontSize="12" />
-            <WrapPanel x:Name="footerActions" HorizontalAlignment="Right">
-                <Button x:Name="jumpToError" Margin="0,0,8,8" />
-                <Button x:Name="resetGroup" Margin="0,0,8,8" />
-                <Button x:Name="discardChanges" Margin="0,0,8,8" />
-                <Button x:Name="saveChanges" Margin="0,0,0,8" Classes="primary" />
-            </WrapPanel>
-        </StackPanel>
-        <Border x:Name="helpOverlay" Grid.RowSpan="3" IsVisible="False" HorizontalAlignment="Right"
-                Background="{DynamicResource WorkspaceSurface}" BorderBrush="{DynamicResource WorkspaceBorder}"
-                BorderThickness="1" CornerRadius="6" Padding="16" ZIndex="10">
-            <DockPanel>
-                <Button x:Name="closeHelp" DockPanel.Dock="Top" HorizontalAlignment="Right" Margin="0,0,0,10" />
-                <ScrollViewer HorizontalScrollBarVisibility="Disabled">
-                    <StackPanel x:Name="overlayBody" Spacing="10" />
-                </ScrollViewer>
-            </DockPanel>
+        <Border Grid.Row="2" BorderBrush="{DynamicResource TunBorder}" BorderThickness="0,1,0,0">
+            <Grid x:Name="footerLayout" ColumnDefinitions="*,Auto" Margin="24,0" MinHeight="76">
+                <StackPanel x:Name="footerState" VerticalAlignment="Center" Spacing="3" Margin="0,0,16,0">
+                    <StackPanel Orientation="Horizontal" Spacing="8"><Ellipse x:Name="footerDot" Width="7" Height="7" Fill="{DynamicResource TunMuted}" VerticalAlignment="Center" /><TextBlock x:Name="statusText" FontSize="14" TextWrapping="Wrap" /></StackPanel>
+                    <TextBlock x:Name="statusHint" FontSize="12" Classes="tunMuted" TextWrapping="Wrap" />
+                </StackPanel>
+                <Grid x:Name="footerActions" Grid.Column="1" ColumnDefinitions="Auto,8,Auto,8,Auto" VerticalAlignment="Center">
+                    <Button x:Name="resetGroup" /><Button Grid.Column="2" x:Name="discardChanges" /><Button Grid.Column="4" x:Name="saveChanges" Classes="tunPrimary" />
+                </Grid>
+            </Grid>
         </Border>
+        <Grid x:Name="helpOverlay" Grid.RowSpan="3" IsVisible="False" ZIndex="10">
+            <Border x:Name="helpBackdrop" Background="{DynamicResource TunBackdrop}" />
+            <Border x:Name="helpSheet" HorizontalAlignment="Right" Background="{DynamicResource TunBackground}"
+                    BorderBrush="{DynamicResource TunBorder}" BorderThickness="1,0,0,0" KeyboardNavigation.TabNavigation="Cycle">
+                <DockPanel>
+                    <Border DockPanel.Dock="Top" Background="{DynamicResource TunSurface}" BorderBrush="{DynamicResource TunBorder}" BorderThickness="0,0,0,1" Padding="20,12">
+                        <Grid ColumnDefinitions="*,Auto"><TextBlock x:Name="helpDrawerTitle" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" /><Button x:Name="closeHelp" Grid.Column="1" Classes="tunGhost" /></Grid>
+                    </Border>
+                    <ScrollViewer HorizontalScrollBarVisibility="Disabled" Padding="20,14,20,32">
+                        <StackPanel x:Name="overlayBody" />
+                    </ScrollViewer>
+                </DockPanel>
+            </Border>
+        </Grid>
     </Grid>
 </UserControl>

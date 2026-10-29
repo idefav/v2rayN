@@ -23,19 +23,21 @@ jobs:
         run: |
           dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/native-review/zh-light --primer-only --language=zh-Hans --theme=light --width=1440
           dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/native-review/en-dark --primer-only --language=en --theme=dark --width=600
+          dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/native-review/tun-zh-light --tun-settings-only --language=zh-Hans --theme=light --width=1440
+          dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/native-review/tun-en-dark --tun-settings-only --language=en --theme=dark --width=600
       - name: Verify native evidence
         run: |
           python3 - <<'PY'
           import json,pathlib
-          for name in ['zh-light','en-dark']:
+          for name in ['zh-light','en-dark','tun-zh-light','tun-en-dark']:
               path=pathlib.Path('artifacts/native-review')/name
               report=json.loads((path/'manifest.json').read_text())
               assert report['renderer']=='native'
-              assert report['actualTheme']==('Light' if name=='zh-light' else 'Dark')
+              assert report['actualTheme']==('Light' if name.endswith('zh-light') else 'Dark')
               assert report['actualWidth']>0 and report['actualHeight']>0
               assert not (path/'failure.txt').exists()
               assert any('AppKit NSWindow' in check for check in report['checks'])
-              assert len(report['screenshots'])>=17
+              assert len(report['screenshots'])>=(10 if name.startswith('tun-') else 17)
               print(name, len(report['checks']), 'native checks passed', report['actualTheme'], report['actualWidth'], report['actualHeight'])
           PY
       - uses: actions/upload-artifact@v7

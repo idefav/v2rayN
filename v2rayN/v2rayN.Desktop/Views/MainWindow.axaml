@@ -47,6 +47,7 @@
             </Border>
         <DockPanel Grid.Column="1" Margin="24,0,24,12">
             <DockPanel x:Name="pageHeader" Background="Transparent" MinHeight="56" Margin="0,0,0,12" DockPanel.Dock="Top" chrome:WindowDecorationProperties.ElementRole="TitleBar">
+                <Button x:Name="btnTunSettingsBack" DockPanel.Dock="Left" IsVisible="False" Classes="rowAction" VerticalAlignment="Center" chrome:WindowDecorationProperties.ElementRole="User" />
                 <Button x:Name="btnAppearance" DockPanel.Dock="Right" VerticalAlignment="Center" Width="36" Padding="8" chrome:WindowDecorationProperties.ElementRole="User" />
                 <Menu x:Name="legacyMenu" IsVisible="False" Margin="0,0,112,0" DockPanel.Dock="Right" VerticalAlignment="Center" chrome:WindowDecorationProperties.ElementRole="User">
                     <MenuItem Header="{x:Static ws:WorkspaceText.More}">
