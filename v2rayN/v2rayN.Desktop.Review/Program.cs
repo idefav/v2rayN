@@ -596,8 +596,15 @@ public partial class ReviewApp : v2rayN.Desktop.App
             var reloaded = ConfigHandler.LoadConfig();
             Check(UpdateSources.Repository(reloaded!, ECoreType.sing_box) == "SagerNet/sing-box", "defaults persist after reloading config");
             await _main.OpenSettingsAsync("Updates");
-            await Task.Delay(250);
-            Check(_vm.CheckUpdateViewModel.CheckUpdateModels.First(m => m.CoreType == ECoreType.v2rayN).CurrentVersion is not (null or "—" or "0.0.0"), "application version falls back to assembly version without a CI release tag");
+            var expectedAppVersion = AppUpdateProvenance.CurrentVersion();
+            var versionDeadline = DateTime.UtcNow.AddSeconds(5);
+            // Source-change notifications rebuild the rows and schedule their versions on
+            // the UI thread. Wait for that state instead of racing a slow CI runner.
+            while (_vm.CheckUpdateViewModel.CheckUpdateModels.First(m => m.CoreType == ECoreType.v2rayN).CurrentVersion != expectedAppVersion
+                && DateTime.UtcNow < versionDeadline) await Task.Delay(50);
+            var displayedAppVersion = _vm.CheckUpdateViewModel.CheckUpdateModels.First(m => m.CoreType == ECoreType.v2rayN).CurrentVersion;
+            Check(UpdateSources.TryVersion(expectedAppVersion, out _) && displayedAppVersion == expectedAppVersion,
+                $"application version displays the running build after source refresh (expected {expectedAppVersion}, actual {displayedAppVersion ?? "null"})");
             Check(!_vm.BlNewUpdate, "saving sources does not claim a new update is available");
             await Task.Delay(5500); // Let save notifications expire before capturing the table.
             await CaptureAsync("update-sources-list", "Update list with repositories", _main);
