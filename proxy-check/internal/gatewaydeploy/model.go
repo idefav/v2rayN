@@ -1,4 +1,6 @@
-// Package gatewaydeploy implements the bounded, root-owned deployment protocol.
+//go:build linux
+
+// Package gatewaydeploy implements the bounded, root-owned Linux deployment protocol.
 // It never accepts arbitrary commands, unit names, installation paths or URLs.
 package gatewaydeploy
 

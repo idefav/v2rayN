@@ -1,3 +1,5 @@
+//go:build linux
+
 // udpgw-deploy is uploaded over pinned SFTP and runs only on the target Linux.
 package main
 

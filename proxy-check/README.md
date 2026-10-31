@@ -16,6 +16,8 @@ Avalonia 左侧“代理检查”检查当前运行状态，不启动隔离节�
 
 需要 .NET 10 与 Go 1.26。先 `dotnet publish v2rayN/v2rayN.Desktop -c Release -r osx-arm64 --self-contained -o /tmp/v2rayn-check`，再在此目录执行 `CGO_ENABLED=0 go build -trimpath -o /tmp/v2rayn-check/proxy-check .`。运行时无需 Go。其他平台设置匹配的 GOOS/GOARCH，Windows 文件名为 `proxy-check.exe`。CI 的共享桌面构建流程自动打包组件；其他手动构建必须同样复制它。
 
+远端网关部署助手 `cmd/udpgw-deploy` 与 `internal/gatewaydeploy` 仅支持 Linux，并使用 `linux` 构建约束；它们依赖 Linux 文件权限、进程信息和 systemd。所有桌面平台的安装包仍通过 `packaging/build-udpgw-helpers.sh` 交叉编译并携带 Linux amd64/arm64 两个助手，上传到服务器后执行。`go test ./...` 在各平台测试本地 worker，在 Linux 上同时执行部署助手测试。
+
 组件不监听端口；每进程从 stdin 接收一个最长 64 KiB 的版本 1 JSON 请求，向 stdout 返回一个版本 1 JSON 结果。字段为 `version,kind,target,proxy,family,query,timeout`；kind 支持 `tcp,http,https,h3,stun,dns-udp,dns-tcp`，family 为 `4/6/空`，query 为 `A/AAAA/NXDOMAIN/WHOAMI`。结果包含 `state,elapsed,egress,protocol,evidence,error`，elapsed 单位为毫秒。凭证只经 stdin，不写入报告。
 
 ## 验证正在运行的 macOS 客户端
