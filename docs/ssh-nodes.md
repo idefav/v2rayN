@@ -154,10 +154,15 @@ settings. SSH always selects sing-box, including when the default core is Xray.
 For a policy group or proxy chain containing SSH, select sing-box for the group;
 Xray groups report an unsupported-protocol error.
 
-SSH forwards TCP only. Enabling TUN does not add UDP-over-SSH support. UDP traffic
-routed to SSH fails rather than falling back to a direct connection. Simple
-proxied UDP DNS servers are generated as TCP DNS servers at the same address and
-port. Proxied custom UDP/QUIC/HTTP3 DNS must be changed to TCP/TLS/HTTPS.
+SSH defaults to TCP. Advanced settings can enable UDP using either the custom
+SSH UDP extension (modified sshd with `AllowUdpForwarding yes`) or a tun2proxy
+gateway reached via standard SSH TCP forwarding. The gateway defaults to
+`127.0.0.1:7300` on the server side. Old UDP-enabled nodes keep custom mode.
+Both modes require the bundled dual-mode sing-box core; neither silently falls
+back to direct UDP. See the deployment guide above for ForwardProxy, permissions
+and gateway egress requirements. With UDP disabled, simple proxied UDP DNS servers
+are converted to TCP at the same endpoint; custom UDP/QUIC/HTTP3 DNS must use a
+TCP-capable transport. With either UDP mode enabled, supported UDP DNS is retained.
 
 Generated sing-box configurations resolve `.local` names through local mDNS
 (the system resolver on macOS) and connect directly on the LAN, including names
@@ -170,7 +175,7 @@ Full custom configuration templates retain their own DNS and routing rules.
 Private-key contents are not copied into profiles. Only the local file path is
 saved. Passwords/passphrases follow existing profile-storage and backup behavior;
 they are excluded from SSH editor error messages. Paths must exist on the machine
-running the core. SSH Agent, SSH share URIs, SSH certificates, custom UDP channels
+running the core. SSH Agent, SSH share URIs, SSH certificates
 and automatic migration of custom JSON profiles are not supported.
 
 ## Development and verification

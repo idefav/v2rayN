@@ -14,6 +14,9 @@ public partial class AddSshServerViewModel : MyReactiveObject, ICloseable
     [Reactive] public partial string Password { get; set; }
     [Reactive] public partial bool PrivateKeyAuth { get; set; }
     [Reactive] public partial bool UdpForwarding { get; set; }
+    [Reactive] public partial int UdpModeIndex { get; set; }
+    [Reactive] public partial string UdpGateway { get; set; }
+    [Reactive] public partial bool IsUdpGateway { get; set; }
     [Reactive] public partial bool AllowHttp3 { get; set; }
     [Reactive] public partial string PrivateKeyPath { get; set; }
     [Reactive] public partial string Passphrase { get; set; }
@@ -41,7 +44,8 @@ public partial class AddSshServerViewModel : MyReactiveObject, ICloseable
     private readonly ISshConnectionTestService _testService;
     private long _testRevision;
 
-    public AddSshServerViewModel(ProfileItem item, ISshConnectionTestService? testService = null)
+    public AddSshServerViewModel(ProfileItem item, ISshConnectionTestService? testService = null,
+        ISshUdpCapabilityService? capabilityService = null, ISshGatewayDeploymentService? deploymentService = null)
     {
         _testService = testService ?? new SshConnectionTestService();
         _config = AppManager.Instance.Config;
@@ -54,6 +58,8 @@ public partial class AddSshServerViewModel : MyReactiveObject, ICloseable
         Password = item.Password;
         PrivateKeyAuth = extra.SshPrivateKeyAuth ?? false;
         UdpForwarding = extra.SshUdpForwarding ?? false;
+        UdpModeIndex = SshUdpPolicy.Mode(extra) switch { SshUdpPolicy.Custom => 0, SshUdpPolicy.Tun2Proxy => 1, _ => -1 };
+        UdpGateway = SshUdpPolicy.Gateway(extra);
         AllowHttp3 = extra.SshAllowHttp3 ?? false;
         PrivateKeyPath = extra.SshPrivateKeyPath ?? "";
         Passphrase = extra.SshPrivateKeyPassphrase ?? "";
@@ -75,6 +81,11 @@ public partial class AddSshServerViewModel : MyReactiveObject, ICloseable
         this.WhenAnyValue(x => x.Password, x => x.PrivateKeyAuth, x => x.PrivateKeyPath).Subscribe(_ => InvalidateTest());
         this.WhenAnyValue(x => x.Passphrase, x => x.HostKey).Subscribe(_ => InvalidateTest());
         this.WhenAnyValue(x => x.UdpForwarding, x => x.AllowHttp3).Subscribe(_ => InvalidateTest());
+        this.WhenAnyValue(x => x.UdpForwarding, x => x.UdpModeIndex, x => x.UdpGateway).Subscribe(_ =>
+        {
+            IsUdpGateway = UdpForwarding && UdpModeIndex == 1;
+            InvalidateTest();
+        });
         TestCmd = ReactiveCommand.CreateFromTask(() => RunAsync(TestConnectionAsync));
         StopTestCmd = ReactiveCommand.Create(() => { if (IsTesting) _operation?.Cancel(); });
         SaveCmd = ReactiveCommand.CreateFromTask(() => RunAsync(SaveAsync));
@@ -87,15 +98,18 @@ public partial class AddSshServerViewModel : MyReactiveObject, ICloseable
             var path = await BrowseKeyInteraction.HandleSafe(RxVoid.Default);
             if (!_closed && !string.IsNullOrEmpty(path)) PrivateKeyPath = path;
         });
+        InitializeUdp(capabilityService, deploymentService);
     }
 
     public void CancelOperation()
     {
         _closed = true;
         _operation?.Cancel();
+        _udpDetection?.Cancel();
         _setupDialog?.Cancel();
         Password = "";
         Passphrase = "";
+        SudoPassword = "";
     }
 
     private async Task SetupKeyAsync()
@@ -221,6 +235,7 @@ public partial class AddSshServerViewModel : MyReactiveObject, ICloseable
         _trustedAddress = address;
         _trustedPort = port;
         RefreshTrust();
+        ScheduleUdpDetection();
     }
 
     public ProfileItem CreateDraftSnapshot()
@@ -244,6 +259,10 @@ public partial class AddSshServerViewModel : MyReactiveObject, ICloseable
         {
             SshPrivateKeyAuth = PrivateKeyAuth,
             SshUdpForwarding = UdpForwarding,
+            SshUdpMode = UdpModeIndex switch { 0 => SshUdpPolicy.Custom, 1 => SshUdpPolicy.Tun2Proxy, _ => "invalid" },
+            SshUdpGateway = UdpGateway.Trim(),
+            SshUdpCapability = _udpCapability,
+            SshUdpDeployment = _udpDeployment,
             SshAllowHttp3 = UdpForwarding && AllowHttp3,
             SshPrivateKeyPath = PrivateKeyAuth ? PrivateKeyPath : null,
             SshPrivateKeyPassphrase = PrivateKeyAuth ? Passphrase : null,
@@ -256,6 +275,10 @@ public partial class AddSshServerViewModel : MyReactiveObject, ICloseable
 
     private async Task SaveAsync()
     {
+        if (UdpForwarding && UdpModeIndex == 0 && !UdpModes[0].Enabled &&
+            (_newNode || SelectedSource.GetProtocolExtra().SshUdpForwarding != true ||
+             SshUdpPolicy.Mode(SelectedSource.GetProtocolExtra()) != SshUdpPolicy.Custom))
+        { Status = UdpCapabilityStatus; return; }
         if (PrivateKeyAuth && _setupKey?.Path == PrivateKeyPath)
         {
             try { using var key = _keyStore.Open(_setupKey, Passphrase); }

@@ -6,7 +6,7 @@ import pathlib
 import sys
 
 core = pathlib.Path(sys.argv[1])
-manifest = dict(SchemaVersion=1, Version="1.14.3-ssh-udp.1", Sha256=hashlib.sha256(core.read_bytes()).hexdigest())
+manifest = dict(SchemaVersion=1, Version="1.14.3-ssh-udp.3", Sha256=hashlib.sha256(core.read_bytes()).hexdigest())
 libraries = {}
 for name in ['libcronet.so', 'libcronet.dll']:
     library = core.parent / name

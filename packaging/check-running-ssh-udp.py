@@ -166,10 +166,14 @@ def check(options):
         and manifest.get("Sha256", "").lower() == digest
     )
     ssh_outbounds = [
-        {key: item[key] for key in ("tag", "server", "server_port", "udp_forwarding") if key in item}
+        {key: item[key] for key in ("tag", "server", "server_port", "udp_forwarding", "udp_mode", "udp_gateway") if key in item}
         for item in config.get("outbounds", []) if item.get("type") == "ssh"
     ]
-    ssh_tags = {item.get("tag") for item in ssh_outbounds if item.get("udp_forwarding") is True}
+    ssh_tags = {
+        item.get("tag") for item in ssh_outbounds
+        if item.get("udp_mode") in ("custom", "tun2proxy")
+        or (not item.get("udp_mode") and item.get("udp_forwarding") is True)
+    }
     get_api = api_client(config)
     live_version = get_api("/version").get("version")
     mode = get_api("/configs").get("mode")

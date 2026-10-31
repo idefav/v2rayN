@@ -1,8 +1,15 @@
 namespace ServiceLib.Resx;
 
-public static class SshStrings
+public static partial class SshStrings
 {
-    public static string UdpForwarding => ProxyCheckText.T("UDP over SSH（需要专用核心与远端 UDP 扩展）", "UDP over SSH (requires the bundled core and remote UDP extension)");
+    public static string UdpForwarding => ProxyCheckText.T("启用 SSH UDP 转发", "Enable SSH UDP forwarding");
+    public static string UdpMode => ProxyCheckText.T("UDP 转发模式", "UDP forwarding mode");
+    public static string UdpCustom => ProxyCheckText.T("自定义 SSH UDP 扩展", "Custom SSH UDP extension");
+    public static string UdpTun2Proxy => ProxyCheckText.T("tun2proxy 网关", "tun2proxy gateway");
+    public static string UdpGateway => ProxyCheckText.T("网关地址（从 SSH 服务端访问）", "Gateway address (as reached by the SSH server)");
+    public static string UdpModeNotice => ProxyCheckText.T("自定义模式需要配套 OpenSSH UDP 扩展。tun2proxy 模式需要 udpgw-server 和 TCP 转发权限；网关连接受服务端 ForwardProxy 影响，网关 UDP 出口需单独配置。两种模式均需要配套核心。", "Custom mode requires the OpenSSH UDP extension. tun2proxy requires udpgw-server and TCP forwarding permission; ForwardProxy affects gateway access and the gateway's UDP egress is configured separately. Both modes require the bundled core.");
+    public static string InvalidUdpMode => ProxyCheckText.T("请选择有效的 SSH UDP 转发模式。", "Select a valid SSH UDP forwarding mode.");
+    public static string InvalidUdpGateway => ProxyCheckText.T("网关地址格式应为主机:端口或 [IPv6]:端口，端口范围 1–65535。", "Gateway must be host:port or [IPv6]:port, with a port from 1 to 65535.");
     public static string AllowHttp3 => ProxyCheckText.T("允许 HTTP3：忽略当前规则集的默认“阻断udp443”规则", "Allow HTTP3: skip the routing set's default UDP 443 block");
     public static string UdpNotice => ProxyCheckText.T("默认关闭。开启后通过 SSH 传输 UDP，失败不会回退直连。允许 HTTP3 只跳过未附加目标条件的内置 UDP 443 拦截；其他自定义拒绝规则保留。", "Disabled by default. UDP travels over SSH with no direct fallback. HTTP3 bypasses only the unqualified built-in UDP 443 block; other custom reject rules are preserved.");
     private static string Get(string name) => ResUI.ResourceManager.GetString("Ssh" + name, ResUI.Culture) ?? name;
@@ -94,5 +101,5 @@ public static class SshStrings
     public static string Fetching => ResUI.ResourceManager.GetString("SshFetching", ResUI.Culture) ?? "SshFetching";
     public static string Cancelled => ResUI.ResourceManager.GetString("SshCancelled", ResUI.Culture) ?? "SshCancelled";
     public static string DnsUnsupported => ResUI.ResourceManager.GetString("SshDnsUnsupported", ResUI.Culture) ?? "SshDnsUnsupported";
-    public static string TcpOnly => ResUI.ResourceManager.GetString("SshTcpOnly", ResUI.Culture) ?? "SshTcpOnly";
+    public static string TcpOnly => ProxyCheckText.T("默认代理 TCP；UDP 可选择自定义 SSH 扩展或 tun2proxy 网关。", "TCP is proxied by default; UDP can use the custom SSH extension or a tun2proxy gateway.");
 }

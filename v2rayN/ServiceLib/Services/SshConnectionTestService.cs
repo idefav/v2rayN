@@ -80,7 +80,20 @@ public sealed class SshConnectionTestService(string? corePath = null, string? te
         return result;
     }
 
-    private async Task<int> TestProxyAsync(ProfileItem node, Uri url, CancellationToken token)
+    private Task<int> TestProxyAsync(ProfileItem node, Uri url, CancellationToken token)
+        => RunProxyAsync(node, async (port, password, ct) =>
+        {
+            using var handler = CreateHttpHandler();
+            handler.UseProxy = true;
+            handler.Proxy = new WebProxy($"socks5://127.0.0.1:{port}") { Credentials = new NetworkCredential("probe", password) };
+            handler.UseCookies = false;
+            handler.AllowAutoRedirect = false;
+            using var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(5) };
+            using var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
+            return (int)response.StatusCode;
+        }, token);
+
+    internal async Task<T> RunProxyAsync<T>(ProfileItem node, Func<int, string, CancellationToken, Task<T>> probe, CancellationToken token)
     {
         var executable = corePath ?? CoreInfoManager.Instance.GetCoreExecFile(CoreInfoManager.Instance.GetCoreInfo(ECoreType.sing_box), out _);
         if (string.IsNullOrEmpty(executable) || !File.Exists(executable)) throw new SshSetupException("coreMissing");
@@ -130,16 +143,9 @@ public sealed class SshConnectionTestService(string? corePath = null, string? te
                 }
                 catch (OperationCanceledException) when (!token.IsCancellationRequested) { throw new SshSetupException("coreStart"); }
             }
-            using var handler = CreateHttpHandler();
-            handler.UseProxy = true;
-            handler.Proxy = new WebProxy($"socks5://127.0.0.1:{port}") { Credentials = new NetworkCredential("probe", password) };
-            handler.UseCookies = false;
-            handler.AllowAutoRedirect = false;
-            using var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(5) };
             try
             {
-                using var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, token);
-                return (int)response.StatusCode;
+                return await probe(port, password, token);
             }
             catch (HttpRequestException) when (process.HasExited) { throw new SshSetupException("coreStart"); }
         }

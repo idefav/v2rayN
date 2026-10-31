@@ -115,6 +115,9 @@ public partial class CoreConfigSingboxService
                 case EConfigType.SSH:
                     outbound.user = _node.Username;
                     outbound.udp_forwarding = protocolExtra.SshUdpForwarding == true ? true : null;
+                    outbound.udp_mode = protocolExtra.SshUdpForwarding == true ? SshUdpPolicy.Mode(protocolExtra) : null;
+                    outbound.udp_gateway = protocolExtra.SshUdpForwarding == true && SshUdpPolicy.Mode(protocolExtra) == SshUdpPolicy.Tun2Proxy
+                        ? SshUdpPolicy.Gateway(protocolExtra) : null;
                     if (protocolExtra.SshPrivateKeyAuth == true)
                     {
                         outbound.private_key_path = protocolExtra.SshPrivateKeyPath;

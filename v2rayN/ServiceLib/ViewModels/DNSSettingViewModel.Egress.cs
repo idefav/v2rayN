@@ -39,7 +39,7 @@ public partial class DNSSettingViewModel
             .Select(n => new DnsNodeChoice(n.IndexId, n.Remarks + " · " + n.ConfigType)));
         var current = nodes.FirstOrDefault(n => n.IndexId == _config.IndexId);
         NodeCapability = current?.ConfigType == EConfigType.SSH
-            ? (current.GetProtocolExtra().SshUdpForwarding == true ? "SSH UDP 已配置；服务端与端到端能力未验证。" : "SSH UDP 未开启；代理 UDP 不可用。")
+            ? (current.GetProtocolExtra().SshUdpForwarding == true ? (SshUdpPolicy.Mode(current.GetProtocolExtra()) == SshUdpPolicy.Tun2Proxy ? "SSH tun2proxy 网关已配置；UDP 数据及出口需实际验证。" : "SSH 自定义 UDP 扩展已配置；服务端与端到端能力未验证。") : "SSH UDP 未开启；代理 UDP 不可用。")
             : "UDP 能力未验证；以节点协议与端到端检测为准。";
         this.RaisePropertyChanged(nameof(NodeCapability));
         this.RaisePropertyChanged(nameof(RuntimeSummary));

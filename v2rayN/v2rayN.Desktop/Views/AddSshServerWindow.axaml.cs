@@ -29,6 +29,9 @@ public partial class AddSshServerWindow : WindowBase<AddSshServerViewModel>
             this.Bind(ViewModel, vm => vm.Passphrase, v => v.txtPassphrase.Text).DisposeWith(disposables);
             this.Bind(ViewModel, vm => vm.PrivateKeyAuth, v => v.chkPrivateKey.IsChecked).DisposeWith(disposables);
             this.Bind(ViewModel, vm => vm.UdpForwarding, v => v.chkUdpForwarding.IsChecked).DisposeWith(disposables);
+            this.Bind(ViewModel, vm => vm.UdpModeIndex, v => v.cmbUdpMode.SelectedIndex).DisposeWith(disposables);
+            this.Bind(ViewModel, vm => vm.UdpGateway, v => v.txtUdpGateway.Text).DisposeWith(disposables);
+            this.Bind(ViewModel, vm => vm.SudoPassword, v => v.txtSudoPassword.Text).DisposeWith(disposables);
             this.Bind(ViewModel, vm => vm.AllowHttp3, v => v.chkAllowHttp3.IsChecked).DisposeWith(disposables);
             this.OneWayBind(ViewModel, vm => vm.Status, v => v.txtStatus.Text).DisposeWith(disposables);
             this.WhenAnyValue(v => v.ViewModel.LastTestResult).Subscribe(result =>
@@ -63,6 +66,11 @@ public partial class AddSshServerWindow : WindowBase<AddSshServerViewModel>
             this.BindCommand(ViewModel, vm => vm.TrustCmd, v => v.btnTrust).DisposeWith(disposables);
             this.BindCommand(ViewModel, vm => vm.BrowseCmd, v => v.btnBrowse).DisposeWith(disposables);
             this.BindCommand(ViewModel, vm => vm.SetupKeyCmd, v => v.btnSetupKey).DisposeWith(disposables);
+            this.BindCommand(ViewModel, vm => vm.DetectUdpCmd, v => v.btnDetectUdp).DisposeWith(disposables);
+            this.BindCommand(ViewModel, vm => vm.DeployGatewayCmd, v => v.btnDeployGateway).DisposeWith(disposables);
+            this.BindCommand(ViewModel, vm => vm.StopOperationCmd, v => v.btnStopOperation).DisposeWith(disposables);
+            ViewModel.ConfirmDeploymentInteraction.RegisterHandler(async interaction =>
+                interaction.SetOutput(await UI.ShowYesNo(interaction.Input, SshStrings.DeployGateway) == ButtonResult.Yes)).DisposeWith(disposables);
             ViewModel.SetupKeyInteraction.RegisterHandler(async interaction =>
             {
                 var window = new SshKeySetupWindow(interaction.Input);
@@ -73,6 +81,7 @@ public partial class AddSshServerWindow : WindowBase<AddSshServerViewModel>
                 interaction.SetOutput(await UI.OpenFileDialog(null))).DisposeWith(disposables);
             ViewModel.ConfirmHostKeyInteraction.RegisterHandler(async interaction =>
                 interaction.SetOutput(await UI.ShowYesNo(interaction.Input, WorkspaceText.Trust) == ButtonResult.Yes)).DisposeWith(disposables);
+            ViewModel.ActivateUdpCapabilities();
         });
     }
 

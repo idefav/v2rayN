@@ -6,6 +6,10 @@ public record ProtocolExtraItem
     public bool? SshPrivateKeyAuth { get; init; }
     public string? SshPrivateKeyPath { get; init; }
     public bool? SshUdpForwarding { get; init; }
+    public string? SshUdpMode { get; init; }
+    public string? SshUdpGateway { get; init; }
+    public SshUdpCapabilitySnapshot? SshUdpCapability { get; init; }
+    public SshUdpDeploymentRecord? SshUdpDeployment { get; init; }
     public bool? SshAllowHttp3 { get; init; }
     public string? SshPrivateKeyPassphrase { get; init; }
     public string? SshHostKey { get; init; }

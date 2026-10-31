@@ -138,6 +138,7 @@ jobs:
         go build -trimpath -ldflags='-s -w' -o "$Output/$worker" .
         test -s "$Output/$worker"
         if [[ "$GOOS" != windows ]]; then chmod +x "$Output/$worker"; fi
+        bash ../packaging/build-udpgw-helpers.sh "$Output"
 
     - name: Verify worker tests
       shell: bash

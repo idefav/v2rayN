@@ -13,6 +13,7 @@
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                 <Button x:Name="btnTest" Content="{x:Static resx:SshStrings.TestConnection}" MinWidth="90" Margin="4" />
                 <Button x:Name="btnStopTest" Content="{x:Static resx:SshStrings.StopTest}" MinWidth="90" Margin="4" Visibility="Collapsed" />
+                <Button x:Name="btnStopOperation" Content="{x:Static resx:SshStrings.StopOperation}" MinWidth="90" Margin="4" Visibility="Collapsed" />
                 <Button x:Name="btnSave" Content="{x:Static resx:ResUI.TbConfirm}" MinWidth="90" Margin="4" />
                 <Button x:Name="btnCancel" Content="{x:Static resx:ResUI.TbCancel}" MinWidth="90" Margin="4" />
             </StackPanel>
@@ -50,6 +51,24 @@
                     <Button x:Name="btnTrust" Content="{x:Static resx:SshStrings.Trust}" />
                 </WrapPanel>
                 <TextBlock x:Name="txtStatus" TextWrapping="Wrap" Margin="0,6,0,12" />
+                <CheckBox x:Name="chkUdpForwarding" Content="{x:Static resx:SshStrings.UdpForwarding}" Margin="0,6" />
+                <TextBlock Text="{x:Static resx:SshStrings.UdpMode}" />
+                <ComboBox x:Name="cmbUdpMode" Margin="0,4" DisplayMemberPath="Label">
+                    <ComboBox.ItemContainerStyle><Style TargetType="ComboBoxItem"><Setter Property="IsEnabled" Value="{Binding Enabled}" /></Style></ComboBox.ItemContainerStyle>
+                </ComboBox>
+                <Button x:Name="btnDetectUdp" Content="{x:Static resx:SshStrings.DetectUdp}" HorizontalAlignment="Left" Margin="0,4" />
+                <TextBlock x:Name="txtUdpCapability" TextWrapping="Wrap" Margin="0,4" />
+                <StackPanel x:Name="udpGatewayPanel">
+                    <TextBlock Text="{x:Static resx:SshStrings.UdpGateway}" TextWrapping="Wrap" />
+                    <TextBox x:Name="txtUdpGateway" Margin="0,4" />
+                </StackPanel>
+                <TextBlock Text="{x:Static resx:SshStrings.SudoPassword}" TextWrapping="Wrap" Margin="0,4" />
+                <PasswordBox x:Name="txtSudoPassword" />
+                <Button x:Name="btnDeployGateway" Content="{x:Static resx:SshStrings.DeployGateway}" HorizontalAlignment="Left" Margin="0,4" />
+                <TextBlock x:Name="txtDeploymentStatus" TextWrapping="Wrap" Margin="0,4" />
+                <TextBlock Text="{x:Static resx:SshStrings.UdpModeNotice}" TextWrapping="Wrap" Margin="0,4" />
+                <CheckBox x:Name="chkAllowHttp3" Content="{x:Static resx:SshStrings.AllowHttp3}" Margin="0,6" />
+                <TextBlock Text="{x:Static resx:SshStrings.UdpNotice}" TextWrapping="Wrap" />
             </StackPanel>
         </ScrollViewer>
     </DockPanel>

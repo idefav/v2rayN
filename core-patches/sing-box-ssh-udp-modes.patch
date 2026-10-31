@@ -1,0 +1,1978 @@
+diff --git a/docs/configuration/outbound/ssh.md b/docs/configuration/outbound/ssh.md
+index 8ef49b9..f9222e8 100644
+--- a/docs/configuration/outbound/ssh.md
++++ b/docs/configuration/outbound/ssh.md
+@@ -26,6 +26,8 @@
+   "cipher": [],
+   "mac": [],
+   "kex_algorithm": [],
++  "udp_forwarding": false,
++  "udp_mode": "disabled",
+ 
+   ... // Dial Fields
+ }
+@@ -93,6 +95,53 @@ Allowed MAC algorithms. Default values are used if empty.
+ 
+ Allowed key exchange algorithms. Default values are used if empty.
+ 
++#### udp_mode
++
++Fork extension. `disabled` (default), `custom`, or `tun2proxy`. An explicit mode
++takes precedence over `udp_forwarding`; unknown modes fail configuration checks.
++
++- `custom`: uses `udp-forwarding-v1@idefav.github.io` and
++  `direct-udpip-v1@idefav.github.io`. Requires the modified OpenSSH server with
++  `AllowUdpForwarding yes`. Target ACLs and supported SOCKS5 ForwardProxy UDP
++  forwarding remain enforced by that server.
++- `tun2proxy`: connects to a tun2proxy `udpgw-server` through standard SSH
++  `direct-tcpip`. Requires TCP forwarding permission and a reachable gateway,
++  including with stock OpenSSH. It does not require the private UDP extension.
++  This wire format is distinct from BadVPN and SagerNet UDP over TCP.
++
++Neither mode falls back to direct UDP or to the other mode. Both keep datagram
++boundaries and support multiple destinations in one PacketConn without changing
++the TUN NAT mapping setting. Each destination association owns an isolated SSH
++transport, bounded to 64 live or pending associations per outbound, with a
++10-second overall setup limit (including the queue), at most four concurrent
++SSH setups, and 60-second idle expiry. This costs additional
++SSH handshakes/connections but isolates channel failures from TCP and other UDP
++associations. It does not guarantee the same remote source port across targets.
++
++#### udp_forwarding
++
++Legacy compatibility flag: `true` selects `custom` when `udp_mode` is omitted.
++Existing configurations retain their previous protocol selection.
++
++#### udp_gateway
++
++Only valid with `udp_mode: "tun2proxy"`. Gateway TCP endpoint, default
++`127.0.0.1:7300`; accepts `host:port` and `[IPv6]:port`. It is reached from the SSH
++server, not from the client. Example SSH outbound fields:
++
++```json
++{
++  "udp_mode": "tun2proxy",
++  "udp_gateway": "127.0.0.1:7300"
++}
++```
++
++If the modified sshd uses `ForwardProxy`, gateway TCP connections also follow
++that proxy; loopback then refers to the proxy host. Use a reachable gateway or a
++separate SSH account/service whose forwarding policy reaches the intended host.
++The gateway's outgoing UDP uses its own network policy, not sshd's ForwardProxy.
++`PermitOpen` authorizes the gateway endpoint, not individual UDP destinations.
++
+ ### Dial Fields
+ 
+ See [Dial Fields](/configuration/shared/dial/) for details.
+diff --git a/docs/configuration/outbound/ssh.zh.md b/docs/configuration/outbound/ssh.zh.md
+index cb2c034..9f54255 100644
+--- a/docs/configuration/outbound/ssh.zh.md
++++ b/docs/configuration/outbound/ssh.zh.md
+@@ -26,6 +26,8 @@
+   "cipher": [],
+   "mac": [],
+   "kex_algorithm": [],
++  "udp_forwarding": false,
++  "udp_mode": "disabled",
+ 
+   ... // 拨号字段
+ }
+@@ -93,6 +95,45 @@ SSH 用户, 默认使用 root。
+ 
+ 允许的密钥交换算法。留空使用默认值。
+ 
++#### udp_mode
++
++本 fork 的扩展字段，可选 `disabled`（默认）、`custom`、`tun2proxy`。
++显式设置时优先于 `udp_forwarding`，未知模式会报配置错误。
++
++- `custom`：沿用 `udp-forwarding-v1@idefav.github.io` 能力请求和
++  `direct-udpip-v1@idefav.github.io` 通道，需要修改版 OpenSSH 和
++  `AllowUdpForwarding yes`。目标权限和支持 UDP 的 SOCKS5 ForwardProxy 仍由服务端处理。
++- `tun2proxy`：通过标准 SSH `direct-tcpip` 连接 tun2proxy 的 `udpgw-server`。
++  原版或修改版 OpenSSH 均可使用，需要 TCP 转发权限及可达的网关，不依赖私有 UDP 扩展。
++  该网关协议与 BadVPN、SagerNet UDP over TCP 不兼容。
++
++失败不会回退直连或自动切换模式。两种模式都保留数据报边界，允许一个 PacketConn
++访问多个目标，无需修改 TUN 的 NAT 映射设置。每个目标关联独占一条 SSH 连接，每个出站
++最多 64 个存活或建立中的关联，同时最多建立 4 条 SSH 连接，排队计入整体 10 秒建立期限，
++空闲回收 60 秒。这会增加握手和连接
++开销，用于隔离 UDP 建流、清理失败对其他 TCP/UDP 的影响；不保证不同目标共用远端源端口。
++
++#### udp_forwarding
++
++兼容旧配置：未设置 `udp_mode` 时，`true` 对应 `custom`，默认关闭。
++
++#### udp_gateway
++
++仅允许在 `tun2proxy` 模式设置。网关 TCP 地址，默认 `127.0.0.1:7300`，支持
++`host:port` 或 `[IPv6]:port`。这是从 SSH 服务端访问的地址。SSH 出站字段示例：
++
++```json
++{
++  "udp_mode": "tun2proxy",
++  "udp_gateway": "127.0.0.1:7300"
++}
++```
++
++修改版 sshd 启用 `ForwardProxy` 后，网关 TCP 连接也会交给上游代理，回环地址会指向
++代理所在主机。需要选择上游可达的网关，或使用转发策略能连接本机网关的独立 SSH
++账号/服务。网关发出的 UDP 使用自身网络出口，不会继承 sshd 的 ForwardProxy。
++`PermitOpen` 只约束网关地址，不会逐个检查网关中的 UDP 目标。
++
+ ### 拨号字段
+ 
+ 参阅 [拨号字段](/zh/configuration/shared/dial/)。
+diff --git a/option/ssh.go b/option/ssh.go
+index 945ff38..47e342c 100644
+--- a/option/ssh.go
++++ b/option/ssh.go
+@@ -7,6 +7,8 @@ type SSHOutboundOptions struct {
+ 	ServerOptions
+ 	User                 string                     `json:"user,omitempty"`
+ 	UDPForwarding        bool                       `json:"udp_forwarding,omitempty"`
++	UDPMode              string                     `json:"udp_mode,omitempty"`
++	UDPGateway           string                     `json:"udp_gateway,omitempty"`
+ 	Password             string                     `json:"password,omitempty"`
+ 	PrivateKey           badoption.Listable[string] `json:"private_key,omitempty"`
+ 	PrivateKeyPath       string                     `json:"private_key_path,omitempty"`
+diff --git a/protocol/ssh/outbound.go b/protocol/ssh/outbound.go
+index c667366..3498b64 100644
+--- a/protocol/ssh/outbound.go
++++ b/protocol/ssh/outbound.go
+@@ -18,7 +18,6 @@ import (
+ 	C "github.com/sagernet/sing-box/constant"
+ 	"github.com/sagernet/sing-box/log"
+ 	"github.com/sagernet/sing-box/option"
+-	"github.com/sagernet/sing-box/protocol/ssh/udptunnel"
+ 	"github.com/sagernet/sing/common"
+ 	E "github.com/sagernet/sing/common/exceptions"
+ 	"github.com/sagernet/sing/common/logger"
+@@ -58,23 +57,35 @@ type Outbound struct {
+ 	streams           int
+ 	closeIdle         bool
+ 	udpForwarding     bool
+-	udpDialer         *udptunnel.Dialer
+ 	udpSlots          chan struct{}
++	udpSetupSlots     chan struct{}
++	udpMode           string
++	udpGateway        string
++	udpAccess         sync.Mutex
++	udpTransports     map[*udpTransport]struct{}
++	udpClosed         bool
+ }
+ 
+ func NewOutbound(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, options option.SSHOutboundOptions) (adapter.Outbound, error) {
++	mode, gateway, err := sshUDPOptions(options)
++	if err != nil {
++		return nil, err
++	}
+ 	outboundDialer, err := dialer.New(ctx, options.DialerOptions, options.ServerIsDomain())
+ 	if err != nil {
+ 		return nil, err
+ 	}
+ 	networks := []string{N.NetworkTCP}
+-	if options.UDPForwarding {
++	if mode != "disabled" {
+ 		networks = append(networks, N.NetworkUDP)
+ 	}
+ 	outbound := &Outbound{
+ 		Adapter:           outbound.NewAdapterWithDialerOptions(C.TypeSSH, tag, networks, options.DialerOptions),
+-		udpForwarding:     options.UDPForwarding,
++		udpForwarding:     mode != "disabled",
++		udpMode:           mode,
++		udpGateway:        gateway,
+ 		udpSlots:          make(chan struct{}, 64),
++		udpSetupSlots:     make(chan struct{}, 4),
+ 		logger:            logger,
+ 		dialer:            outboundDialer,
+ 		serverAddr:        options.ServerOptions.Build(),
+@@ -206,7 +217,6 @@ func (s *Outbound) connect(ctx context.Context) (client *ssh.Client, err error)
+ 
+ 	s.clientConn = conn
+ 	s.client = client
+-	s.udpDialer = newUDPDialer(client)
+ 	s.streams = 1
+ 
+ 	go func() {
+@@ -224,7 +234,11 @@ func (s *Outbound) connect(ctx context.Context) (client *ssh.Client, err error)
+ }
+ 
+ func (s *Outbound) InterfaceUpdated(ctx context.Context) {
+-	common.Close(s.clientConn)
++	s.closeUDPTransports(false)
++	s.clientAccess.Lock()
++	conn := s.clientConn
++	s.clientAccess.Unlock()
++	common.Close(conn)
+ }
+ 
+ func (s *Outbound) MultiplexEnabled() bool {
+@@ -276,7 +290,11 @@ func (s *Outbound) Start(stage adapter.StartStage, scope *adapter.Scope) error {
+ 		return nil
+ 	}
+ 	scope.Add(func() error {
+-		return common.Close(s.clientConn)
++		s.closeUDPTransports(true)
++		s.clientAccess.Lock()
++		conn := s.clientConn
++		s.clientAccess.Unlock()
++		return common.Close(conn)
+ 	})
+ 	return nil
+ }
+@@ -299,11 +317,7 @@ func (s *Outbound) DialContext(ctx context.Context, network string, destination
+ }
+ 
+ func (s *Outbound) ListenPacket(ctx context.Context, destination M.Socksaddr) (net.PacketConn, error) {
+-	conn, err := s.dialUDP(ctx, destination)
+-	if err != nil {
+-		return nil, err
+-	}
+-	return &udpPacketConn{Conn: conn, destination: destination}, nil
++	return s.listenUDPPacket(ctx, destination)
+ }
+ 
+ type chanConnWrapper struct {
+diff --git a/protocol/ssh/udp.go b/protocol/ssh/udp.go
+index aabc5e8..1772c8d 100644
+--- a/protocol/ssh/udp.go
++++ b/protocol/ssh/udp.go
+@@ -5,16 +5,47 @@ import (
+ 	"errors"
+ 	"io"
+ 	"net"
++	"strconv"
++	"strings"
+ 	"sync"
++	"time"
+ 
+-	"github.com/sagernet/sing-box/adapter"
++	"github.com/sagernet/sing-box/option"
++	"github.com/sagernet/sing-box/protocol/ssh/udpgw"
+ 	"github.com/sagernet/sing-box/protocol/ssh/udptunnel"
+-	"github.com/sagernet/sing/common/buf"
+ 	M "github.com/sagernet/sing/common/metadata"
+-	N "github.com/sagernet/sing/common/network"
+ 	"golang.org/x/crypto/ssh"
+ )
+ 
++func sshUDPOptions(options option.SSHOutboundOptions) (string, string, error) {
++	mode := options.UDPMode
++	if mode == "" {
++		mode = "disabled"
++		if options.UDPForwarding {
++			mode = "custom"
++		}
++	}
++	if mode != "disabled" && mode != "custom" && mode != "tun2proxy" {
++		return "", "", errors.New("invalid SSH udp_mode: expected disabled, custom or tun2proxy")
++	}
++	if mode != "tun2proxy" {
++		if options.UDPGateway != "" {
++			return "", "", errors.New("udp_gateway requires udp_mode tun2proxy")
++		}
++		return mode, "", nil
++	}
++	gateway := options.UDPGateway
++	if gateway == "" {
++		gateway = "127.0.0.1:7300"
++	}
++	host, port, err := net.SplitHostPort(gateway)
++	n, portErr := strconv.Atoi(port)
++	if err != nil || portErr != nil || n < 1 || n > 65535 || host == "" || len(host) > 255 || strings.ContainsAny(host, "\x00\r\n\t /?#@") {
++		return "", "", errors.New("invalid SSH udp_gateway: expected host:port or [IPv6]:port")
++	}
++	return mode, net.JoinHostPort(host, strconv.Itoa(n)), nil
++}
++
+ func newUDPDialer(client *ssh.Client) *udptunnel.Dialer {
+ 	return &udptunnel.Dialer{
+ 		Query: func() (bool, []byte, error) { return client.SendRequest(udptunnel.CapabilityRequest, true, nil) },
+@@ -29,44 +60,156 @@ func newUDPDialer(client *ssh.Client) *udptunnel.Dialer {
+ 	}
+ }
+ 
++// Each UDP destination owns its SSH transport. Stuck DNS, channel setup, and
++// cleanup cannot retire the shared TCP transport or another UDP destination.
++// The outbound-wide semaphore bounds both live and pending transports.
++type udpTransport struct {
++	parent *Outbound
++	owner  *Outbound
++	cancel context.CancelFunc
++	once   sync.Once
++}
++
++func (t *udpTransport) Close() {
++	t.once.Do(func() {
++		t.cancel()
++		t.owner.clientAccess.Lock()
++		client, raw := t.owner.client, t.owner.clientConn
++		t.owner.clientAccess.Unlock()
++		if raw != nil {
++			raw.Close()
++		}
++		if client != nil {
++			client.Close()
++		}
++		t.parent.udpAccess.Lock()
++		delete(t.parent.udpTransports, t)
++		t.parent.udpAccess.Unlock()
++		<-t.parent.udpSlots
++	})
++}
++
++func (s *Outbound) closeUDPTransports(permanent bool) {
++	s.udpAccess.Lock()
++	if permanent {
++		s.udpClosed = true
++	}
++	all := make([]*udpTransport, 0, len(s.udpTransports))
++	for transport := range s.udpTransports {
++		all = append(all, transport)
++	}
++	s.udpAccess.Unlock()
++	for _, transport := range all {
++		transport.Close()
++	}
++}
++
+ func (s *Outbound) dialUDP(ctx context.Context, destination M.Socksaddr) (net.Conn, error) {
++	started := time.Now()
+ 	if !s.udpForwarding {
+ 		return nil, udptunnel.ErrUnsupported
+ 	}
++	if !destination.IsValid() || destination.Port == 0 {
++		return nil, udptunnel.ErrProtocol
++	}
++	if err := ctx.Err(); err != nil {
++		return nil, err
++	}
+ 	select {
+ 	case s.udpSlots <- struct{}{}:
+-	case <-ctx.Done():
+-		return nil, ctx.Err()
+ 	default:
+ 		return nil, errors.New("E_UDP_CHANNEL_LIMIT")
+ 	}
+-	releaseSlot := func() { <-s.udpSlots }
+-	client, err := s.connect(ctx)
+-	if err != nil {
+-		releaseSlot()
++	setup, cancel := context.WithTimeout(ctx, 10*time.Second)
++	owner := &Outbound{
++		dialer: s.dialer, serverAddr: s.serverAddr, user: s.user,
++		hostKey: s.hostKey, hostKeyAlgorithms: s.hostKeyAlgorithms,
++		cipher: s.cipher, mac: s.mac, kexAlgorithm: s.kexAlgorithm,
++		clientVersion: s.clientVersion, authMethod: s.authMethod,
++	}
++	transport := &udpTransport{parent: s, owner: owner, cancel: cancel}
++	s.udpAccess.Lock()
++	if s.udpClosed {
++		s.udpAccess.Unlock()
++		cancel()
++		<-s.udpSlots
++		return nil, net.ErrClosed
++	}
++	if s.udpTransports == nil {
++		s.udpTransports = make(map[*udpTransport]struct{})
++	}
++	s.udpTransports[transport] = struct{}{}
++	if s.udpSetupSlots == nil {
++		s.udpSetupSlots = make(chan struct{}, 4)
++	}
++	setupSlots := s.udpSetupSlots
++	s.udpAccess.Unlock()
++	// Queueing is part of the overall setup deadline. Limit authentication
++	// bursts independently of the number of established destination sessions.
++	select {
++	case setupSlots <- struct{}{}:
++		defer func() { <-setupSlots }()
++	case <-setup.Done():
++		transport.Close()
++		return nil, setup.Err()
++	}
++	// A parent's cancellation visits its children one by one. A sibling may
++	// release its slot before this derived context receives that cancellation.
++	if err := ctx.Err(); err != nil {
++		transport.Close()
+ 		return nil, err
+ 	}
+-	s.clientAccess.Lock()
+-	dialer := s.udpDialer
+-	if s.client != client {
+-		dialer = nil
++	if err := setup.Err(); err != nil {
++		transport.Close()
++		return nil, err
+ 	}
+-	s.clientAccess.Unlock()
+-	if dialer == nil {
+-		s.releaseStream(client, false)
+-		releaseSlot()
+-		return nil, net.ErrClosed
++	client, err := owner.connect(setup)
++	if err != nil {
++		transport.Close()
++		return nil, err
++	}
++	var conn *udptunnel.Conn
++	if s.udpMode == "tun2proxy" {
++		// Standard SSH TCP forwarding; never use the private capability or a
++		// direct UDP fallback. The gateway address is resolved by the server.
++		stop := context.AfterFunc(setup, func() { client.Close() })
++		stream, dialErr := client.Dial("tcp", s.udpGateway)
++		stopped := stop()
++		if !stopped || setup.Err() != nil {
++			if stream != nil {
++				stream.Close()
++			}
++			err = setup.Err()
++			transport.Close()
++			return nil, err
++		}
++		if dialErr != nil {
++			transport.Close()
++			return nil, errors.Join(errors.New("E_UDPGW_CONNECT"), dialErr)
++		}
++		conn, err = udpgw.NewConn(stream, func() { client.Close() }, destination)
++	} else {
++		var opened net.Conn
++		opened, err = newUDPDialer(client).Dial(setup, destination.String())
++		if err == nil {
++			conn = opened.(*udptunnel.Conn)
++		}
+ 	}
+-	conn, err := dialer.Dial(ctx, destination.String())
++	cancel()
+ 	if err != nil {
+-		s.releaseStream(client, false)
+-		releaseSlot()
++		transport.Close()
+ 		return nil, err
+ 	}
+-	keep := adapter.KeepSessionFromContext(ctx)
+-	wrapped := &udpConn{Conn: conn, release: func() { s.releaseStream(client, keep); releaseSlot() }}
+-	// Conn idle expiry / peer closure releases accounting even without a caller Close.
+-	go func() { <-conn.(*udptunnel.Conn).Done(); wrapped.releaseOnce() }()
++	wrapped := &udpConn{Conn: conn, release: transport.Close}
++	if s.logger != nil {
++		s.udpAccess.Lock()
++		associations := len(s.udpTransports)
++		s.udpAccess.Unlock()
++		s.logger.DebugContext(ctx, "UDP SSH association established: mode=", s.udpMode,
++			" target=", destination, " transport_source=", client.LocalAddr(),
++			" associations=", associations, " setup=", time.Since(started))
++	}
++	go func() { <-conn.Done(); wrapped.releaseOnce() }()
+ 	return wrapped, nil
+ }
+ 
+@@ -78,39 +221,3 @@ type udpConn struct {
+ 
+ func (c *udpConn) releaseOnce() { c.once.Do(c.release) }
+ func (c *udpConn) Close() error { err := c.Conn.Close(); c.releaseOnce(); return err }
+-
+-// One routed UDP flow has one fixed destination. Domain targets stay remote;
+-// do not resolve them locally or silently send packets to a different target.
+-type udpPacketConn struct {
+-	net.Conn
+-	destination M.Socksaddr
+-}
+-
+-var _ N.NetPacketConn = (*udpPacketConn)(nil)
+-
+-func (c *udpPacketConn) ReadFrom(b []byte) (int, net.Addr, error) {
+-	n, err := c.Read(b)
+-	return n, c.destination, err
+-}
+-func (c *udpPacketConn) WriteTo(b []byte, addr net.Addr) (int, error) {
+-	if addr != nil && M.SocksaddrFromNet(addr) != c.destination {
+-		return 0, errors.New("E_UDP_DESTINATION_MISMATCH")
+-	}
+-	return c.Write(b)
+-}
+-
+-// Implement sing's packet API directly: its generic net.PacketConn wrapper
+-// converts domain Socksaddr values to UDPAddr, which discards the hostname.
+-func (c *udpPacketConn) ReadPacket(buffer *buf.Buffer) (M.Socksaddr, error) {
+-	n, err := c.Read(buffer.FreeBytes())
+-	buffer.Truncate(n)
+-	return c.destination, err
+-}
+-func (c *udpPacketConn) WritePacket(buffer *buf.Buffer, destination M.Socksaddr) error {
+-	defer buffer.Release()
+-	if destination.Unwrap() != c.destination.Unwrap() {
+-		return errors.New("E_UDP_DESTINATION_MISMATCH")
+-	}
+-	_, err := c.Write(buffer.Bytes())
+-	return err
+-}
+diff --git a/protocol/ssh/udp_test.go b/protocol/ssh/udp_test.go
+index 3e8f373..0ae904c 100644
+--- a/protocol/ssh/udp_test.go
++++ b/protocol/ssh/udp_test.go
+@@ -8,6 +8,8 @@ import (
+ 	"errors"
+ 	"io"
+ 	"net"
++	"os"
++	"strconv"
+ 	"testing"
+ 	"time"
+ 
+@@ -19,6 +21,10 @@ import (
+ )
+ 
+ func udpFixture(t *testing.T, status int) (*Outbound, *ssh.Client) {
++	return udpFixtureWithGateway(t, status, "")
++}
++
++func udpFixtureWithGateway(t *testing.T, status int, gateway string) (*Outbound, *ssh.Client) {
+ 	t.Helper()
+ 	_, key, err := ed25519.GenerateKey(rand.Reader)
+ 	if err != nil {
+@@ -41,66 +47,104 @@ func udpFixture(t *testing.T, status int) (*Outbound, *ssh.Client) {
+ 	}}
+ 	serverConfig.AddHostKey(signer)
+ 	go func() {
+-		raw, e := listener.Accept()
+-		if e != nil {
+-			return
+-		}
+-		server, channels, requests, e := ssh.NewServerConn(raw, serverConfig)
+-		if e != nil {
+-			raw.Close()
+-			return
+-		}
+-		defer server.Close()
+-		go func() {
+-			for r := range requests {
+-				if r.Type == udptunnel.CapabilityRequest {
+-					if status < 0 {
+-						r.Reply(false, nil)
+-					} else {
+-						r.Reply(true, []byte{byte(status)})
+-					}
+-				} else {
+-					r.Reply(false, nil)
+-				}
++		for {
++			raw, e := listener.Accept()
++			if e != nil {
++				return
+ 			}
+-		}()
+-		for incoming := range channels {
+-			if incoming.ChannelType() == udptunnel.ChannelType {
+-				var target struct {
+-					Host string
+-					Port uint32
+-				}
+-				if ssh.Unmarshal(incoming.ExtraData(), &target) != nil || target.Host == "deny.example" {
+-					incoming.Reject(ssh.Prohibited, "ACL denied")
+-					continue
+-				}
+-				channel, reqs, e := incoming.Accept()
++			go func() {
++				server, channels, requests, e := ssh.NewServerConn(raw, serverConfig)
+ 				if e != nil {
+-					continue
++					raw.Close()
++					return
+ 				}
+-				go ssh.DiscardRequests(reqs)
++				defer server.Close()
+ 				go func() {
+-					defer channel.Close()
+-					for {
+-						p, e := udptunnel.ReadFrame(channel)
++					for r := range requests {
++						if r.Type == udptunnel.CapabilityRequest {
++							if status < 0 {
++								r.Reply(false, nil)
++							} else {
++								r.Reply(true, []byte{byte(status)})
++							}
++						} else {
++							r.Reply(false, nil)
++						}
++					}
++				}()
++				for incoming := range channels {
++					if incoming.ChannelType() == udptunnel.ChannelType {
++						var target struct {
++							Host string
++							Port uint32
++						}
++						if ssh.Unmarshal(incoming.ExtraData(), &target) != nil || target.Host == "deny.example" {
++							incoming.Reject(ssh.Prohibited, "ACL denied")
++							continue
++						}
++						if target.Host == "hang.example" {
++							continue
++						}
++						channel, reqs, e := incoming.Accept()
+ 						if e != nil {
+-							return
++							continue
+ 						}
+-						if e = udptunnel.WriteFrame(channel, p); e != nil {
+-							return
++						go ssh.DiscardRequests(reqs)
++						go func() {
++							defer channel.Close()
++							for {
++								p, e := udptunnel.ReadFrame(channel)
++								if e != nil {
++									return
++								}
++								if e = udptunnel.WriteFrame(channel, p); e != nil {
++									return
++								}
++							}
++						}()
++					} else if incoming.ChannelType() == "direct-tcpip" {
++						var upstream net.Conn
++						if gateway != "" {
++							var target struct {
++								Host       string
++								Port       uint32
++								Origin     string
++								OriginPort uint32
++							}
++							if ssh.Unmarshal(incoming.ExtraData(), &target) != nil || net.JoinHostPort(target.Host, strconv.Itoa(int(target.Port))) != gateway {
++								incoming.Reject(ssh.Prohibited, "gateway only")
++								continue
++							}
++							var err error
++							upstream, err = net.Dial("tcp", gateway)
++							if err != nil {
++								incoming.Reject(ssh.ConnectionFailed, "gateway unreachable")
++								continue
++							}
+ 						}
++						channel, reqs, e := incoming.Accept()
++						if e != nil {
++							if upstream != nil {
++								upstream.Close()
++							}
++							continue
++						}
++						go ssh.DiscardRequests(reqs)
++						go func() {
++							defer channel.Close()
++							if upstream == nil {
++								io.Copy(channel, channel)
++								return
++							}
++							defer upstream.Close()
++							go func() { io.Copy(upstream, channel); upstream.Close() }()
++							io.Copy(channel, upstream)
++						}()
++					} else {
++						incoming.Reject(ssh.UnknownChannelType, "unsupported")
+ 					}
+-				}()
+-			} else if incoming.ChannelType() == "direct-tcpip" {
+-				channel, reqs, e := incoming.Accept()
+-				if e != nil {
+-					continue
+ 				}
+-				go ssh.DiscardRequests(reqs)
+-				go func() { defer channel.Close(); io.Copy(channel, channel) }()
+-			} else {
+-				incoming.Reject(ssh.UnknownChannelType, "unsupported")
+-			}
++			}()
+ 		}
+ 	}()
+ 	client, err := ssh.Dial("tcp", listener.Addr().String(), &ssh.ClientConfig{User: "fixture", Auth: []ssh.AuthMethod{ssh.Password("fixture")}, HostKeyCallback: ssh.FixedHostKey(signer.PublicKey()), Timeout: time.Second})
+@@ -108,10 +152,155 @@ func udpFixture(t *testing.T, status int) (*Outbound, *ssh.Client) {
+ 		t.Fatal(err)
+ 	}
+ 	t.Cleanup(func() { client.Close() })
+-	out := &Outbound{client: client, udpForwarding: true, udpSlots: make(chan struct{}, 64), udpDialer: newUDPDialer(client)}
++	out := &Outbound{client: client, udpForwarding: true, udpSlots: make(chan struct{}, 64),
++		dialer: fixtureDialer{}, serverAddr: M.ParseSocksaddr(listener.Addr().String()), user: "fixture",
++		authMethod: []ssh.AuthMethod{ssh.Password("fixture")}, hostKey: []ssh.PublicKey{signer.PublicKey()}}
++	t.Cleanup(func() { out.closeUDPTransports(true) })
+ 	return out, client
+ }
+ 
++type fixtureDialer struct{}
++
++func (fixtureDialer) DialContext(ctx context.Context, network string, target M.Socksaddr) (net.Conn, error) {
++	return (&net.Dialer{}).DialContext(ctx, network, target.String())
++}
++
++func TestUDPSetupTimeoutIsIsolated(t *testing.T) {
++	out, client := udpFixture(t, 0)
++	tcp, err := client.Dial("tcp", "example.com:443")
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer tcp.Close()
++	udp, err := out.DialContext(context.Background(), "udp", M.ParseSocksaddr("remote.example:1234"))
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer udp.Close()
++	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
++	defer cancel()
++	if _, err = out.ListenPacket(ctx, M.ParseSocksaddr("hang.example:1234")); !errors.Is(err, context.DeadlineExceeded) {
++		t.Fatal(err)
++	}
++	for _, conn := range []net.Conn{tcp, udp} {
++		if _, err = conn.Write([]byte("alive")); err != nil {
++			t.Fatal("unrelated connection interrupted", err)
++		}
++		b := make([]byte, 5)
++		if _, err = io.ReadFull(conn, b); err != nil || string(b) != "alive" {
++			t.Fatal(err, string(b))
++		}
++	}
++	if len(out.udpSlots) != 1 {
++		t.Fatal("failed open leaked a transport", len(out.udpSlots))
++	}
++}
++
++func TestUDPTransportRetirementIsIsolated(t *testing.T) {
++	out, client := udpFixture(t, 0)
++	tcp, err := client.Dial("tcp", "example.com:443")
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer tcp.Close()
++	first, err := out.DialContext(context.Background(), "udp", M.ParseSocksaddr("a.example:1234"))
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer first.Close()
++	second, err := out.DialContext(context.Background(), "udp", M.ParseSocksaddr("b.example:1234"))
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer second.Close()
++	// Closing a transport is also the last-resort cleanup action for a stuck
++	// channel. It must not affect any other UDP target or the shared TCP client.
++	first.(*udpConn).releaseOnce()
++	for _, conn := range []net.Conn{tcp, second} {
++		if _, err = conn.Write([]byte("ok")); err != nil {
++			t.Fatal(err)
++		}
++		if _, err = io.ReadFull(conn, make([]byte, 2)); err != nil {
++			t.Fatal(err)
++		}
++	}
++}
++
++func TestUDPPacketPeerCloseIsolatedPerDestination(t *testing.T) {
++	out, _ := udpFixture(t, 0)
++	first := M.ParseSocksaddr("first.example:53")
++	second := M.ParseSocksaddr("second.example:53")
++	packet, err := out.ListenPacket(context.Background(), first)
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer packet.Close()
++	c := packet.(*udpPacketConn)
++	other, err := c.connection(second)
++	if err != nil {
++		t.Fatal(err)
++	}
++	c.mu.Lock()
++	one := c.conns[first]
++	c.mu.Unlock()
++	one.Close()
++	packet.SetDeadline(time.Now().Add(time.Second))
++	if _, err := packet.WriteTo([]byte("alive"), second); err != nil {
++		t.Fatal(err)
++	}
++	b := make([]byte, 16)
++	n, from, err := packet.ReadFrom(b)
++	if err != nil || string(b[:n]) != "alive" || from.String() != second.String() {
++		t.Fatal(n, from, err)
++	}
++	other.Close()
++	if _, _, err := packet.ReadFrom(b); !errors.Is(err, net.ErrClosed) {
++		t.Fatal("last peer close must surface without waiting for timeout", err)
++	}
++}
++
++func TestUDPPacketDeadlineInterruptsPendingDestination(t *testing.T) {
++	out, _ := udpFixture(t, 0)
++	target := M.ParseSocksaddr("remote.example:53")
++	packet, err := out.ListenPacket(context.Background(), target)
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer packet.Close()
++	result := make(chan error, 1)
++	go func() {
++		_, err := packet.WriteTo([]byte("pending"), M.ParseSocksaddr("hang.example:53"))
++		result <- err
++	}()
++	until := time.Now().Add(time.Second)
++	for len(out.udpSlots) != 2 && time.Now().Before(until) {
++		time.Sleep(time.Millisecond)
++	}
++	if len(out.udpSlots) != 2 {
++		t.Fatal("second destination did not begin setup")
++	}
++	packet.SetWriteDeadline(time.Now().Add(20 * time.Millisecond))
++	select {
++	case err := <-result:
++		if !errors.Is(err, os.ErrDeadlineExceeded) {
++			t.Fatal(err)
++		}
++	case <-time.After(time.Second):
++		t.Fatal("deadline did not interrupt in-flight setup")
++	}
++	packet.SetDeadline(time.Now().Add(time.Second))
++	if _, err := packet.WriteTo([]byte("alive"), target); err != nil {
++		t.Fatal(err)
++	}
++	b := make([]byte, 16)
++	if n, _, err := packet.ReadFrom(b); err != nil || string(b[:n]) != "alive" {
++		t.Fatal(n, err)
++	}
++}
++func (fixtureDialer) ListenPacket(context.Context, M.Socksaddr) (net.PacketConn, error) {
++	return nil, errors.New("unused fixture packet dialer")
++}
++
+ func TestUDPEchoAndPacketSemantics(t *testing.T) {
+ 	out, _ := udpFixture(t, 0)
+ 	for _, target := range []string{"127.0.0.1:1234", "[::1]:1234", "remote.example:1234"} {
+@@ -132,8 +321,13 @@ func TestUDPEchoAndPacketSemantics(t *testing.T) {
+ 				t.Fatal(size, n, from, e)
+ 			}
+ 		}
+-		if _, err = conn.WriteTo([]byte("wrong"), M.ParseSocksaddr("other.example:1234")); err == nil {
+-			t.Fatal("destination mismatch accepted")
++		other := M.ParseSocksaddr("other.example:1234")
++		if _, err = conn.WriteTo([]byte("second"), other); err != nil {
++			t.Fatal(err)
++		}
++		reply := make([]byte, 100)
++		if n, from, err := conn.ReadFrom(reply); err != nil || from.String() != other.String() || string(reply[:n]) != "second" {
++			t.Fatal(n, from, err)
+ 		}
+ 		conn.Close()
+ 	}
+diff --git a/protocol/ssh/udptunnel/conn.go b/protocol/ssh/udptunnel/conn.go
+index ebfb4b6..90630dd 100644
+--- a/protocol/ssh/udptunnel/conn.go
++++ b/protocol/ssh/udptunnel/conn.go
+@@ -24,23 +24,31 @@ type writeRequest struct {
+ // discards the remainder and returns io.ErrShortBuffer. Incoming queue overflow
+ // drops whole datagrams. Read timeouts never discard partially decoded frames.
+ type Conn struct {
+-	stream  io.ReadWriteCloser
+-	abort   func()
+-	target  string
+-	packets chan []byte
+-	writes  chan writeRequest
+-	done    chan struct{}
+-	workers sync.WaitGroup
+-	once    sync.Once
+-	mu      sync.Mutex
+-	err     error
+-	rd, wd  time.Time
+-	wake    chan struct{}
+-	idle    *time.Timer
++	stream     io.ReadWriteCloser
++	abort      func()
++	target     string
++	packets    chan []byte
++	writes     chan writeRequest
++	done       chan struct{}
++	workers    sync.WaitGroup
++	once       sync.Once
++	mu         sync.Mutex
++	err        error
++	rd, wd     time.Time
++	wake       chan struct{}
++	idle       *time.Timer
++	readFrame  func(io.Reader) ([]byte, error)
++	writeFrame func(io.Writer, []byte) error
+ }
+ 
+ func NewConn(stream io.ReadWriteCloser, abort func(), target string) *Conn {
+-	c := &Conn{stream: stream, abort: abort, target: target, packets: make(chan []byte, 4), writes: make(chan writeRequest), done: make(chan struct{}), wake: make(chan struct{})}
++	return NewConnWithFraming(stream, abort, target, ReadFrame, WriteFrame)
++}
++
++// NewConnWithFraming shares bounded datagram queues and deadline handling with
++// other UDP-over-SSH wire formats. Abort must own an isolated transport.
++func NewConnWithFraming(stream io.ReadWriteCloser, abort func(), target string, readFrame func(io.Reader) ([]byte, error), writeFrame func(io.Writer, []byte) error) *Conn {
++	c := &Conn{stream: stream, abort: abort, target: target, packets: make(chan []byte, 4), writes: make(chan writeRequest), done: make(chan struct{}), wake: make(chan struct{}), readFrame: readFrame, writeFrame: writeFrame}
+ 	c.idle = time.AfterFunc(IdleTimeout, func() { c.fail(os.ErrDeadlineExceeded) })
+ 	c.workers.Add(2)
+ 	go c.readLoop()
+@@ -86,7 +94,7 @@ func (c *Conn) fail(err error) {
+ func (c *Conn) readLoop() {
+ 	defer c.workers.Done()
+ 	for {
+-		p, err := ReadFrame(c.stream)
++		p, err := c.readFrame(c.stream)
+ 		if err != nil {
+ 			c.fail(err)
+ 			return
+@@ -111,7 +119,7 @@ func (c *Conn) writeLoop() {
+ 		case <-c.done:
+ 			return
+ 		case w := <-c.writes:
+-			err := WriteFrame(c.stream, w.payload)
++			err := c.writeFrame(c.stream, w.payload)
+ 			w.result <- err
+ 			if err != nil {
+ 				c.fail(err)
+diff --git a/protocol/ssh/udp_gateway_test.go b/protocol/ssh/udp_gateway_test.go
+new file mode 100644
+index 0000000..f8ba574
+--- /dev/null
++++ b/protocol/ssh/udp_gateway_test.go
+@@ -0,0 +1,155 @@
++package ssh
++
++import (
++	"bytes"
++	"context"
++	"encoding/binary"
++	"io"
++	"net"
++	"os"
++	"testing"
++	"time"
++
++	"github.com/sagernet/sing-box/option"
++	M "github.com/sagernet/sing/common/metadata"
++)
++
++func TestSSHUDPModeValidation(t *testing.T) {
++	for _, tc := range []struct {
++		options       option.SSHOutboundOptions
++		mode, gateway string
++		bad           bool
++	}{
++		{options: option.SSHOutboundOptions{}, mode: "disabled"},
++		{options: option.SSHOutboundOptions{UDPForwarding: true}, mode: "custom"},
++		{options: option.SSHOutboundOptions{UDPMode: "custom"}, mode: "custom"},
++		{options: option.SSHOutboundOptions{UDPMode: "tun2proxy"}, mode: "tun2proxy", gateway: "127.0.0.1:7300"},
++		{options: option.SSHOutboundOptions{UDPMode: "tun2proxy", UDPGateway: "[::1]:7300"}, mode: "tun2proxy", gateway: "[::1]:7300"},
++		{options: option.SSHOutboundOptions{UDPMode: "disabled", UDPForwarding: true}, mode: "disabled"},
++		{options: option.SSHOutboundOptions{UDPMode: "badvpn"}, bad: true},
++		{options: option.SSHOutboundOptions{UDPGateway: "localhost:7300"}, bad: true},
++		{options: option.SSHOutboundOptions{UDPMode: "tun2proxy", UDPGateway: "host:0"}, bad: true},
++		{options: option.SSHOutboundOptions{UDPMode: "tun2proxy", UDPGateway: "http://host:7300"}, bad: true},
++	} {
++		mode, gateway, err := sshUDPOptions(tc.options)
++		if (err != nil) != tc.bad || (!tc.bad && (mode != tc.mode || gateway != tc.gateway)) {
++			t.Fatal(tc, mode, gateway, err)
++		}
++	}
++}
++
++func TestTun2ProxyOverStandardSSH(t *testing.T) {
++	listener, err := net.Listen("tcp", "127.0.0.1:0")
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer listener.Close()
++	go func() {
++		for {
++			stream, err := listener.Accept()
++			if err != nil {
++				return
++			}
++			go func() {
++				defer stream.Close()
++				for {
++					var length [2]byte
++					if _, err := io.ReadFull(stream, length[:]); err != nil {
++						return
++					}
++					n := int(binary.BigEndian.Uint16(length[:]))
++					if n < 3 {
++						return
++					}
++					body := make([]byte, n)
++					if _, err := io.ReadFull(stream, body); err != nil {
++						return
++					}
++					if body[0] != 2 || body[1] != 0 || body[2] != 1 {
++						return
++					}
++					// An independent wire fixture echoes a framed datagram with
++					// deliberate fragmentation, without using the client codec.
++					for _, chunk := range [][]byte{length[:1], length[1:], body[:3], body[3:]} {
++						if _, err := stream.Write(chunk); err != nil {
++							return
++						}
++					}
++				}
++			}()
++		}
++	}()
++	out, _ := udpFixtureWithGateway(t, -1, listener.Addr().String())
++	out.udpMode, out.udpGateway = "tun2proxy", listener.Addr().String()
++	conn, err := out.ListenPacket(context.Background(), M.ParseSocksaddr("203.0.113.10:3478"))
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer conn.Close()
++	for _, target := range []string{"203.0.113.10:3478", "203.0.113.10:3479", "[2001:db8::1]:53", "remote.example:53"} {
++		for _, data := range [][]byte{nil, []byte("hello"), bytes.Repeat([]byte{7}, 32769)} {
++			conn.SetDeadline(time.Now().Add(3 * time.Second))
++			if _, err := conn.WriteTo(data, M.ParseSocksaddr(target)); err != nil {
++				t.Fatal(target, err)
++			}
++			buffer := make([]byte, 65535)
++			n, from, err := conn.ReadFrom(buffer)
++			if err != nil || !bytes.Equal(buffer[:n], data) || from.String() != target {
++				t.Fatal(target, n, from, err)
++			}
++		}
++	}
++}
++
++// Run with UDPGW_TEST_ADDRESS pointed at the official tun2proxy udpgw-server
++// on loopback. Both SSH and the destination UDP server stay local.
++func TestTun2ProxyOfficialGateway(t *testing.T) {
++	gateway := os.Getenv("UDPGW_TEST_ADDRESS")
++	if gateway == "" {
++		t.Skip("set UDPGW_TEST_ADDRESS for official gateway interoperability")
++	}
++	gw := M.ParseSocksaddr(gateway)
++	if !gw.Addr.IsLoopback() {
++		t.Fatal("integration gateway must be on loopback")
++	}
++	out, _ := udpFixtureWithGateway(t, -1, gateway)
++	out.udpMode, out.udpGateway = "tun2proxy", gateway
++	var endpoints []net.PacketConn
++	for i := 0; i < 2; i++ {
++		echo, err := net.ListenPacket("udp4", "127.0.0.1:0")
++		if err != nil {
++			t.Fatal(err)
++		}
++		defer echo.Close()
++		endpoints = append(endpoints, echo)
++		go func() {
++			b := make([]byte, 65535)
++			for {
++				n, from, err := echo.ReadFrom(b)
++				if err != nil {
++					return
++				}
++				echo.WriteTo(b[:n], from)
++			}
++		}()
++	}
++	conn, err := out.ListenPacket(context.Background(), M.ParseSocksaddr(endpoints[0].LocalAddr().String()))
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer conn.Close()
++	for _, echo := range endpoints {
++		target := M.ParseSocksaddr(echo.LocalAddr().String())
++		for _, data := range [][]byte{nil, []byte("official-gateway"), bytes.Repeat([]byte{0x51}, 1200)} {
++			conn.SetDeadline(time.Now().Add(3 * time.Second))
++			if _, err := conn.WriteTo(data, target); err != nil {
++				t.Fatal(err)
++			}
++			b := make([]byte, 65535)
++			n, from, err := conn.ReadFrom(b)
++			if err != nil || !bytes.Equal(b[:n], data) || from.String() != target.String() {
++				t.Fatal(n, from, err)
++			}
++		}
++	}
++}
+diff --git a/protocol/ssh/udp_nat_test.go b/protocol/ssh/udp_nat_test.go
+new file mode 100644
+index 0000000..4e2e68e
+--- /dev/null
++++ b/protocol/ssh/udp_nat_test.go
+@@ -0,0 +1,68 @@
++package ssh
++
++import (
++	"context"
++	"testing"
++	"time"
++
++	"github.com/sagernet/sing-box/adapter"
++	"github.com/sagernet/sing-box/route"
++	tun "github.com/sagernet/sing-tun"
++	"github.com/sagernet/sing/common/buf"
++	"github.com/sagernet/sing/common/logger"
++	M "github.com/sagernet/sing/common/metadata"
++	N "github.com/sagernet/sing/common/network"
++)
++
++type natSSHHandler struct {
++	out     *Outbound
++	manager *route.ConnectionManager
++	closed  chan error
++}
++
++func (h *natSSHHandler) NewPacketConnectionEx(ctx context.Context, conn N.PacketConn, source, destination M.Socksaddr, onClose N.CloseHandlerFunc) {
++	h.manager.NewPacketConnection(ctx, h.out, conn, adapter.InboundContext{InboundType: "tun", Network: N.NetworkUDP, Source: source, Destination: destination}, func(err error) {
++		if onClose != nil {
++			onClose(err)
++		}
++		h.closed <- err
++	})
++}
++
++type natSSHWriter struct{ replies chan string }
++
++func (w *natSSHWriter) WritePacket(buffer *buf.Buffer, _ M.Socksaddr) error {
++	defer buffer.Release()
++	w.replies <- string(buffer.Bytes())
++	return nil
++}
++
++func TestTUNMappingMultipleDestinations(t *testing.T) {
++	for _, mapping := range []tun.NATMapping{tun.NATMappingEndpointIndependent, tun.NATMappingAddressDependent, tun.NATMappingAddressAndPortDependent} {
++		out, _ := udpFixture(t, 0)
++		handler := &natSSHHandler{out: out, manager: route.NewConnectionManager(logger.NOP()), closed: make(chan error, 8)}
++		writer := &natSSHWriter{replies: make(chan string, 8)}
++		nat := tun.NewUDPNat(tun.UDPNatOptions{Handler: handler, Timeout: time.Minute, Shared: true, MaxSize: 16, Mapping: mapping,
++			Prepare: func(_, _ M.Socksaddr, _ any) (bool, context.Context, N.PacketWriter, N.CloseHandlerFunc) {
++				return true, context.Background(), writer, nil
++			},
++		})
++		if err := nat.Start(); err != nil {
++			t.Fatal(err)
++		}
++		for _, target := range []string{"203.0.113.1:3478", "203.0.113.1:3479", "203.0.113.2:3478", "203.0.113.1:3478"} {
++			nat.NewPacket([][]byte{[]byte(target)}, M.ParseSocksaddr("10.0.0.2:40000"), M.ParseSocksaddr(target), nil)
++			select {
++			case reply := <-writer.replies:
++				if reply != target {
++					t.Fatal(reply, target)
++				}
++			case err := <-handler.closed:
++				t.Fatal("NAT association closed", mapping, err)
++			case <-time.After(3 * time.Second):
++				t.Fatal("UDP echo timed out", mapping, target)
++			}
++		}
++		nat.Close()
++	}
++}
+diff --git a/protocol/ssh/udp_native_test.go b/protocol/ssh/udp_native_test.go
+new file mode 100644
+index 0000000..957e4a3
+--- /dev/null
++++ b/protocol/ssh/udp_native_test.go
+@@ -0,0 +1,200 @@
++package ssh
++
++import (
++	"bytes"
++	"context"
++	"encoding/json"
++	"io"
++	"net"
++	"os"
++	"strconv"
++	"testing"
++	"time"
++
++	"github.com/sagernet/sing-box/protocol/ssh/udptunnel"
++	M "github.com/sagernet/sing/common/metadata"
++	"golang.org/x/crypto/ssh"
++)
++
++func nativeFixture(t *testing.T) (*Outbound, *ssh.Client) {
++	t.Helper()
++	path := os.Getenv("SSH_UDPGW_TEST_PROFILE")
++	if path == "" {
++		t.Skip("set SSH_UDPGW_TEST_PROFILE for disposable native OpenSSH tests")
++	}
++	var p struct {
++		DisposableFixture                 bool
++		Port                              int
++		Username, PrivateKeyPath, HostKey string
++	}
++	b, e := os.ReadFile(path)
++	if e != nil {
++		t.Fatal(e)
++	}
++	if e = json.Unmarshal(b, &p); e != nil || !p.DisposableFixture || p.Port < 1024 {
++		t.Fatal("disposable loopback fixture required", e)
++	}
++	b, e = os.ReadFile(p.PrivateKeyPath)
++	if e != nil {
++		t.Fatal(e)
++	}
++	signer, e := ssh.ParsePrivateKey(b)
++	if e != nil {
++		t.Fatal(e)
++	}
++	key, _, _, _, e := ssh.ParseAuthorizedKey([]byte(p.HostKey))
++	if e != nil {
++		t.Fatal(e)
++	}
++	address := net.JoinHostPort("127.0.0.1", strconv.Itoa(p.Port))
++	c, e := ssh.Dial("tcp", address, &ssh.ClientConfig{User: p.Username, Auth: []ssh.AuthMethod{ssh.PublicKeys(signer)}, HostKeyAlgorithms: []string{key.Type()}, HostKeyCallback: ssh.FixedHostKey(key), Timeout: 5 * time.Second})
++	if e != nil {
++		t.Fatal(e)
++	}
++	t.Cleanup(func() { c.Close() })
++	out := &Outbound{udpForwarding: true, udpSlots: make(chan struct{}, 64), dialer: fixtureDialer{}, serverAddr: M.ParseSocksaddr(address), user: p.Username, authMethod: []ssh.AuthMethod{ssh.PublicKeys(signer)}, hostKey: []ssh.PublicKey{key}, hostKeyAlgorithms: []string{key.Type()}}
++	t.Cleanup(func() { out.closeUDPTransports(true) })
++	return out, c
++}
++
++func TestNativeSSHDatagramsAndGateway(t *testing.T) {
++	if os.Getenv("SSH_UDP_NATIVE_SLOW") != "" {
++		t.Skip("slow resolver scenario")
++	}
++	out, _ := nativeFixture(t)
++	for _, mode := range []string{"custom", "tun2proxy"} {
++		t.Run(mode, func(t *testing.T) {
++			out.udpMode = mode
++			out.udpGateway = "127.0.0.1:7300"
++			for _, target := range []string{"127.0.0.1:29001", "[::1]:29001", "localhost:29001"} {
++				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
++				c, e := out.dialUDP(ctx, M.ParseSocksaddr(target))
++				cancel()
++				if e != nil {
++					t.Fatal(target, e)
++				}
++				for _, payload := range [][]byte{nil, []byte("native-ssh-udp"), bytes.Repeat([]byte{0x6a}, 60000)} {
++					c.SetDeadline(time.Now().Add(3 * time.Second))
++					if _, e = c.Write(payload); e != nil {
++						t.Fatal(e)
++					}
++					buf := make([]byte, 65535)
++					n, e := c.Read(buf)
++					if e != nil || !bytes.Equal(buf[:n], payload) {
++						t.Fatalf("%s %s length %d: %v", mode, target, len(payload), e)
++					}
++				}
++				c.Close()
++			}
++		})
++	}
++}
++
++func TestNativeSSHPolicyAndACL(t *testing.T) {
++	want := os.Getenv("SSH_UDP_EXPECT_CUSTOM")
++	if want == "" {
++		t.Skip("set SSH_UDP_EXPECT_CUSTOM for native policy fixtures")
++	}
++	_, client := nativeFixture(t)
++	watchdog := time.AfterFunc(5*time.Second, func() { client.Close() })
++	defer watchdog.Stop()
++	accepted, payload, err := client.SendRequest(udptunnel.CapabilityRequest, true, nil)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if want == "unsupported" {
++		if accepted {
++			t.Fatal("stock server accepted private protocol")
++		}
++	} else {
++		n, err := strconv.Atoi(want)
++		if err != nil || !accepted || len(payload) != 1 || int(payload[0]) != n {
++			t.Fatalf("capability: %v %v", accepted, payload)
++		}
++	}
++	c, err := client.Dial("tcp", "127.0.0.1:7300")
++	allow := os.Getenv("SSH_UDP_EXPECT_GATEWAY") == "ready"
++	if !allow {
++		if err == nil {
++			c.Close()
++			t.Fatal("TCP ACL/bypass unexpectedly allowed gateway")
++		}
++		return
++	}
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer c.Close()
++	heartbeat := []byte{0, 3, 1, 0, 1}
++	if _, err = c.Write(heartbeat); err != nil {
++		t.Fatal(err)
++	}
++	response := make([]byte, len(heartbeat))
++	if _, err = io.ReadFull(c, response); err != nil || !bytes.Equal(response, heartbeat) {
++		t.Fatal("gateway heartbeat", err)
++	}
++}
++
++func TestNativeSlowDNSDoesNotBlockTCPOrLeakResolvers(t *testing.T) {
++	slow := os.Getenv("SSH_UDP_NATIVE_SLOW")
++	if slow == "" {
++		t.Skip("set SSH_UDP_NATIVE_SLOW=direct/proxy/relay with the slow resolver fixture")
++	}
++	_, client := nativeFixture(t)
++	tcp, e := client.Dial("tcp", "127.0.0.1:29001")
++	if e != nil {
++		t.Fatal(e)
++	}
++	defer tcp.Close()
++	target := "127.0.0.1:29001"
++	if slow == "direct" {
++		target = "slow.test:29001"
++	}
++	start := time.Now()
++	results := make(chan error, 8)
++	for i := 0; i < cap(results); i++ {
++		go func() {
++			_, _, e := client.OpenChannel(udptunnel.ChannelType, ssh.Marshal(struct {
++				Host string
++				Port uint32
++			}{M.ParseSocksaddr(target).AddrString(), 29001}))
++			results <- e
++		}()
++	}
++	for i := 0; i < 15; i++ {
++		operation := time.Now()
++		tcp.SetDeadline(time.Now().Add(500 * time.Millisecond))
++		if _, e = tcp.Write([]byte("ok")); e != nil {
++			t.Fatal("existing TCP blocked", e)
++		}
++		var b [2]byte
++		if _, e = io.ReadFull(tcp, b[:]); e != nil || string(b[:]) != "ok" {
++			t.Fatal("existing TCP interrupted", e)
++		}
++		if time.Since(operation) > 500*time.Millisecond {
++			t.Fatal("TCP stalled behind DNS")
++		}
++		time.Sleep(100 * time.Millisecond)
++	}
++	for i := 0; i < cap(results); i++ {
++		select {
++		case e := <-results:
++			if e == nil {
++				t.Fatal("slow DNS unexpectedly connected")
++			}
++		case <-time.After(5 * time.Second):
++			t.Fatal("resolver exceeded setup deadline")
++		}
++	}
++	if elapsed := time.Since(start); elapsed < 1800*time.Millisecond || elapsed > 5*time.Second {
++		t.Fatalf("resolver deadline not applied: %v", elapsed)
++	}
++	// A fresh connection after failures verifies server recovery independently
++	// of the already-established control channel.
++	tcp.SetDeadline(time.Now().Add(time.Second))
++	tcp.Write([]byte("ok"))
++	var b [2]byte
++	if _, e = io.ReadFull(tcp, b[:]); e != nil {
++		t.Fatal(e)
++	}
++}
+diff --git a/protocol/ssh/udp_packet.go b/protocol/ssh/udp_packet.go
+new file mode 100644
+index 0000000..3e2c160
+--- /dev/null
++++ b/protocol/ssh/udp_packet.go
+@@ -0,0 +1,291 @@
++package ssh
++
++import (
++	"context"
++	"io"
++	"net"
++	"os"
++	"sync"
++	"time"
++
++	"github.com/sagernet/sing-box/protocol/ssh/udptunnel"
++	"github.com/sagernet/sing/common/buf"
++	M "github.com/sagernet/sing/common/metadata"
++	N "github.com/sagernet/sing/common/network"
++	"github.com/sagernet/sing/common/pipe"
++)
++
++type udpReply struct {
++	data []byte
++	from M.Socksaddr
++}
++type udpPending struct {
++	done     chan struct{}
++	conn     net.Conn
++	err      error
++	cancel   context.CancelFunc
++	timer    *time.Timer
++	timedOut bool
++}
++
++// TUN endpoint-independent mappings may send several destinations through one
++// PacketConn. Keep a distinct wire association per destination and merge replies
++// with their original destination, including remotely resolved domain names.
++type udpPacketConn struct {
++	ctx         context.Context
++	cancel      context.CancelFunc
++	out         *Outbound
++	destination M.Socksaddr
++	mu          sync.Mutex
++	conns       map[M.Socksaddr]net.Conn
++	opening     map[M.Socksaddr]*udpPending
++	packets     chan udpReply
++	done        chan struct{}
++	once        sync.Once
++	err         error
++	rd          pipe.Deadline
++	wd          time.Time
++	idle        *time.Timer
++}
++
++var _ N.NetPacketConn = (*udpPacketConn)(nil)
++
++func (s *Outbound) listenUDPPacket(ctx context.Context, destination M.Socksaddr) (net.PacketConn, error) {
++	ctx, cancel := context.WithCancel(ctx)
++	c := &udpPacketConn{ctx: ctx, cancel: cancel, out: s, destination: destination.Unwrap(),
++		conns: make(map[M.Socksaddr]net.Conn), opening: make(map[M.Socksaddr]*udpPending),
++		packets: make(chan udpReply, 16), done: make(chan struct{}), rd: pipe.MakeDeadline()}
++	c.idle = time.AfterFunc(udptunnel.IdleTimeout, func() { c.Close() })
++	if _, err := c.connection(destination.Unwrap()); err != nil {
++		c.Close()
++		return nil, err
++	}
++	return c, nil
++}
++
++func (c *udpPacketConn) connection(target M.Socksaddr) (net.Conn, error) {
++	c.mu.Lock()
++	select {
++	case <-c.done:
++		c.mu.Unlock()
++		return nil, net.ErrClosed
++	default:
++	}
++	if conn := c.conns[target]; conn != nil {
++		c.mu.Unlock()
++		return conn, nil
++	}
++	if pending := c.opening[target]; pending != nil {
++		c.mu.Unlock()
++		select {
++		case <-pending.done:
++			return pending.conn, pending.err
++		case <-c.done:
++			return nil, net.ErrClosed
++		}
++	}
++	ctx, cancel := context.WithCancel(c.ctx)
++	pending := &udpPending{done: make(chan struct{}), cancel: cancel}
++	c.opening[target] = pending
++	c.setPendingDeadline(pending)
++	c.mu.Unlock()
++	conn, err := c.out.dialUDP(ctx, target)
++	cancel()
++	c.mu.Lock()
++	if pending.timer != nil {
++		pending.timer.Stop()
++	}
++	if pending.timedOut {
++		if conn != nil {
++			conn.Close()
++		}
++		conn, err = nil, os.ErrDeadlineExceeded
++	}
++	select {
++	case <-c.done:
++		if conn != nil {
++			conn.Close()
++		}
++		conn = nil
++		err = net.ErrClosed
++	default:
++	}
++	if err == nil {
++		conn.SetWriteDeadline(c.wd)
++		c.conns[target] = conn
++		go c.readLoop(target, conn)
++	}
++	pending.conn, pending.err = conn, err
++	delete(c.opening, target)
++	close(pending.done)
++	c.mu.Unlock()
++	return conn, err
++}
++
++// Called with mu held. Recheck the current deadline in the callback because an
++// earlier timer may already be firing when SetWriteDeadline extends or clears it.
++func (c *udpPacketConn) setPendingDeadline(pending *udpPending) {
++	if pending.timer != nil {
++		pending.timer.Stop()
++	}
++	if c.wd.IsZero() {
++		return
++	}
++	pending.timer = time.AfterFunc(time.Until(c.wd), func() {
++		c.mu.Lock()
++		defer c.mu.Unlock()
++		select {
++		case <-pending.done:
++			return
++		default:
++		}
++		if !c.wd.IsZero() && !time.Now().Before(c.wd) {
++			pending.timedOut = true
++			pending.cancel()
++		}
++	})
++}
++
++func (c *udpPacketConn) readLoop(target M.Socksaddr, conn net.Conn) {
++	var readErr error
++	defer func() {
++		conn.Close()
++		c.mu.Lock()
++		if c.conns[target] == conn {
++			delete(c.conns, target)
++		}
++		c.mu.Unlock()
++		if readErr != nil {
++			c.fail(readErr, true)
++		}
++	}()
++	for {
++		packet := make([]byte, udptunnel.MaxPayload)
++		n, err := conn.Read(packet)
++		if err != nil {
++			readErr = err
++			return
++		}
++		c.touch()
++		select {
++		case <-c.done:
++			return
++		default:
++		}
++		select {
++		case c.packets <- udpReply{data: packet[:n], from: target}:
++		default:
++		}
++	}
++}
++
++func (c *udpPacketConn) touch() {
++	c.mu.Lock()
++	select {
++	case <-c.done:
++	default:
++		c.idle.Reset(udptunnel.IdleTimeout)
++	}
++	c.mu.Unlock()
++}
++
++func (c *udpPacketConn) ReadFrom(p []byte) (int, net.Addr, error) {
++	select {
++	case <-c.done:
++		return 0, nil, c.closedError()
++	case <-c.rd.Wait():
++		return 0, nil, os.ErrDeadlineExceeded
++	default:
++	}
++	select {
++	case <-c.done:
++		return 0, nil, c.closedError()
++	case <-c.rd.Wait():
++		return 0, nil, os.ErrDeadlineExceeded
++	case packet := <-c.packets:
++		n := copy(p, packet.data)
++		if n < len(packet.data) {
++			return n, packet.from, io.ErrShortBuffer
++		}
++		return n, packet.from, nil
++	}
++}
++
++func (c *udpPacketConn) WriteTo(p []byte, addr net.Addr) (int, error) {
++	if len(p) > udptunnel.MaxPayload {
++		return 0, udptunnel.ErrTooLarge
++	}
++	target := c.destination
++	if addr != nil {
++		target = M.SocksaddrFromNet(addr).Unwrap()
++	}
++	conn, err := c.connection(target)
++	if err != nil {
++		return 0, err
++	}
++	n, err := conn.Write(p)
++	if err == nil {
++		c.touch()
++	}
++	return n, err
++}
++
++func (c *udpPacketConn) ReadPacket(buffer *buf.Buffer) (M.Socksaddr, error) {
++	n, from, err := c.ReadFrom(buffer.FreeBytes())
++	buffer.Truncate(n)
++	if from == nil {
++		return M.Socksaddr{}, err
++	}
++	return M.SocksaddrFromNet(from), err
++}
++
++func (c *udpPacketConn) WritePacket(buffer *buf.Buffer, target M.Socksaddr) error {
++	defer buffer.Release()
++	_, err := c.WriteTo(buffer.Bytes(), target)
++	return err
++}
++
++func (c *udpPacketConn) fail(err error, onlyIfEmpty bool) {
++	c.mu.Lock()
++	if onlyIfEmpty && (len(c.conns) != 0 || len(c.opening) != 0) {
++		c.mu.Unlock()
++		return
++	}
++	var all []net.Conn
++	c.once.Do(func() {
++		c.cancel()
++		c.err = err
++		close(c.done)
++		c.idle.Stop()
++		all = make([]net.Conn, 0, len(c.conns))
++		for _, conn := range c.conns {
++			all = append(all, conn)
++		}
++		c.conns = make(map[M.Socksaddr]net.Conn)
++	})
++	c.mu.Unlock()
++	for _, conn := range all {
++		conn.Close()
++	}
++}
++
++func (c *udpPacketConn) closedError() error  { c.mu.Lock(); defer c.mu.Unlock(); return c.err }
++func (c *udpPacketConn) Close() error        { c.fail(net.ErrClosed, false); return nil }
++func (c *udpPacketConn) LocalAddr() net.Addr { return &net.UDPAddr{} }
++func (c *udpPacketConn) SetDeadline(t time.Time) error {
++	c.SetReadDeadline(t)
++	return c.SetWriteDeadline(t)
++}
++func (c *udpPacketConn) SetReadDeadline(t time.Time) error { c.rd.Set(t); return nil }
++func (c *udpPacketConn) SetWriteDeadline(t time.Time) error {
++	c.mu.Lock()
++	c.wd = t
++	for _, pending := range c.opening {
++		c.setPendingDeadline(pending)
++	}
++	for _, conn := range c.conns {
++		conn.SetWriteDeadline(t)
++	}
++	c.mu.Unlock()
++	return nil
++}
+diff --git a/protocol/ssh/udp_setup_test.go b/protocol/ssh/udp_setup_test.go
+new file mode 100644
+index 0000000..ffd1a78
+--- /dev/null
++++ b/protocol/ssh/udp_setup_test.go
+@@ -0,0 +1,53 @@
++package ssh
++
++import (
++	"context"
++	"errors"
++	"net"
++	"sync/atomic"
++	"testing"
++	"time"
++
++	M "github.com/sagernet/sing/common/metadata"
++)
++
++type blockedSetupDialer struct{ active, maximum, total atomic.Int32 }
++
++func (d *blockedSetupDialer) ListenPacket(context.Context, M.Socksaddr) (net.PacketConn, error) {
++	return nil, errors.New("unused")
++}
++
++func (d *blockedSetupDialer) DialContext(ctx context.Context, _ string, _ M.Socksaddr) (net.Conn, error) {
++	n := d.active.Add(1)
++	d.total.Add(1)
++	defer d.active.Add(-1)
++	for old := d.maximum.Load(); n > old && !d.maximum.CompareAndSwap(old, n); old = d.maximum.Load() {
++	}
++	<-ctx.Done()
++	return nil, ctx.Err()
++}
++
++func TestUDPSetupQueueBoundAndCancellation(t *testing.T) {
++	d := &blockedSetupDialer{}
++	out := &Outbound{udpForwarding: true, udpSlots: make(chan struct{}, 64), dialer: d}
++	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
++	defer cancel()
++	done := make(chan error, 12)
++	for i := 0; i < cap(done); i++ {
++		go func() { _, err := out.dialUDP(ctx, M.ParseSocksaddr("127.0.0.1:53")); done <- err }()
++	}
++	for i := 0; i < cap(done); i++ {
++		if err := <-done; !errors.Is(err, context.DeadlineExceeded) {
++			t.Fatalf("queue cancellation: %v", err)
++		}
++	}
++	if d.maximum.Load() != 4 {
++		t.Fatalf("concurrent setups = %d", d.maximum.Load())
++	}
++	if d.total.Load() > 4 {
++		t.Fatalf("cancelled queued work started a connection: %d", d.total.Load())
++	}
++	if len(out.udpSlots) != 0 || len(out.udpTransports) != 0 {
++		t.Fatal("cancelled work retained slots")
++	}
++}
+diff --git a/protocol/ssh/udpgw/conn.go b/protocol/ssh/udpgw/conn.go
+new file mode 100644
+index 0000000..d2ec18a
+--- /dev/null
++++ b/protocol/ssh/udpgw/conn.go
+@@ -0,0 +1,151 @@
++// Package udpgw implements tun2proxy's UDP Gateway protocol, not SagerNet UoT
++// or BadVPN. Wire reference: tun2proxy/tun2proxy src/udpgw.rs.
++package udpgw
++
++import (
++	"encoding/binary"
++	"errors"
++	"io"
++	"net/netip"
++
++	"github.com/sagernet/sing-box/protocol/ssh/udptunnel"
++	M "github.com/sagernet/sing/common/metadata"
++)
++
++const (
++	Keepalive    byte   = 1
++	Data         byte   = 2
++	Close        byte   = 4
++	RemoteError  byte   = 32
++	connectionID uint16 = 1 // One destination per isolated gateway TCP stream.
++)
++
++var ErrProtocol = errors.New("E_UDPGW_PROTOCOL")
++var ErrRemote = errors.New("E_UDPGW_REMOTE")
++
++func addressBytes(target M.Socksaddr) ([]byte, error) {
++	target = target.Unwrap()
++	if !target.IsValid() || target.Port == 0 {
++		return nil, ErrProtocol
++	}
++	var address []byte
++	if target.Addr.Is4() {
++		address = append([]byte{1}, target.Addr.AsSlice()...)
++	} else if target.Addr.Is6() {
++		address = append([]byte{4}, target.Addr.AsSlice()...)
++	} else {
++		if len(target.Fqdn) == 0 || len(target.Fqdn) > 255 {
++			return nil, ErrProtocol
++		}
++		address = append([]byte{3, byte(len(target.Fqdn))}, []byte(target.Fqdn)...)
++	}
++	return binary.BigEndian.AppendUint16(address, target.Port), nil
++}
++
++func parseAddress(data []byte) (M.Socksaddr, []byte, error) {
++	var addr M.Socksaddr
++	if len(data) < 1 {
++		return addr, nil, ErrProtocol
++	}
++	addressType := data[0]
++	n := 0
++	switch addressType {
++	case 1:
++		n = 4
++	case 4:
++		n = 16
++	case 3:
++		if len(data) < 2 || data[1] == 0 {
++			return addr, nil, ErrProtocol
++		}
++		n = int(data[1])
++		data = data[1:]
++	default:
++		return addr, nil, ErrProtocol
++	}
++	if len(data) < 1+n+2 {
++		return addr, nil, ErrProtocol
++	}
++	if addressType == 1 || addressType == 4 {
++		addr.Addr, _ = netip.AddrFromSlice(data[1 : 1+n])
++	} else {
++		addr.Fqdn = string(data[1 : 1+n])
++	}
++	addr.Port = binary.BigEndian.Uint16(data[1+n:])
++	return addr.Unwrap(), data[1+n+2:], nil
++}
++
++func NewConn(stream io.ReadWriteCloser, abort func(), target M.Socksaddr) (*udptunnel.Conn, error) {
++	address, err := addressBytes(target)
++	if err != nil {
++		stream.Close()
++		return nil, err
++	}
++	target = target.Unwrap()
++	read := func(r io.Reader) ([]byte, error) {
++		for {
++			var length [2]byte
++			if _, err := io.ReadFull(r, length[:]); err != nil {
++				return nil, err
++			}
++			n := int(binary.BigEndian.Uint16(length[:]))
++			if n < 3 {
++				return nil, ErrProtocol
++			}
++			frame := make([]byte, n)
++			if _, err := io.ReadFull(r, frame); err != nil {
++				return nil, err
++			}
++			if binary.BigEndian.Uint16(frame[1:3]) != connectionID {
++				return nil, ErrProtocol
++			}
++			switch frame[0] {
++			case Keepalive:
++				if n != 3 {
++					return nil, ErrProtocol
++				}
++				continue
++			case Close, RemoteError:
++				if n != 3 {
++					return nil, ErrProtocol
++				}
++				return nil, ErrRemote
++			case Data:
++				from, payload, err := parseAddress(frame[3:])
++				if err != nil || from.Port != target.Port || (target.IsIP() && from != target) {
++					return nil, ErrProtocol
++				}
++				if len(payload) > udptunnel.MaxPayload {
++					return nil, udptunnel.ErrTooLarge
++				}
++				return payload, nil
++			default:
++				return nil, ErrProtocol
++			}
++		}
++	}
++	write := func(w io.Writer, payload []byte) error {
++		n := 3 + len(address) + len(payload)
++		if n > 65535 || len(payload) > udptunnel.MaxPayload {
++			return udptunnel.ErrTooLarge
++		}
++		frame := make([]byte, 5, 2+n)
++		binary.BigEndian.PutUint16(frame, uint16(n))
++		frame[2] = Data
++		binary.BigEndian.PutUint16(frame[3:], connectionID)
++		frame = append(frame, address...)
++		frame = append(frame, payload...)
++		for len(frame) > 0 {
++			n, err := w.Write(frame)
++			if err != nil {
++				return err
++			}
++			if n <= 0 || n > len(frame) {
++				return io.ErrShortWrite
++			}
++			frame = frame[n:]
++		}
++		return nil
++	}
++	return udptunnel.NewConnWithFraming(stream, abort, target.String(), read, write), nil
++}
+diff --git a/protocol/ssh/udpgw/conn_test.go b/protocol/ssh/udpgw/conn_test.go
+new file mode 100644
+index 0000000..43d0869
+--- /dev/null
++++ b/protocol/ssh/udpgw/conn_test.go
+@@ -0,0 +1,86 @@
++package udpgw
++
++import (
++	"bytes"
++	"errors"
++	"io"
++	"net"
++	"testing"
++	"time"
++
++	M "github.com/sagernet/sing/common/metadata"
++)
++
++func TestGoldenWireAndFragmentedReply(t *testing.T) {
++	a, b := net.Pipe()
++	defer b.Close()
++	conn, err := NewConn(a, func() { a.Close() }, M.ParseSocksaddr("1.2.3.4:53"))
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer conn.Close()
++	conn.SetDeadline(time.Now().Add(time.Second))
++	want := []byte{0, 11, 2, 0, 1, 1, 1, 2, 3, 4, 0, 53, 'A'}
++	result := make(chan error, 1)
++	go func() { _, err := conn.Write([]byte("A")); result <- err }()
++	wire := make([]byte, len(want))
++	if _, err = io.ReadFull(b, wire); err != nil || !bytes.Equal(wire, want) {
++		t.Fatal(wire, err)
++	}
++	if err = <-result; err != nil {
++		t.Fatal(err)
++	}
++	go func() {
++		b.Write([]byte{0, 3, 1, 0, 1}) // KEEPALIVE is not an empty datagram.
++		for _, value := range want {
++			b.Write([]byte{value})
++		}
++	}()
++	p := make([]byte, 8)
++	n, err := conn.Read(p)
++	if err != nil || string(p[:n]) != "A" {
++		t.Fatal(n, err)
++	}
++}
++
++func TestRejectMalformedOrRemoteErrorFrames(t *testing.T) {
++	for _, tc := range []struct {
++		wire []byte
++		want error
++	}{
++		{[]byte{0, 2, 2, 0}, ErrProtocol},
++		{[]byte{0, 3, 32, 0, 1}, ErrRemote},
++		{[]byte{0, 3, 4, 0, 1}, ErrRemote},
++		{[]byte{0, 3, 2, 0, 2}, ErrProtocol},
++		{[]byte{0, 3, 128, 0, 1}, ErrProtocol},
++		{[]byte{0, 6, 2, 0, 1, 3, 5, 'a'}, ErrProtocol},
++		{[]byte{0, 10, 2, 0, 1, 1, 1, 2, 3, 5, 0, 53}, ErrProtocol},
++	} {
++		a, b := net.Pipe()
++		conn, err := NewConn(a, func() { a.Close() }, M.ParseSocksaddr("1.2.3.4:53"))
++		if err != nil {
++			t.Fatal(err)
++		}
++		conn.SetReadDeadline(time.Now().Add(time.Second))
++		go func() { b.Write(tc.wire); b.Close() }()
++		_, err = conn.Read(make([]byte, 100))
++		conn.Close()
++		if !errors.Is(err, tc.want) {
++			t.Fatal(tc.wire, err)
++		}
++	}
++}
++
++func TestAddressRoundTrip(t *testing.T) {
++	for _, value := range []string{"1.2.3.4:53", "[2001:db8::1]:65535", "a:1", "host:2", "remote.example:1234"} {
++		target := M.ParseSocksaddr(value)
++		wire, err := addressBytes(target)
++		if err != nil {
++			t.Fatal(err)
++		}
++		got, payload, err := parseAddress(append(wire, 'x'))
++		if err != nil || got != target || string(payload) != "x" {
++			t.Fatal(value, got, err)
++		}
++	}
++}

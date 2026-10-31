@@ -9,6 +9,7 @@ public sealed partial class ProxyCheckService
     internal sealed record Probe(string Id, string Group, string Kind, string Target, string Path, string Proxy = "", string Family = "", string Query = "", bool? TunEnabled = null);
     internal sealed class WorkerResult
     {
+        public SshUdpCapabilitySnapshot? SshCapabilities { get; set; }
         public List<ObserverReceipt> Receipts { get; set; } = [];
         public string FailureStage { get; set; } = "";
         public int Version { get; set; }
@@ -302,7 +303,10 @@ public sealed partial class ProxyCheckService
     }
 
     private static string ExplainUdpError(string error)
-        => error.Contains("E_UDP_FORWARDING_DISABLED") ? T("远端 SSH 的 UDP 转发被配置或密钥权限禁用。", "Remote SSH UDP forwarding is disabled by configuration or key permissions.")
+        => error.Contains("E_UDPGW_CONNECT") ? T("无法经 SSH 连接 tun2proxy 网关；检查网关地址、TCP 转发权限和 ForwardProxy。", "Cannot reach the tun2proxy gateway through SSH; check its address, TCP forwarding permission and ForwardProxy.")
+        : error.Contains("E_UDPGW_PROTOCOL") ? T("网关未返回有效的 tun2proxy 协议响应；请确认服务类型及端口。", "The gateway did not return a valid tun2proxy response; check its service type and port.")
+        : error.Contains("E_UDPGW_REMOTE") ? T("tun2proxy 网关拒绝了 UDP 请求或关闭了会话。", "The tun2proxy gateway rejected the UDP request or closed the session.")
+        : error.Contains("E_UDP_FORWARDING_DISABLED") ? T("远端 SSH 的 UDP 转发被配置或密钥权限禁用。", "Remote SSH UDP forwarding is disabled by configuration or key permissions.")
         : error.Contains("E_UDP_UPSTREAM_UNSUPPORTED") ? T("远端 SSH 的上游代理不支持 UDP。", "The remote SSH server's upstream proxy does not support UDP.")
         : error.Contains("E_UDP_PROXY_UNSUPPORTED") ? T("远端 SSH 服务未提供 UDP 扩展。请使用部署了扩展的独立 SSH 服务。", "Remote SSH does not provide the UDP extension. Use the independent UDP-enabled SSH service.") : error;
 
@@ -325,10 +329,10 @@ public sealed partial class ProxyCheckService
         }
     }
 
-    internal static async Task<WorkerResult> WorkerAsync(Probe probe, int timeout, CancellationToken ct, object? observer = null)
+    internal static async Task<WorkerResult> WorkerAsync(Probe probe, int timeout, CancellationToken ct, object? observer = null, JsonObject? draftSsh = null)
     {
-        var ssh = probe.Kind == "ssh-capability" ? ReadSshOutbound() : null;
-        if (probe.Kind == "ssh-capability" && ssh?["udp_forwarding"]?.GetValue<bool>() != true)
+        var ssh = draftSsh ?? (probe.Kind == "ssh-capability" ? ReadSshOutbound() : null);
+        if (probe.Kind == "ssh-capability" && (ssh == null || !SshUdpPolicy.CoreUdpEnabled(ssh)))
             return new() { State = "unsupported", Error = T("当前 SSH 出站未启用 UDP over SSH；需要专用核心并在节点高级选项开启。", "UDP over SSH is not enabled for the SSH outbound; use the bundled core and enable the node's advanced option.") };
         if (ssh?["detour"] != null) return new() { State = "unsupported", Error = T("复杂 SSH 出站链需以实际 UDP 数据测试为准。", "Use actual UDP data probes for a chained SSH outbound.") };
         var path = Utils.GetBaseDirectory("proxy-check" + (OperatingSystem.IsWindows() ? ".exe" : ""));

@@ -42,15 +42,16 @@ type request struct {
 	Timeout  int              `json:"timeout"`
 }
 type result struct {
-	FailureStage string             `json:"failureStage,omitempty"`
-	Receipts     []observer.Receipt `json:"receipts,omitempty"`
-	Version      int                `json:"version"`
-	State        string             `json:"state"`
-	Elapsed      float64            `json:"elapsed"`
-	Egress       string             `json:"egress,omitempty"`
-	Protocol     string             `json:"protocol,omitempty"`
-	Evidence     string             `json:"evidence,omitempty"`
-	Error        string             `json:"error,omitempty"`
+	SSHCapabilities *sshUDPCapabilities `json:"sshCapabilities,omitempty"`
+	FailureStage    string              `json:"failureStage,omitempty"`
+	Receipts        []observer.Receipt  `json:"receipts,omitempty"`
+	Version         int                 `json:"version"`
+	State           string              `json:"state"`
+	Elapsed         float64             `json:"elapsed"`
+	Egress          string              `json:"egress,omitempty"`
+	Protocol        string              `json:"protocol,omitempty"`
+	Evidence        string              `json:"evidence,omitempty"`
+	Error           string              `json:"error,omitempty"`
 }
 
 func main() {
@@ -79,6 +80,10 @@ func run(r request) (out result) {
 		switch r.Kind {
 		case "ssh-capability":
 			err = probeSSH(ctx, r.SSH, &out)
+		case "ssh-udp-capabilities":
+			err = probeSSHCapabilities(ctx, r.SSH, &out)
+		case "udp-echo":
+			err = probeUDPEcho(ctx, r, &out)
 		case "tcp":
 			var c net.Conn
 			c, err = dialTCP(ctx, r, r.Target)

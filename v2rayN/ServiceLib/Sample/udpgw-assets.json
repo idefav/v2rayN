@@ -1,0 +1,13 @@
+{
+  "version": "0.8.7",
+  "assets": {
+    "amd64": {
+      "name": "tun2proxy-x86_64-unknown-linux-musl.zip",
+      "sha256": "e21529ecc39db5e51e048288c53264b14da698aa8c4104bf7b54d81a0b4d9c7f"
+    },
+    "arm64": {
+      "name": "tun2proxy-aarch64-unknown-linux-gnu.zip",
+      "sha256": "e9d7aaa265ccb4f8fa12c1e6438debee6a20abc36175e304bbf3b7197c63fb33"
+    }
+  }
+}

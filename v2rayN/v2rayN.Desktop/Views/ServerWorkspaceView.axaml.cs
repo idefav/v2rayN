@@ -1,6 +1,7 @@
 using Avalonia.Data;
 using Avalonia.Layout;
 using ReactiveUI.Primitives.Signals;
+using ServiceLib.Services;
 using v2rayN.Desktop.Common;
 using v2rayN.Desktop.Manager;
 
@@ -112,7 +113,7 @@ public partial class ServerWorkspaceView : ReactiveUserControl<ProfilesViewModel
                             txtHostKey.Text = (pinned ? WorkspaceText.T("已固定到此端点", "Pinned to this endpoint") : WorkspaceText.T("端点信任未匹配", "Endpoint trust does not match")) + "\n" + key.Fingerprint;
                         }
                         catch (FormatException) { txtHostKey.Text = WorkspaceText.T("未配置有效主机密钥", "No valid host key configured"); }
-                        txtSshCapabilities.Text = "UDP: " + (extra.SshUdpForwarding == true ? WorkspaceText.T("已配置扩展", "Extension configured") : WorkspaceText.T("未启用", "Off"))
+                        txtSshCapabilities.Text = "UDP: " + (extra.SshUdpForwarding == true ? (SshUdpPolicy.Mode(extra) == SshUdpPolicy.Tun2Proxy ? "tun2proxy" : WorkspaceText.T("自定义扩展", "Custom extension")) : WorkspaceText.T("未启用", "Off"))
                             + " · HTTP3: " + (extra.SshAllowHttp3 == true ? WorkspaceText.T("已配置放行", "Allowed in configuration") : WorkspaceText.T("未启用", "Off"));
                     }
                 }).DisposeWith(disposables);

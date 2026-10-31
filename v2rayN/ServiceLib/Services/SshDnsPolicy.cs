@@ -16,7 +16,7 @@ public static class SshDnsPolicy
         {
             if (tag == null || !seen.Add(tag) || !outbounds.TryGetValue(tag, out var outbound)) return false;
             if (outbound["type"]?.GetValue<string>() == "ssh")
-                return !respectUdpCapability || outbound["udp_forwarding"]?.GetValue<bool>() != true;
+                return !respectUdpCapability || !SshUdpPolicy.CoreUdpEnabled(outbound);
             if (UsesSsh(outbound["detour"]?.GetValue<string>(), seen)) return true;
             return (outbound["outbounds"] as JsonArray ?? [])
                 .Any(child => UsesSsh(child?.GetValue<string>(), seen));

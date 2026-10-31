@@ -93,6 +93,7 @@ public static class SshProfileService
             || string.IsNullOrWhiteSpace(item.Username))
             return SshStrings.InvalidEndpoint;
         var extra = item.GetProtocolExtra();
+        if (SshUdpPolicy.Validate(extra) is { } udpError) return udpError;
         if (extra.SshPrivateKeyAuth == true)
         {
             if (string.IsNullOrWhiteSpace(extra.SshPrivateKeyPath)) return SshStrings.InvalidKeyFile;

@@ -114,6 +114,8 @@ jobs:
           dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/preview-ui/egress-en --proxy-check-only --headless --language=en --theme=dark --width=600
           dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/preview-ui/tun-zh --tun-settings-only --headless --language=zh-Hans --theme=light --width=1440
           dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/preview-ui/tun-en --tun-settings-only --headless --language=en --theme=dark --width=600
+          dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/preview-ui/ssh-udp-zh --ssh-udp-only --headless --language=zh-Hans --theme=light --width=1000
+          dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/preview-ui/ssh-udp-en --ssh-udp-only --headless --language=en --theme=dark --width=1000
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -287,7 +289,11 @@ jobs:
           - 主工作区与代理检查采用统一 Primer 布局，支持中英文、浅深主题和窄窗；明确区分选中节点、运行节点与缓存出口。
           - 修复取消进度、通过筛选、观察端状态失效、停止内核说明及大字号关于窗口；补齐次级页面与动态页面设计，原生接入进度见设计覆盖清单。
           - macOS 锁屏或显示会话不可用时延后原生 UI 初始化，避免启动阶段的 CoreVideo RenderTimer -6661；原生 AppKit 窗口双主题验收现为发布必需门禁。
-          - SSH 节点新增默认关闭的 UDP over SSH 与允许 HTTP3 选项；使用 idefav/sing-box 固定提交构建专用核心，远端需要 OpenSSH UDP 扩展，失败不回退直连。
+          - SSH UDP 支持自定义扩展与 tun2proxy 网关两种模式，配套 sing-box 1.14.3-ssh-udp.3；保留旧节点模式，失败不切换协议、不回退直连。
+          - SSH 编辑器按真实协议检测能力并显示禁选原因，凭据或公钥变化使旧结果失效；网关心跳与 UDP 数据可用性分别验证。
+          - 新增 Linux x86_64/ARM64、systemd、root/sudo 的 tun2proxy 0.8.7 网关自动部署：固定摘要、固定公钥 SFTP、回环监听、自动选端口、随机令牌 UDP 回显和持久事务回滚；只回填草稿，当前代理继续运行。
+          - 修改版 OpenSSH 的 ForwardProxy 需要配套精确网关例外；旧版本提示升级，不自动替换 sshd。网关 UDP 使用服务器本机出口。自定义模式需要配套 UDP 扩展。
+          - 每个 SSH UDP 出站最多 64 个关联、4 个并发建立任务；修复多目标关联、超时故障隔离和排队取消竞态。Windows 实机、系统 TUN 与公网协议路径仍须独立验收。
           - 新增“更新与资源来源”：v2rayN、Xray、mihomo、sing-box 及 Geo、SRS、路由模板可自定义来源，支持单项和全部恢复默认，保存来源不会重启代理。
           - 显式安装的核心更新优先于随包专用核心；验证版本、SHA-256 和当前配置，启动失败恢复旧核心。更新页面区分更新来源与已安装来源，支持手动切换仓库。
           - macOS 安装盘保留可复制的拦截处理命令与安装说明。服务器独立端口部署、中继迁移、协议与排障记录见下方部署文档。

@@ -1,6 +1,82 @@
 # SSH UDP、HTTP3 与代理检查：部署和维护记录
 
-记录日期：2026-10-25。此文同时保存实现原理、可重复部署步骤及本次机器的实际配置，便于以后排查和迁移。这里不包含登录密码、私钥或完整用户配置。
+双模式与自动部署更新日期：2026-11-01。下文线上入口、部署和公网验收记录来自 2026-10-25，不代表本次已重新部署或验收。最新隔离 Linux 实测见[验证记录](ssh-udp-validation-20261101.md)。这里不包含登录密码、私钥或完整用户配置。
+
+## 能力检测与自动部署（2026-11-01）
+
+Avalonia 与 WPF 共用业务逻辑。「检测 UDP 能力」直接检测完整节点草稿，固定已确认的主机公钥，使用当前密码或私钥认证，不依赖运行配置中唯一的 SSH 出站，不根据版本号或 banner 推断能力。打开已启用 UDP 的节点或开启 UDP 时自动检测；修改端点、账号、认证信息、公钥或网关会取消并作废旧结果。
+
+明确不支持、禁用或上游类型不支持时，自定义模式禁选并显示原因；网络、认证、公钥错误或超时保留未知状态。新节点明确不支持时默认选择 tun2proxy，历史节点不改写协议。能力声明、网关心跳和 UDP 数据分别验证，失败不自动切换协议、回退直连或重启当前代理。
+
+「部署 tun2proxy 网关」只针对当前编辑的具体 SSH 节点；透明中继后的最终认证主机才是目标，不能根据出口 IP 推断。选择器或组合节点须先选择具体 SSH 节点。要求 Linux x86_64/ARM64、systemd、root 或 sudo。
+
+1. 固定节点及公钥，检查系统、提权、端口、已有安装、TCP 转发策略和当前连接所属的 sshd 二进制、配置及 systemd 服务。
+2. 客户端下载固定的 [tun2proxy v0.8.7](https://github.com/tun2proxy/tun2proxy/releases/tag/v0.8.7)，按内嵌清单校验 ZIP 的 SHA-256，只提取 `udpgw-server`，通过固定公钥的 SFTP 上传。服务器无需访问 GitHub；ARM64 GNU 二进制先执行兼容性检查。
+3. 展示具体目标、公钥指纹、监听地址、服务及 SSH 配置变更后再安装。root/免密 sudo 留空密码；需要密码时只通过标准输入传递，不保存到节点或事务记录，操作结束即清空。
+4. 安装到 `/opt/v2rayn/udpgw`，以 systemd `DynamicUser` 非 root 身份运行 `v2rayn-udpgw.service`，开机启动、失败重启。固定参数为回环 TCP 监听、MTU 65507、UDP 空闲 60 秒。
+5. 优先复用安装标识和摘要验证通过的健康托管服务，重复部署不重启它。首次优先 7300，占用时选择 7301–7399；不会停止未知进程、覆盖未知服务。启动端口竞争会失败回滚，要求重新预检。
+6. 验证 systemd、属于服务 PID 的实际监听、新 SSH 连接上的网关心跳，再通过临时 sing-box/SOCKS UDP 向目标主机回环回显服务发送随机 32 字节令牌。匹配回包后提交并回填草稿；保存并启用节点后才应用。
+
+部署期间当前代理继续运行。网关 UDP 从安装服务器本机出网，不继承 ForwardProxy 上游。公网 STUN、DNS、HTTP3 另行检测，公共端点超时不触发卸载。
+
+### 事务与精确例外
+
+客户端和远端助手均串行化部署。客户端 `sshKeys/udpgw-deploy-<事务ID>.json` 保存无凭据的状态、端点、公钥指纹、版本、安装标识、服务和端口；远端记录在 `/opt/v2rayn/udpgw/transactions/<事务ID>/record.json`。SSH 原配置备份可能含上游凭据，因此仅保存为 root 私有文件，不进入 JSON 和界面输出。
+
+更新使用版本目录和 `current` 原子链接。修改前启动 180 秒持久 systemd 回滚定时器，重启后仍会执行；只有真实令牌回显后才能提交。断连/取消后重新查询事务，无法确认就保留 `unknown`，下次部署先核对。`rollback_attention` 表示外部修改或恢复失败，需要人工核对，不覆盖管理员变更。停用的回滚 unit 和助手保留为恢复记录。
+
+新版 OpenSSH 增加 `ForwardProxyBypass`，默认 `none`，支持 `Match`，最多 16 个精确数字回环地址和端口，不接受域名或通配符：
+
+```text
+Match User alice
+    ForwardProxyBypass 127.0.0.1:7300
+```
+
+例外只改变网关 TCP 是否经过 ForwardProxy；`AllowTcpForwarding`、`DisableForwarding`、`PermitOpen` 和密钥限制继续生效。向导只在需要时为当前账号添加端点，保留已有例外，执行配置检查、平滑重载及新 SSH 连接验证。旧 sshd 启用了 ForwardProxy 却不支持例外、无法可靠识别所属服务/启动参数，或既有 Match 优先级阻止例外生效时停止，提示升级或人工检查，绝不自动替换 sshd。
+
+受认证的 `forward-proxy-info-v1@idefav.github.io` 返回有效例外和策略，并可细分 UDP 禁用原因，不返回上游 URL 或凭据。原 UDP v1 单字节响应保持不变。旧修改版没有策略查询时仍保留其 UDP v1 结果，部署由远端预检判断是否需要升级。
+
+## 选择 SSH UDP 模式
+
+SSH 编辑器（Avalonia 与 Windows WPF）在高级选项中提供「启用 SSH UDP 转发」、模式下拉框和「允许 HTTP3」。UDP 默认关闭；旧节点已启用 UDP 但没有模式字段时继续使用自定义模式。
+
+| 模式 | 服务端要求 | UDP 出口与权限 |
+| --- | --- | --- |
+| 自定义 SSH UDP | 修改版 sshd，`AllowUdpForwarding yes` | 保留逐目标 PermitOpen/密钥限制，以及已有 SOCKS5 ForwardProxy UDP 上游能力 |
+| tun2proxy 网关 | 原版或修改版 sshd，允许 TCP 转发，另行运行 `udpgw-server` | sshd 连接网关；UDP 由网关发出，PermitOpen 只看到网关地址 |
+
+tun2proxy 模式显示网关地址，默认 `127.0.0.1:7300`，也支持域名和 `[IPv6]:端口`。配置生成器写入 `udp_mode: "custom"` 或 `"tun2proxy"`；只有网关模式写入 `udp_gateway`。保留 `udp_forwarding` 以兼容旧节点数据，但显式 `udp_mode` 决定核心行为。未知模式、无效地址会报错；失败不切换协议、不回退直连。需要本次配套核心，旧版核心不能识别新字段。
+
+### tun2proxy 网关部署条件
+
+在最终 SSH 服务端运行官方 [tun2proxy UDP gateway](https://github.com/tun2proxy/tun2proxy/wiki/UDP-gateway-feature)。例如 v0.8.7：
+
+```sh
+udpgw-server -l 127.0.0.1:7300 -m 65507 -t 60
+```
+
+该命令前台运行，持续运行可交给服务管理器。只监听回环时无需开放公网 7300。客户端设置相同网关地址；实际 SSH 账号的 `AllowTcpForwarding`、`DisableForwarding`、`PermitOpen` 和 authorized_keys 限制必须允许到该端点的 TCP 转发；网关模式不要求 `AllowUdpForwarding`。
+
+**修改版 OpenSSH 的 ForwardProxy 条件**：未配置精确例外时，网关的 `direct-tcpip` 仍交给 ForwardProxy，回环地址可能指向上游所在主机。新版使用 `ForwardProxyBypass` 连接本机网关。网关 UDP 使用本机出口；透明 `SSHRelayTarget` 中继不解析此协议，网关部署在最终认证服务器。
+
+代理检查按模式执行：自定义模式查询私有能力，tun2proxy 模式通过 SSH 向网关发送并校验 KEEPALIVE。心跳通过只证明认证、主机密钥和网关协议可用；普通 UDP、DNS、HTTP3 和出口仍需各自的实际数据测试。
+
+### 多目标与故障隔离
+
+两个模式都按目标地址和端口维护独立关联，并在 PacketConn 中合并回包，保留原 TUN 映射选项。为避免 UDP 建流/清理超时关闭共享 SSH client，每个目标关联独占 SSH 连接，最多 64 个存活或建立中的关联，同时最多建立 4 条 SSH 连接；排队计入整体 10 秒期限，自定义通道建立限时 3 秒，空闲 60 秒回收。这增加连接与认证开销，部署时需考虑 SSH 并发限制。不保证不同目标保持同一个远端 UDP 源端口。
+
+直接目标、SOCKS5 主机和 relay 域名改由有界子进程在服务器解析，每条 SSH 连接最多同时 4 个解析任务，通过非阻塞管道接入事件循环。3 秒期限从排队/解析前开始，涵盖 DNS 和上游协商；超时、取消或关闭均终止并回收解析任务，保留服务器解析和目标权限语义。客户端 debug 日志记录关联数、SSH 源端口和建立耗时，服务端 debug 日志记录实际 UDP 源端口。两种模式都经过 TCP，不能据此宣称降低丢包延迟。
+
+### 2026-10-31 本地验证
+
+- sing-box SSH 与 UDPGW 的 race 测试通过：覆盖报文边界、空报文、IPv4/IPv6/域名编码、错误帧、多目标、三种 sing-tun NAT 映射，以及建流超时和连接关闭隔离。NAT 测试调用实际映射和路由组件，没有创建系统 TUN。
+- 通过本地 SSH 测试服务连接官方 tun2proxy `udpgw-server v0.8.7`，实际 UDP 回显和网关心跳通过；网关模式不发送私有 SSH UDP 能力请求。测试网关已停止。
+- `proxy-check` 全部 race 测试通过；认证/公钥、网关拒绝、错误响应和超时均按失败处理。
+- `packaging/build-ssh-core.sh darwin arm64` 从固定提交应用补丁后通过测试、完整功能构建和清单验证，版本为 `1.14.3-ssh-udp.2`。两种模式的 v2rayN 生成配置通过该二进制的 `check`。
+- ServiceLib：436 项，427 通过、9 项环境跳过、0 失败。Avalonia Release 构建通过，中文浅色和英文深色的模式选择、网关显隐、草稿保存绑定检查通过。
+- WPF Release 在 macOS 上通过交叉编译（`EnableWindowsTargeting=true`，仅编译时关闭单文件发布和 apphost）；Windows 实机交互未验证。构建仍有原有 ReactiveUI 源生成类型重复和 GlobalHotKeys 可空性警告。
+
+本地核心、检查程序和界面截图保存在工作区 `artifacts/ssh-udp-dual-mode-20261031`。本次没有替换正在运行的客户端或 sshd，没有发布版本；公网 TUN、浏览器 WebRTC、QUIC 长时间运行及并发性能仍需实际部署验收。
 
 ## 三个源码仓库
 
@@ -10,13 +86,13 @@
 | sing-box | [idefav/sing-box · feature/ssh-udp-forwarding](https://github.com/idefav/sing-box/tree/feature/ssh-udp-forwarding) | 原生 SSH 出站增加 UDP，基于上游 v1.14.3；固定提交 e0ee4f251e66a29bda3c961ae11443c6cbf72978 |
 | OpenSSH | [idefav/openssh-portable · feature/ssh-udp-forwarding](https://github.com/idefav/openssh-portable/tree/feature/ssh-udp-forwarding) | 自定义 UDP 能力与通道；实现提交 8a8cc0d7ef3c27ca93d6b3bc013d4eab86224402，独立服务部署说明提交 341d9f889b2d333cdf41acd24d9ea82a8509af66 |
 
-本地工作区中三个仓库相邻：v2rayN、sing-box，以及 `/Users/idefav/Documents/sources/openssh-portable`。修改都提交到 feature，不推 master。sing-box 的 origin 为用户 fork，upstream 为 SagerNet。
+本地工作区中三个仓库相邻：v2rayN、sing-box，以及 `/Users/idefav/Documents/sources/openssh-portable`。表中 feature 分支是 2026-10-25 的历史记录；本次工作区修改尚未提交或发布，当前基线见验证记录。sing-box 的 origin 为用户 fork，upstream 为 SagerNet。
 
-`packaging/build-ssh-core.sh` 从用户 fork 拉取精确提交，而非浮动分支；版本为 `1.14.3-ssh-udp.1`，保留 Naive、QUIC 等原有平台功能标签。`core-patches/sing-box-v1.14.3-ssh-udp.patch` 保留相对上游 7054cac5124465ffdb145870d7c01885566711b1 的实现补丁，方便审计和移植；正常打包直接使用上述 fork 提交，不重复应用补丁。
+`packaging/build-ssh-core.sh` 从用户 fork 拉取上述精确提交，并应用 `core-patches/sing-box-ssh-udp-modes.patch`，版本为 `1.14.3-ssh-udp.3`，保留 Naive、QUIC 等原有平台功能标签。旧的 `core-patches/sing-box-v1.14.3-ssh-udp.patch` 保留相对上游 7054cac5124465ffdb145870d7c01885566711b1 的历史实现补丁，不重复应用。
 
 macOS 使用 CGO；Linux/Windows 使用上游支持的 with_purego，并从 go.sum 固定的 Cronet 平台模块将 libcronet.so/libcronet.dll 放到核心同目录，保留 Naive。Linux Cronet 静态库需要 Chromium 专用工具链，不能用普通 GCC 直接链接；Windows TFO 标签还要求 -checklinkname=0。不能为了编译通过静默去掉 Naive 功能，也不能只打包纯 Go 核心而漏掉共享库。
 
-## 为什么需要两端扩展
+## 自定义模式为什么需要两端扩展
 
 原版 sing-box 1.14.3 的 SSH 出站只提供 TCP。SOCKS5 UDP ASSOCIATE 成功仅说明本地入口接受了请求，不能说明 SSH 出站支持普通 UDP。DNS 可能被 hijack-dns 转为 DoH/TCP，因此 DNS 成功也不能代替 STUN 或其他普通 UDP 验证。HTTP3 除了依赖 UDP，还可能被内置“阻断udp443”规则拦截。
 

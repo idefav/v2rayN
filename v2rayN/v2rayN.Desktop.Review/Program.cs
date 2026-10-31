@@ -197,6 +197,13 @@ public partial class ReviewApp : v2rayN.Desktop.App
         Network = "ws", StreamSecurity = "tls", Sni = "server.example.com"
     };
 
+    private sealed class UdpCapabilityFixture : ISshUdpCapabilityService
+    {
+        public string State = "enabled";
+        public Task<SshUdpCapabilitySnapshot> DetectAsync(ProfileItem draft, CancellationToken token)
+            => Task.FromResult(new SshUdpCapabilitySnapshot { Custom = State, Gateway = "ready", Reason = "fixture" });
+    }
+
     private async Task CheckRecoveryStatesAsync()
     {
         var bar = _main.GetLogicalDescendants().OfType<StatusBarView>().Single();
@@ -613,7 +620,11 @@ public partial class ReviewApp : v2rayN.Desktop.App
         }
         if (Program.SshUdpOnly)
         {
-            var editor = new AddSshServerWindow { ViewModel = new AddSshServerViewModel(Profile(EConfigType.SSH)) { UdpForwarding = true, AllowHttp3 = true } };
+            var node = Profile(EConfigType.SSH); node.IndexId = "ssh-udp-review";
+            node.SetProtocolExtra(new() { SshHostKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+                SshHostKeyAlgorithm = "ssh-ed25519", SshTrustedAddress = node.Address, SshTrustedPort = node.Port });
+            var probe = new UdpCapabilityFixture();
+            var editor = new AddSshServerWindow { ViewModel = new AddSshServerViewModel(node, capabilityService: probe) { UdpForwarding = true, AllowHttp3 = true } };
             editor.Show(_main);
             await Task.Delay(250);
             var advanced = editor.GetLogicalDescendants().OfType<Expander>().Single();
@@ -624,7 +635,37 @@ public partial class ReviewApp : v2rayN.Desktop.App
             await Task.Delay(250);
             Check(editor.FindControl<CheckBox>("chkUdpForwarding")!.IsChecked == true, "SSH UDP option reflects enabled model");
             Check(editor.FindControl<CheckBox>("chkAllowHttp3")!.IsChecked == true, "HTTP3 option reflects enabled model");
+            var mode = editor.FindControl<ComboBox>("cmbUdpMode")!;
+            var gateway = editor.FindControl<TextBox>("txtUdpGateway")!;
+            Check(mode.SelectedIndex == 0 && !editor.ViewModel!.IsUdpGateway, "old SSH UDP profiles default to custom mode");
             await CaptureAsync("ssh-udp-options", "SSH UDP / HTTP3", editor);
+            mode.SelectedIndex = 1;
+            await Task.Delay(100);
+            Check(editor.ViewModel!.UdpModeIndex == 1 && editor.ViewModel.IsUdpGateway && gateway.IsEffectivelyVisible,
+                "tun2proxy selection reveals the gateway address");
+            gateway.Text = "[::1]:7300";
+            await Task.Delay(100);
+            var extra = editor.ViewModel.CreateDraftSnapshot().GetProtocolExtra();
+            Check(extra.SshUdpMode == "tun2proxy" && extra.SshUdpGateway == "[::1]:7300", "gateway editor binds to the saved draft");
+            scroll.Offset = new Vector(0, scroll.Extent.Height);
+            await CaptureAsync("ssh-tun2proxy-options", "SSH tun2proxy UDP gateway", editor);
+            Check(editor.FindControl<Button>("btnDetectUdp")!.IsEffectivelyVisible && editor.FindControl<Button>("btnDeployGateway")!.IsEffectivelyVisible,
+                "capability refresh and gateway deployment controls are available");
+            probe.State = "unsupported";
+            await editor.ViewModel.DetectUdpCmd.Execute().ToTask();
+            Check(!editor.ViewModel.UdpModes[0].Enabled && editor.ViewModel.UdpModes[1].Enabled,
+                "explicit protocol rejection disables custom mode only");
+            mode.IsDropDownOpen = true;
+            await Task.Delay(150);
+            Check(mode.ContainerFromIndex(0) is ComboBoxItem { IsEnabled: false }, "custom option is disabled in the actual control");
+            mode.IsDropDownOpen = false;
+            await CaptureAsync("ssh-udp-unsupported", "SSH capability unavailable; tun2proxy remains selectable", editor);
+            editor.ViewModel.Password = "changed-fixture";
+            Check(editor.ViewModel.UdpModes[0].Enabled && editor.ViewModel.CreateDraftSnapshot().GetProtocolExtra().SshUdpCapability == null,
+                "credential changes invalidate the displayed capability");
+            editor.FindControl<CheckBox>("chkUdpForwarding")!.IsChecked = false;
+            await Task.Delay(100);
+            Check(!mode.IsEnabled && !editor.ViewModel.IsUdpGateway, "disabling UDP hides gateway and disables mode selection");
             editor.Close();
             File.WriteAllText(Path.Combine(Program.Output, "manifest.json"), JsonSerializer.Serialize(new { fixtureData = true, Program.Language, Program.Theme, screenshots = _shots, checks = _checks }, new JsonSerializerOptions { WriteIndented = true }));
             return;

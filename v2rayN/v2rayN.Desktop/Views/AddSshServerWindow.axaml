@@ -16,6 +16,7 @@
    <WrapPanel HorizontalAlignment="Right">
     <Button x:Name="btnTest" Content="{x:Static resx:SshStrings.TestConnection}" Margin="4"/>
     <Button x:Name="btnStopTest" Content="{x:Static resx:SshStrings.StopTest}" Margin="4" IsVisible="False"/>
+    <Button x:Name="btnStopOperation" Content="{x:Static resx:SshStrings.StopOperation}" IsVisible="{Binding IsBusy}" Margin="4" />
     <Button x:Name="btnCancel" Content="{x:Static resx:ResUI.TbCancel}" MinWidth="90" Margin="4"/>
     <Button x:Name="btnSave" Classes="primary" Content="{x:Static resx:ResUI.TbConfirm}" MinWidth="110" Margin="4"/>
    </WrapPanel>
@@ -62,6 +63,23 @@
     <Expander Header="{x:Static ws:WorkspaceText.Advanced}" HorizontalAlignment="Stretch">
      <StackPanel Spacing="8">
       <CheckBox x:Name="chkUdpForwarding" Content="{x:Static resx:SshStrings.UdpForwarding}" />
+      <TextBlock Text="{x:Static resx:SshStrings.UdpMode}" />
+      <ComboBox x:Name="cmbUdpMode" ItemsSource="{Binding UdpModes}" IsEnabled="{Binding UdpForwarding}" HorizontalAlignment="Stretch">
+       <ComboBox.ItemTemplate><DataTemplate x:DataType="vms:SshUdpModeChoice"><TextBlock Text="{Binding Label}" /></DataTemplate></ComboBox.ItemTemplate>
+       <ComboBox.Styles><Style Selector="ComboBoxItem" x:DataType="vms:SshUdpModeChoice"><Setter Property="IsEnabled" Value="{Binding Enabled}" /></Style></ComboBox.Styles>
+      </ComboBox>
+      <Button x:Name="btnDetectUdp" Content="{x:Static resx:SshStrings.DetectUdp}" HorizontalAlignment="Left" />
+      <ProgressBar IsVisible="{Binding IsDetectingUdp}" IsIndeterminate="True" Height="3" />
+      <TextBlock Text="{Binding UdpCapabilityStatus}" TextWrapping="Wrap" />
+      <StackPanel IsVisible="{Binding IsUdpGateway}" Spacing="4">
+       <TextBlock Text="{x:Static resx:SshStrings.UdpGateway}" TextWrapping="Wrap" />
+       <TextBox x:Name="txtUdpGateway" PlaceholderText="127.0.0.1:7300" />
+      </StackPanel>
+      <TextBlock Text="{x:Static resx:SshStrings.SudoPassword}" TextWrapping="Wrap" />
+      <TextBox x:Name="txtSudoPassword" PasswordChar="●" />
+      <Button x:Name="btnDeployGateway" Content="{x:Static resx:SshStrings.DeployGateway}" HorizontalAlignment="Left" />
+      <TextBlock Text="{Binding DeploymentStatus}" TextWrapping="Wrap" />
+      <TextBlock Classes="muted" Text="{x:Static resx:SshStrings.UdpModeNotice}" TextWrapping="Wrap" />
       <CheckBox x:Name="chkAllowHttp3" Content="{x:Static resx:SshStrings.AllowHttp3}" IsEnabled="{Binding UdpForwarding}" />
       <TextBlock Classes="muted" Text="{x:Static resx:SshStrings.UdpNotice}" TextWrapping="Wrap"/>
      </StackPanel>
