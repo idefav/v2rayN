@@ -18,6 +18,22 @@ Avalonia 左侧“代理检查”检查当前运行状态，不启动隔离节�
 
 组件不监听端口；每进程从 stdin 接收一个最长 64 KiB 的版本 1 JSON 请求，向 stdout 返回一个版本 1 JSON 结果。字段为 `version,kind,target,proxy,family,query,timeout`；kind 支持 `tcp,http,https,h3,stun,dns-udp,dns-tcp`，family 为 `4/6/空`，query 为 `A/AAAA/NXDOMAIN/WHOAMI`。结果包含 `state,elapsed,egress,protocol,evidence,error`，elapsed 单位为毫秒。凭证只经 stdin，不写入报告。
 
+## 验证正在运行的 macOS 客户端
+
+在 v2rayN 保持运行时，使用 [check-running-ssh-udp.py](../packaging/check-running-ssh-udp.py)：
+
+```sh
+python3 packaging/check-running-ssh-udp.py
+# 需要核对特定出口时，可额外指定：
+python3 packaging/check-running-ssh-udp.py --expected-egress 43.98.191.120
+```
+
+脚本仅需 Python 3 标准库、macOS 的 ps/lsof 和当前 App 内的 proxy-check。默认根据 TCP 10808 的监听 PID 找到实际核心、父进程和启动配置；核对定制版本、核心 SHA-256 与随包清单，并读取 Clash API 的实时版本和模式。自定义 SOCKS 端口使用 `--port` 指定。
+
+每轮通过当前 SOCKS5 入口发送 Cloudflare、Google STUN 与真实 HTTP3 请求，默认三轮，另执行一次 HTTPS 对照，共 10 项。STUN 校验事务 ID 和服务端返回的映射地址；HTTP3 必须真正协商 h3 并验证证书。探测期间轮询实时连接表，确认三个 UDP 目标均经过开启 udp_forwarding 的 SSH 出站；最后核对 PID、配置文件和模式未改变。可用 `--rounds`、`--timeout` 调整有限采样。
+
+脚本向 stdout 输出不含认证凭证的 JSON 报告；所有核对通过时 `ok=true` 且退出码为 0，否则退出码为 1。实时连接过短而未被采样到时也不会判定全部通过。脚本只读取当前状态并发送探测，不改配置、不切换代理模式、不重启客户端。它针对 macOS 的单个 `-c` 配置和本机 IP 地址上的 Clash API；其他运行方式会明确失败，不根据安装目录推断正在运行的核心。
+
 高级选项与基线存入应用配置目录的 `proxy-check-options.json` / `proxy-check-baseline.json`；导出报告为版本 1 JSON。运行配置变化会取消任务，取消或退出会终止探测子进程。
 
 测试：本目录运行 `go test -race ./...`；共享层运行 `dotnet test --project v2rayN/ServiceLib.Tests`。UI 隔离审阅：`v2rayN.Desktop.Review <output> --headless --proxy-check-only --language=zh-Hans --theme=Light --width=1000`。
