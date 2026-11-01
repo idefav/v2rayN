@@ -4,8 +4,14 @@ public partial class RoutingRuleDetailsViewModel : MyReactiveObject, ICloseable
 {
     public event EventHandler? RequestClose;
 
-    public IList<string> ProtocolItems { get; set; }
+    [Reactive]
+    public partial IList<string> ProtocolItems { get; set; }
     public IList<string> InboundTagItems { get; set; }
+
+    public ECoreType ProtocolCoreType { get; }
+    public IReadOnlyList<string> AvailableProtocols { get; }
+    public string ProtocolSupportText => RoutingProtocolPolicy.Describe(ProtocolCoreType, ProtocolItems,
+        _config.Inbound?.FirstOrDefault()?.SniffingEnabled == true);
 
     [Reactive]
     public partial RulesItem SelectedSource { get; set; }
@@ -43,9 +49,15 @@ public partial class RoutingRuleDetailsViewModel : MyReactiveObject, ICloseable
     public ReactiveCommand<RxVoid, RxVoid> SelectProfileCmd { get; }
     public ReactiveCommand<RxVoid, RxVoid> SaveCmd { get; }
 
-    public RoutingRuleDetailsViewModel(RulesItem rulesItem)
+    public RoutingRuleDetailsViewModel(RulesItem rulesItem, ECoreType coreType = ECoreType.Xray)
     {
         _config = AppManager.Instance.Config;
+        ProtocolCoreType = coreType;
+        AvailableProtocols = RoutingProtocolPolicy.EditorOptions(coreType, rulesItem.Protocol);
+        ProtocolItems = rulesItem.Protocol?.ToList() ?? [];
+        InboundTagItems = rulesItem.InboundTag?.ToList() ?? [];
+        this.WhenAnyValue(vm => vm.ProtocolItems)
+            .Subscribe(_ => this.RaisePropertyChanged(nameof(ProtocolSupportText)));
 
         SelectProfileCmd = ReactiveCommand.CreateFromTask(async () =>
         {
@@ -81,44 +93,45 @@ public partial class RoutingRuleDetailsViewModel : MyReactiveObject, ICloseable
 
     private async Task SaveRulesAsync()
     {
+        var ruleType = RuleType.IsNullOrEmpty() ? (ERuleType?)null : Enum.Parse<ERuleType>(RuleType);
+        var protocolError = RoutingProtocolPolicy.ValidateRule(new RulesItem
+        {
+            Id = SelectedSource.Id, Remarks = Remarks, Enabled = Enabled,
+            RuleType = ruleType, Protocol = ProtocolItems?.ToList()
+        }, ProtocolCoreType);
+        if (protocolError != null)
+        {
+            NoticeManager.Instance.Enqueue(protocolError);
+            return;
+        }
+
         Domain = Utils.Convert2Comma(Domain);
         IP = Utils.Convert2Comma(IP);
         Process = Utils.ParseProcess(Process);
 
-        if (AutoSort)
+        var domains = AutoSort ? Utils.String2ListSorted(Domain) : Utils.String2List(Domain);
+        var ips = AutoSort ? Utils.String2ListSorted(IP) : Utils.String2List(IP);
+        var processes = AutoSort ? Utils.String2ListSorted(Process) : Utils.String2List(Process);
+        var hasRule = domains?.Count > 0 || ips?.Count > 0 || ProtocolItems?.Count > 0
+            || processes?.Count > 0 || Port.IsNotEmpty() || Network.IsNotEmpty();
+        if (!hasRule)
         {
-            SelectedSource.Domain = Utils.String2ListSorted(Domain);
-            SelectedSource.Ip = Utils.String2ListSorted(IP);
-            SelectedSource.Process = Utils.String2ListSorted(Process);
+            NoticeManager.Instance.Enqueue(string.Format(ResUI.RoutingRuleDetailRequiredTips, "Network/Port/Protocol/Domain/IP/Process"));
+            return;
         }
-        else
-        {
-            SelectedSource.Domain = Utils.String2List(Domain);
-            SelectedSource.Ip = Utils.String2List(IP);
-            SelectedSource.Process = Utils.String2List(Process);
-        }
+
+        SelectedSource.Domain = domains;
+        SelectedSource.Ip = ips;
+        SelectedSource.Process = processes;
         SelectedSource.Protocol = ProtocolItems?.ToList();
         SelectedSource.InboundTag = InboundTagItems?.ToList();
-        SelectedSource.RuleType = RuleType.IsNullOrEmpty() ? null : Enum.Parse<ERuleType>(RuleType);
+        SelectedSource.RuleType = ruleType;
         SelectedSource.OutboundTag = OutboundTag;
         SelectedSource.Remarks = Remarks;
         SelectedSource.Port = Port;
         SelectedSource.Network = Network;
         SelectedSource.Enabled = Enabled;
 
-        var hasRule = SelectedSource.Domain?.Count > 0
-          || SelectedSource.Ip?.Count > 0
-          || SelectedSource.Protocol?.Count > 0
-          || SelectedSource.Process?.Count > 0
-          || SelectedSource.Port.IsNotEmpty()
-          || SelectedSource.Network.IsNotEmpty();
-
-        if (!hasRule)
-        {
-            NoticeManager.Instance.Enqueue(string.Format(ResUI.RoutingRuleDetailRequiredTips, "Network/Port/Protocol/Domain/IP/Process"));
-            return;
-        }
-        //NoticeHandler.Instance.Enqueue(ResUI.OperationSuccess);
         RequestClose?.Invoke(this, EventArgs.Empty);
         await Task.CompletedTask;
     }

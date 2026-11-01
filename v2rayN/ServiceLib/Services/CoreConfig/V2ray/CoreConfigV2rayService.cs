@@ -28,6 +28,13 @@ public partial class CoreConfigV2rayService(CoreConfigContext context)
                 return ret;
             }
 
+            if (context.FullConfigTemplate?.Enabled != true
+                && RoutingProtocolPolicy.ValidateRules(context.RoutingItem, context.RunCoreType) is { } protocolError)
+            {
+                ret.Msg = protocolError;
+                return ret;
+            }
+
             ret.Msg = ResUI.InitialConfiguration;
 
             var result = EmbedUtils.GetEmbedText(Global.V2raySampleClient);

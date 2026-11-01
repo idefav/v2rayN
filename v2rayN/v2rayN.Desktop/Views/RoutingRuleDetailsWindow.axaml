@@ -129,14 +129,28 @@
                 Margin="{StaticResource Margin4}"
                 VerticalAlignment="Center"
                 Text="protocol" />
-            <ListBox
-                x:Name="clbProtocol"
+            <StackPanel
                 Grid.Row="4"
                 Grid.Column="1"
-                Margin="{StaticResource Margin4}"
-                HorizontalAlignment="Left"
-                SelectionMode="Multiple,Toggle"
-                Theme="{DynamicResource CardCheckGroupListBox}" />
+                Width="360"
+                MaxWidth="420">
+                <ListBox
+                    x:Name="clbProtocol"
+                    Margin="{StaticResource Margin4}"
+                    ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                    SelectionMode="Multiple,Toggle"
+                    Theme="{DynamicResource CardCheckGroupListBox}">
+                    <ListBox.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel />
+                        </ItemsPanelTemplate>
+                    </ListBox.ItemsPanel>
+                </ListBox>
+                <TextBlock
+                    Margin="{StaticResource Margin4}"
+                    Text="{Binding ProtocolSupportText}"
+                    TextWrapping="Wrap" />
+            </StackPanel>
             <TextBlock
                 Grid.Row="4"
                 Grid.Column="2"

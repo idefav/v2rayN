@@ -1,3 +1,5 @@
+using ServiceLib.Services;
+
 namespace v2rayN.Views;
 
 public partial class RoutingRuleDetailsWindow
@@ -11,7 +13,6 @@ public partial class RoutingRuleDetailsWindow
         clbInboundTag.SelectionChanged += ClbInboundTag_SelectionChanged;
 
         cmbOutboundTag.ItemsSource = Global.OutboundTags;
-        clbProtocol.ItemsSource = Global.RuleProtocols;
         clbInboundTag.ItemsSource = Global.InboundTags;
         cmbNetwork.ItemsSource = Global.RuleNetworks;
         cmbRuleType.ItemsSource = Utils.GetEnumNames<ERuleType>().AppendEmpty();
@@ -42,6 +43,9 @@ public partial class RoutingRuleDetailsWindow
 
     private void InitializeData(RulesItem rulesItem)
     {
+        clbProtocol.ItemsSource = ViewModel!.AvailableProtocols;
+        clbProtocol.SelectedItems.Clear();
+        clbInboundTag.SelectedItems.Clear();
         if (rulesItem.Id.IsNullOrEmpty())
         {
             return;
@@ -79,6 +83,6 @@ public partial class RoutingRuleDetailsWindow
 
     private void linkRuleobjectDoc_Click(object sender, RoutedEventArgs e)
     {
-        ProcUtils.ProcessStart("https://xtls.github.io/config/routing.html#ruleobject");
+        ProcUtils.ProcessStart(RoutingProtocolPolicy.Documentation(ViewModel!.ProtocolCoreType));
     }
 }

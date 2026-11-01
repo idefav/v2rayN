@@ -28,6 +28,13 @@ public partial class CoreConfigSingboxService(CoreConfigContext context)
                 return ret;
             }
 
+            if (context.FullConfigTemplate?.Enabled != true
+                && RoutingProtocolPolicy.ValidateRules(context.RoutingItem, ECoreType.sing_box) is { } protocolError)
+            {
+                ret.Msg = protocolError;
+                return ret;
+            }
+
             ret.Msg = ResUI.InitialConfiguration;
 
             var result = EmbedUtils.GetEmbedText(Global.SingboxSampleClient);

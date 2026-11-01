@@ -554,14 +554,6 @@ public class Global
         "socks3"
     ];
 
-    public static readonly List<string> RuleProtocols =
-    [
-        "http",
-        "tls",
-        "quic",
-        "bittorrent"
-    ];
-
     public static readonly List<string> RuleNetworks =
     [
         "",

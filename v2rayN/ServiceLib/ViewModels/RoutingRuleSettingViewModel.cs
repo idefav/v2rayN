@@ -136,7 +136,9 @@ public partial class RoutingRuleSettingViewModel : MyReactiveObject, ICloseable
                 return;
             }
         }
-        var routingRuleDetailsViewModel = new RoutingRuleDetailsViewModel(item);
+        var profile = await AppManager.Instance.GetProfileItem(_config.IndexId);
+        var coreType = AppManager.Instance.GetCoreType(profile, profile?.ConfigType ?? EConfigType.VMess);
+        var routingRuleDetailsViewModel = new RoutingRuleDetailsViewModel(item, coreType);
         if (await AppManager.Instance.WindowDialog.ShowDialogAsync(routingRuleDetailsViewModel) == true)
         {
             if (blNew)

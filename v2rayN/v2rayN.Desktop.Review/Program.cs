@@ -53,6 +53,7 @@ internal static class Program
     public static bool SshUdpOnly;
     public static bool UpdateSourcesOnly;
     public static bool TunSettingsOnly;
+    public static bool RoutingProtocolsOnly;
     public static bool LegacyColumns;
     public static string Language = "zh-Hans";
     public static string Theme = "Light";
@@ -79,6 +80,7 @@ internal static class Program
         SshUdpOnly = args.Contains("--ssh-udp-only");
         UpdateSourcesOnly = args.Contains("--update-sources-only");
         TunSettingsOnly = args.Contains("--tun-settings-only");
+        RoutingProtocolsOnly = args.Contains("--routing-protocols-only");
         LegacyColumns = args.Contains("--legacy-columns");
         foreach (var argument in args.Skip(1))
         {
@@ -557,6 +559,17 @@ public partial class ReviewApp : v2rayN.Desktop.App
             await CheckDnsEgressAsync();
             File.WriteAllText(Path.Combine(Program.Output, "manifest.json"), JsonSerializer.Serialize(new { fixtureData = true, screenshots = _shots, checks = _checks }, new JsonSerializerOptions { WriteIndented = true }));
             Console.WriteLine($"Reviewed {_shots.Count} DNS screens; {_checks.Count} checks passed.");
+            return;
+        }
+        if (Program.RoutingProtocolsOnly)
+        {
+            await ReviewRoutingProtocolsAsync();
+            File.WriteAllText(Path.Combine(Program.Output, "manifest.json"), JsonSerializer.Serialize(new
+            {
+                fixtureData = true, renderer = Program.Headless ? "Avalonia.Headless + Skia" : "native",
+                Program.Language, Program.Theme, screenshots = _shots, checks = _checks
+            }, new JsonSerializerOptions { WriteIndented = true }));
+            Console.WriteLine($"Reviewed {_shots.Count} routing protocol screens; {_checks.Count} checks passed.");
             return;
         }
         if (Program.TunSettingsOnly)
@@ -1720,6 +1733,38 @@ public partial class ReviewApp : v2rayN.Desktop.App
         }
         finally { System.Runtime.InteropServices.Marshal.FreeHGlobal(buffer); }
     }
+    private async Task ReviewRoutingProtocolsAsync()
+    {
+        foreach (var (core, protocols, id) in new[]
+        {
+            (ECoreType.sing_box, new[] { "stun", "dtls" }, "routing-singbox"),
+            (ECoreType.Xray, new[] { "tls" }, "routing-xray"),
+            (ECoreType.Xray, new[] { "stun", "future-protocol" }, "routing-unsupported")
+        })
+        {
+            var source = new RulesItem { Id = id, Remarks = id, Protocol = protocols.ToList(), OutboundTag = Global.ProxyTag };
+            var model = new RoutingRuleDetailsViewModel(source, core);
+            var window = new RoutingRuleDetailsWindow { ViewModel = model };
+            window.Show(_main);
+            await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
+            var list = window.FindControl<ListBox>("clbProtocol")!;
+            Check(list.Items.Cast<string>().SequenceEqual(RoutingProtocolPolicy.EditorOptions(core, protocols)), $"{id}: options match profile core");
+            Check(list.SelectedItems!.Cast<string>().Order().SequenceEqual(protocols.Order()), $"{id}: existing selections survive opening");
+            Check(model.ProtocolItems.Order().SequenceEqual(protocols.Order()), $"{id}: selection events preserve the draft");
+            if (core == ECoreType.sing_box)
+            {
+                list.SelectedItems!.Add("ntp");
+                Check(model.ProtocolItems.Contains("ntp"), "sing-box: selecting another protocol preserves STUN");
+                list.SelectedItems.Remove("ntp");
+            }
+            await CaptureAsync(id, id, window);
+            foreach (var item in list.GetVisualDescendants().OfType<ListBoxItem>())
+                Check(item.Bounds.Width > 0 && item.Bounds.Right <= list.Bounds.Width + 1, $"{id}: protocol chip fits the list");
+            window.Close();
+            Check(source.Protocol!.SequenceEqual(protocols), $"{id}: closing without save preserves the original rule");
+        }
+    }
+
     private async Task ShowAsync(string id, string title, object model)
     {
         var view = SimpleViewLocator.Instance.Build(model);
