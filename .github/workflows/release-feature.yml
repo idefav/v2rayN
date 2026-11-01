@@ -292,6 +292,7 @@ jobs:
           - SSH UDP 支持自定义扩展与 tun2proxy 网关两种模式，配套 sing-box 1.14.3-ssh-udp.3；保留旧节点模式，失败不切换协议、不回退直连。
           - SSH 编辑器按真实协议检测能力并显示禁选原因，凭据或公钥变化使旧结果失效；网关心跳与 UDP 数据可用性分别验证。
           - 新增 Linux x86_64/ARM64、systemd、root/sudo 的 tun2proxy 0.8.7 网关自动部署：固定摘要、固定公钥 SFTP、回环监听、自动选端口、随机令牌 UDP 回显和持久事务回滚；只回填草稿，当前代理继续运行。
+          - 修复独立代理 sshd 使用 AllowUdpForwarding/PidFile 启动参数时网关部署误报 E_SSHD_COMMAND_AMBIGUOUS；保留节点代理 SSH 端口及生效参数，已通过真实中继链路安装与 UDP、DNS、HTTP3 验证。
           - 修改版 OpenSSH 的 ForwardProxy 需要配套精确网关例外；旧版本提示升级，不自动替换 sshd。网关 UDP 使用服务器本机出口。自定义模式需要配套 UDP 扩展。
           - 每个 SSH UDP 出站最多 64 个关联、4 个并发建立任务；修复多目标关联、超时故障隔离和排队取消竞态。Windows 实机、系统 TUN 与公网协议路径仍须独立验收。
           - 新增“更新与资源来源”：v2rayN、Xray、mihomo、sing-box 及 Geo、SRS、路由模板可自定义来源，支持单项和全部恢复默认，保存来源不会重启代理。

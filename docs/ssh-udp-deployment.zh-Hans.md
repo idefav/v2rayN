@@ -10,6 +10,10 @@ Avalonia 与 WPF 共用业务逻辑。「检测 UDP 能力」直接检测完整�
 
 「部署 tun2proxy 网关」只针对当前编辑的具体 SSH 节点；透明中继后的最终认证主机才是目标，不能根据出口 IP 推断。选择器或组合节点须先选择具体 SSH 节点。要求 Linux x86_64/ARM64、systemd、root 或 sudo。
 
+部署、SFTP 和验证均使用节点中配置的 SSH 地址及端口，不改用管理端口 22。助手按实际会话的祖先进程定位 sshd，并在策略查询中保留代理监听端口和已识别的 `-oAllowUdpForwarding=yes/no`、`-oPidFile=绝对路径/none` 参数（也支持分开的 `-o 参数` 写法）。不明参数、包装脚本及命令行中的 ForwardProxy/ForwardProxyBypass 覆盖仍会拒绝，避免查询或修改另一套生效配置。
+
+独立代理 sshd 的启动参数兼容修复及新加坡网关实测见[安装修复记录](ssh-udpgw-install-fix-20261101.md)。
+
 1. 固定节点及公钥，检查系统、提权、端口、已有安装、TCP 转发策略和当前连接所属的 sshd 二进制、配置及 systemd 服务。
 2. 客户端下载固定的 [tun2proxy v0.8.7](https://github.com/tun2proxy/tun2proxy/releases/tag/v0.8.7)，按内嵌清单校验 ZIP 的 SHA-256，只提取 `udpgw-server`，通过固定公钥的 SFTP 上传。服务器无需访问 GitHub；ARM64 GNU 二进制先执行兼容性检查。
 3. 展示具体目标、公钥指纹、监听地址、服务及 SSH 配置变更后再安装。root/免密 sudo 留空密码；需要密码时只通过标准输入传递，不保存到节点或事务记录，操作结束即清空。

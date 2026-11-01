@@ -316,6 +316,22 @@ func parseSSHDCommand(raw, binary string) ([]string, string, error) {
 	config := "/etc/ssh/sshd_config"
 	var args []string
 	for i := 1; i < len(fields); i++ {
+		if option, ok := strings.CutPrefix(fields[i], "-o"); ok {
+			if option == "" {
+				i++
+				if i == len(fields) {
+					return nil, "", invalid
+				}
+				option = fields[i]
+			}
+			if !supportedSSHDStartupOption(option) {
+				return nil, "", invalid
+			}
+			// Preserve the listener's exact overrides for every -T/-t query.
+			// Dropping them would inspect a different effective SSH policy.
+			args = append(args, "-o", option)
+			continue
+		}
 		switch fields[i] {
 		case "-D", "-e":
 		case "-f", "-h", "-p":
@@ -342,6 +358,24 @@ func parseSSHDCommand(raw, binary string) ([]string, string, error) {
 		}
 	}
 	return args, config, nil
+}
+
+func supportedSSHDStartupOption(option string) bool {
+	name, value, ok := strings.Cut(option, "=")
+	if !ok || value == "" || strings.ContainsAny(value, " ,;\t\r\n") {
+		return false
+	}
+	// These options are used by the independent proxy SSH service and do not
+	// override the TCP/bypass policy that the deployment may need to amend.
+	// Keep arbitrary -o options (especially Include/ForwardProxyBypass) blocked.
+	switch strings.ToLower(name) {
+	case "allowudpforwarding":
+		return value == "yes" || value == "no"
+	case "pidfile":
+		return value == "none" || filepath.IsAbs(value)
+	default:
+		return false
+	}
 }
 
 func connectionSpec(r Request) (string, error) {
