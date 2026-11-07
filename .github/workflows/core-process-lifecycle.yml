@@ -42,6 +42,16 @@ jobs:
           chmod +x "$core"
           "$core" version
           echo "SSH_TEST_SINGBOX=$core" >> "$GITHUB_ENV"
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: proxy-check/go.mod
+          cache-dependency-path: proxy-check/go.sum
+      - name: Build the same SSH UDP fixture as preview releases
+        run: |
+          set -euo pipefail
+          core="$RUNNER_TEMP/pinned-core/sing-box"
+          bash packaging/build-ssh-core.sh linux amd64 "$core"
+          echo "TUN_TEST_SINGBOX=$core" >> "$GITHUB_ENV"
       - name: Run shared-service and real process lifecycle regressions
         run: dotnet test --project ./v2rayN/ServiceLib.Tests -c Release --results-directory ./TestResults -- --report-trx
       - uses: actions/upload-artifact@v7
