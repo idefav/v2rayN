@@ -5,6 +5,14 @@ internal static class Program
     [STAThread]
     private static void Main(string[] args)
     {
+        // This internal command must never enter updater/restart handling or wait
+        // for keyboard input, including malformed requests and probe failures.
+        if (args.FirstOrDefault() == ServiceLib.Services.ListenerBindProbe.Command)
+        {
+            try { Environment.ExitCode = ServiceLib.Services.ListenerBindProbe.Run(args, Console.Out); }
+            catch { Environment.ExitCode = 2; }
+            return;
+        }
         try
         {
             // If no arguments are provided, display usage guidelines and exit

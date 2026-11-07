@@ -15,6 +15,7 @@
         <ProjectReference Include="..\ServiceLib\ServiceLib.csproj" />
         <None Update="Fixtures/ssh_server.py" CopyToOutputDirectory="PreserveNewest" />
         <None Update="Fixtures/process_tree.py" CopyToOutputDirectory="PreserveNewest" />
+        <None Update="Fixtures/root_time_wait.py" CopyToOutputDirectory="PreserveNewest" />
         <Compile Include="../v2rayN.Desktop/Common/MacConnectionEvents.cs" Link="Fixtures/MacConnectionEvents.cs" />
     </ItemGroup>
 

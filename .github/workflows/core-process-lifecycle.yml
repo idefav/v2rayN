@@ -6,6 +6,8 @@ on:
     paths:
       - 'v2rayN/ServiceLib/**'
       - 'v2rayN/ServiceLib.Tests/**'
+      - 'v2rayN/Shared/**'
+      - 'v2rayN/AmazTool/**'
       - '.github/workflows/core-process-lifecycle.yml'
   pull_request:
     paths:
@@ -13,13 +15,64 @@ on:
       - 'v2rayN/ServiceLib/Manager/CoreAdminManager.cs'
       - 'v2rayN/ServiceLib/Sample/kill_as_sudo_*'
       - 'v2rayN/ServiceLib.Tests/Services/ProcessLifecycleTests.cs'
+      - 'v2rayN/ServiceLib/Services/CoreListenerCheck.cs'
+      - 'v2rayN/ServiceLib/Manager/CoreManager.cs'
+      - 'v2rayN/ServiceLib.Tests/Services/CoreListenerCheckTests.cs'
+      - 'v2rayN/ServiceLib.Tests/Fixtures/root_time_wait.py'
+      - 'v2rayN/Shared/**'
+      - 'v2rayN/AmazTool/**'
+      - '.github/workflows/core-process-lifecycle.yml'
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      bind_only:
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 jobs:
+  listener-bind:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2025]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.4xx
+      - name: Build the packaged bind probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$RUNNER_OS" in Linux) platform=linux ;; macOS) platform=osx ;; Windows) platform=win ;; esac
+          case "$RUNNER_ARCH" in X64) arch=x64 ;; ARM64) arch=arm64 ;; *) exit 1 ;; esac
+          dotnet publish v2rayN/AmazTool/AmazTool.csproj -c Release -r "$platform-$arch" \
+            --self-contained true -p:PublishTrimmed=true -o "$RUNNER_TEMP/listener-probe"
+      - name: Test actual bind behavior and helper on each platform
+        shell: bash
+        run: |
+          set -euo pipefail
+          helper="$RUNNER_TEMP/listener-probe/AmazTool"
+          if [[ "$RUNNER_OS" == Windows ]]; then
+            helper=$(cygpath -w "$helper.exe")
+          else
+            export V2RAYN_TEST_BIND_SUDO=1
+          fi
+          export V2RAYN_TEST_BIND_HELPER="$helper"
+          dotnet test --project v2rayN/ServiceLib.Tests -c Release --results-directory TestResults -- \
+            --treenode-filter '/*/*/CoreListenerCheckTests/*' --report-trx
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: listener-bind-results-${{ matrix.os }}
+          path: TestResults
+
   test:
+    if: ${{ !inputs.bind_only }}
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false

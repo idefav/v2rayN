@@ -119,6 +119,42 @@ public class ProcessLifecycleTests
     }
 
     [Test]
+    public async Task BoundSocketAbortsReloadBeforeConfigReplacementOrProcessLaunch()
+    {
+        EnsureIsolatedStorage();
+        using var reserved = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+        reserved.Bind(new IPEndPoint(IPAddress.Loopback, 0));
+        reserved.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, false);
+        var port = ((IPEndPoint)reserved.LocalEndPoint!).Port;
+        var attempts = 0;
+        var manager = new CoreManager(_ => { attempts++; return ("missing-test-core", ""); });
+        var config = Utils.GetBinConfigPath(Global.CoreConfigFileName);
+        var before = File.Exists(config) ? await File.ReadAllBytesAsync(config) : null;
+        var source = Path.Combine(Path.GetTempPath(), "bound-core-" + Guid.NewGuid() + ".json");
+        const string sentinel = "{\"old\":true}";
+        try
+        {
+            await File.WriteAllTextAsync(config, sentinel);
+            await File.WriteAllTextAsync(source, $$"""{"inbounds":[{"type":"mixed","listen":"127.0.0.1","listen_port":{{port}}}],"outbounds":[{"type":"direct"}]}""");
+            var result = await manager.LoadCore(new CoreConfigContext
+            {
+                Node = new ProfileItem { ConfigType = EConfigType.Custom, CoreType = ECoreType.sing_box, Address = source },
+                RunCoreType = ECoreType.sing_box, AppConfig = new Config(),
+            }, null);
+            Check(result == CoreLoadResult.Failed && attempts == 0, "reload launched a core on a reserved port");
+            Check(await File.ReadAllTextAsync(config) == sentinel, "failed bind replaced the previous config");
+            Check(manager.LastError?.Contains("Cannot bind listener") == true, "missing bind diagnostic");
+            reserved.Listen(1);
+            Check(reserved.IsBound, "reload altered an unknown socket");
+        }
+        finally
+        {
+            if (before == null) File.Delete(config); else await File.WriteAllBytesAsync(config, before);
+            File.Delete(source);
+        }
+    }
+
+    [Test]
     public async Task FailedStopPreservesOwnerAndConfigAndStillStopsOtherCore()
     {
         if (OperatingSystem.IsWindows()) { Skip.Test("Unix identity fault fixture"); return; }

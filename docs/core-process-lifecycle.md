@@ -18,6 +18,8 @@
 
 - `CoreManager` 内部串行化启动与停止，继续兼容界面已有的重载协调器。主／前置内核分别清理，一个失败不跳过另一个；部分停止会使有效配置快照失效。
 - sing-box 监听检查覆盖 mixed／SOCKS、额外入站、Clash API 和 V2Ray API，区分 TCP／UDP、地址族、通配地址和 IPv6 专用监听。不把已连接套接字或 TIME_WAIT 当成监听占用。
+- 无匹配监听时仍执行实际 bind／listen 检查，阻止“已经绑定但尚未监听”的端口漏检；临时检查套接字立即释放。TCP 使用与 Go 监听一致的地址复用方式，允许可复用的 TIME_WAIT；系统仍拒绝绑定时单独报告“端口无法绑定”，不虚构监听进程或自动清理。
+- 非 Windows 提权启动若普通用户绑定检查失败，使用随包 `AmazTool check-listener` 在与内核一致的 sudo 权限下重新检查，避免 macOS 跨 UID 的 TIME_WAIT 或特权端口造成误判。帮助程序只接收地址、端口和协议，不读取用户配置、不执行升级／重启；提权失败、无效响应或检查超时均中止启动。已有同地址族监听不能通过提权绕过。
 - 发现占用时中止启动，尽量显示 PID 和程序信息。权限不足时明确说明信息不可读取，不按名称或端口自动终止未知进程。
 - 生成配置的启动确认同时检查实际内核存活、启动身份和适用的本地 SOCKS／监听状态，启动预算为 10 秒。未声明可探测入口的自定义配置保留原有存活检查，不强制增加管理 API。
 - 启动失败会清理本次已启动的主／前置内核；清理失败仍保留记录。错误经 `LastError` 传到连接控制面板，操作结束后恢复控件。
@@ -36,6 +38,8 @@ dotnet build v2rayN/v2rayN.Desktop/v2rayN.Desktop.csproj -c Release -p:UsedAvalo
 设置 `SSH_TEST_SINGBOX` 指向待验证内核可启用真实内核测试。`ProcessLifecycleTests` 使用隔离配置和随机回环端口，调用生产 `CoreManager` 完成 30 次连续重启，并验证前置内核启动失败后的完整回滚；测试存储必须位于测试程序输出目录。
 
 其他回归覆盖父进程提前退出、孤儿监听子进程、忽略 SIGTERM、缓慢退出、提权失败、帮助进程超时、枚举失败、身份不匹配、正式配置保留、应用退出与排队重启、未知监听、TCP/UDP、IPv4/IPv6 和 TIME_WAIT。
+
+绑定回归还覆盖 bound-only 套接字、检查套接字释放、失败时零启动次数及正式配置保留。独立工作流在 Linux、macOS、Windows 执行真实套接字和随包帮助程序测试；CI 的隔离 sudo 用例验证 Linux/macOS 提权检查，以及 macOS 的 root TIME_WAIT → 普通用户启动被阻止、root 启动仍可复用。它们不启动 TUN，也不更改路由、DNS 或系统代理。默认本地测试不启用 sudo；显式设置 `V2RAYN_TEST_BIND_HELPER` 和 `V2RAYN_TEST_BIND_SUDO=1` 才执行相应用例。
 
 `Verify Linux core lifecycle` 在 Ubuntu 24.04 上分别使用 .NET 10.0.1xx 和 10.0.4xx 执行 ServiceLib 回归，启用真实 sing-box 连续 30 次重启。该工作流先验证修复分支，再验证 release 分支；只有预览发布的完整门禁全部通过后才公开下载包。
 
@@ -57,3 +61,10 @@ macOS 的直接 TUN／前置 TUN 验证须额外设置 `V2RAYN_TEST_TUN_RESTART=
 - 新增原始内核字段解析、临时身份替换后不可覆盖、Linux 启动标记与实际停止脚本一致性的回归。
 - macOS 隔离回归 482 项：463 成功、19 跳过、0 失败；桌面 Release 构建成功，有 4 条现有类型冲突／可空性警告。
 - 以上为隔离进程和监听验证，未执行需要提权的真实 TUN 接管；没有安装、启动或重启本机正在使用的代理。
+
+## 2026-11-07 端口绑定预检查修复
+
+- 修复前已在随机回环端口复现：端口处于已绑定但未监听状态，旧预检查返回可用，实际 bind 返回 `AddressAlreadyInUse`。修复后在配置替换和进程创建前中止，回归断言启动次数为零。
+- 绑定探测不启用 `SO_REUSEPORT`。Unix 的 .NET TCP Bind 本身启用原生 `SO_REUSEADDR`，可复用已释放连接；显式设置托管 `ReuseAddress=true` 反而会允许共享活动端口，因此检查中禁用该选项。对短暂延迟关闭的已知监听最多轮询 250ms，始终以实际绑定成功为准，整次预检查预算 10 秒。
+- 本地 macOS arm64／.NET SDK 10.0.403 全量隔离回归：492 项，475 通过、17 跳过、0 失败，包含真实 sing-box 的 30 次连续重启。AmazTool 构建零警告、零错误；桌面 Release 构建成功，有 3 条现有 `ReactiveAttribute` 类型冲突警告。
+- 本地未启用 sudo／真实 TUN 测试。三平台绑定检查和 macOS 跨 UID 用例交由 GitHub 隔离 runner 执行，并作为测试包发布必需门禁；没有操作当前使用中的代理。

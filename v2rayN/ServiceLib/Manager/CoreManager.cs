@@ -162,9 +162,11 @@ public class CoreManager
             var stopped = await CoreStopUnderLock();
             if (!stopped.Success) throw new IOException(stopped.Error);
             if (mainContext.RunCoreType == ECoreType.sing_box)
-                await CoreListenerCheck.EnsureAvailableAsync(CoreListenerCheck.Read(await File.ReadAllTextAsync(fileName)));
+                await CoreListenerCheck.EnsureAvailableAsync(CoreListenerCheck.Read(await File.ReadAllTextAsync(fileName)),
+                    GetElevatedListenerProbe(mainContext.IsTunEnabled, mainContext.RunCoreType));
             if (preContext?.RunCoreType == ECoreType.sing_box)
-                await CoreListenerCheck.EnsureAvailableAsync(CoreListenerCheck.Read(await File.ReadAllTextAsync(preFileName)));
+                await CoreListenerCheck.EnsureAvailableAsync(CoreListenerCheck.Read(await File.ReadAllTextAsync(preFileName)),
+                    GetElevatedListenerProbe(preContext.IsTunEnabled, preContext.RunCoreType));
             if (AppManager.Instance.IsExiting) throw new OperationCanceledException("应用正在退出，已取消启动 / Application is exiting.");
             File.Move(fileName, Utils.GetBinConfigPath(Global.CoreConfigFileName), true);
             if (preContext != null) File.Move(preFileName, Utils.GetBinConfigPath(Global.CorePreConfigFileName), true);
@@ -416,6 +418,10 @@ public class CoreManager
             && isNonWindows;
     }
 
+    private static Func<CoreListener, CancellationToken, Task<SocketError>>? GetElevatedListenerProbe(bool isTunLaunch, ECoreType? coreType)
+        => ShouldRunAsSudo(isTunLaunch, coreType, Utils.IsNonWindows())
+            ? (endpoint, token) => CoreAdminManager.CheckListenerAsSudoAsync(endpoint, token) : null;
+
     private async Task<ProcessService?> RunProcess(CoreInfo? coreInfo, string configPath, bool displayLog, bool mayNeedSudo, bool isTunLaunch = false, string? logPrefix = null,
         Action<ProcessService>? onCreated = null, bool requireSingboxReady = true)
     {
@@ -449,7 +455,9 @@ public class CoreManager
             using var startupTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
             var listeners = coreInfo.CoreType == ECoreType.sing_box
                 ? CoreListenerCheck.Read(await File.ReadAllTextAsync(Utils.GetBinConfigPath(configPath))) : [];
-            if (coreInfo.CoreType == ECoreType.sing_box) await CoreListenerCheck.EnsureAvailableAsync(listeners);
+            if (coreInfo.CoreType == ECoreType.sing_box)
+                await CoreListenerCheck.EnsureAvailableAsync(listeners,
+                    mayNeedSudo ? GetElevatedListenerProbe(isTunLaunch, coreInfo.CoreType) : null, startupTimeout.Token);
             startupTimeout.Token.ThrowIfCancellationRequested();
             if (mayNeedSudo && AppManager.Instance.IsExiting) throw new OperationCanceledException("Application is exiting.");
             if (mayNeedSudo

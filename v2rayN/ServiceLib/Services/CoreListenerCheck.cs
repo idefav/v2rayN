@@ -67,32 +67,47 @@ internal static class CoreListenerCheck
             .Concat(properties.GetActiveUdpListeners().Select(p => new CoreListener(p.Address, p.Port, ProtocolType.Udp))).ToArray();
     }
 
-    internal static async Task EnsureAvailableAsync(IReadOnlyList<CoreListener> expected)
+    internal static async Task EnsureAvailableAsync(IReadOnlyList<CoreListener> expected,
+        Func<CoreListener, CancellationToken, Task<SocketError>>? elevatedProbe = null, CancellationToken token = default)
     {
         if (expected.Count == 0) return;
-        var actual = ActiveListeners();
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
+        timeout.CancelAfter(TimeSpan.FromSeconds(10));
+        timeout.Token.ThrowIfCancellationRequested();
         foreach (var endpoint in expected)
-            if (actual.Any(active => Overlaps(endpoint, active)
-                && (endpoint.Address.AddressFamily == active.Address.AddressFamily || !CanBindAcrossFamilies(endpoint))))
-                throw new IOException($"端口被占用，已中止启动 / Listener occupied: {endpoint}. " + await DescribeOwnerAsync(endpoint));
-    }
-
-    // Listener tables do not expose IPV6_V6ONLY. When the apparent conflict spans
-    // address families, ask the kernel rather than rejecting an unrelated IPv6-only socket.
-    private static bool CanBindAcrossFamilies(CoreListener endpoint)
-    {
-        using var socket = new Socket(endpoint.Address.AddressFamily,
-            endpoint.Protocol == ProtocolType.Tcp ? SocketType.Stream : SocketType.Dgram, endpoint.Protocol);
-        if (endpoint.Address.Equals(IPAddress.IPv6Any)) socket.DualMode = true;
-        if (OperatingSystem.IsWindows()) socket.ExclusiveAddressUse = true;
-        else socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, endpoint.Protocol == ProtocolType.Tcp);
-        try
         {
-            socket.Bind(new IPEndPoint(endpoint.Address, endpoint.Port));
-            if (endpoint.Protocol == ProtocolType.Tcp) socket.Listen(1);
-            return true;
+            timeout.Token.ThrowIfCancellationRequested();
+            var overlapping = ActiveListeners().Where(active => Overlaps(endpoint, active)).ToArray();
+            // An empty LISTEN table does not imply bind is possible: bound-only
+            // sockets and cross-UID TCP remnants can still reserve the address.
+            // Probing also resolves ambiguous IPv6-only versus dual-stack listeners.
+            var error = ListenerBindProbe.Check(endpoint.Address, endpoint.Port, endpoint.Protocol);
+            // Closing a BSD socket with recently completed async IO can defer the
+            // native close briefly. Poll the actual bind, never just sleep and
+            // assume release, and keep the whole check within its shared budget.
+            for (var attempt = 0; error == SocketError.AddressAlreadyInUse && overlapping.Length > 0 && attempt < 5; attempt++)
+            {
+                await Task.Delay(50, timeout.Token);
+                error = ListenerBindProbe.Check(endpoint.Address, endpoint.Port, endpoint.Protocol);
+            }
+            if (error != SocketError.Success)
+                overlapping = ActiveListeners().Where(active => Overlaps(endpoint, active)).ToArray();
+            // The table can lag a just-closed listener on macOS. A successful
+            // non-sharing bind is authoritative; stale rows must not block restart.
+            if (error != SocketError.Success && overlapping.Any(active => endpoint.Address.AddressFamily == active.Address.AddressFamily))
+                throw new IOException($"端口被占用，已中止启动 / Listener occupied: {endpoint}. " + await DescribeOwnerAsync(endpoint));
+            if (error != SocketError.Success && elevatedProbe != null)
+                error = await elevatedProbe(endpoint, timeout.Token);
+            timeout.Token.ThrowIfCancellationRequested();
+            if (error == SocketError.Success) continue;
+            if (error == SocketError.AddressAlreadyInUse && overlapping.Length > 0)
+                throw new IOException($"端口被占用，已中止启动 / Listener occupied: {endpoint}. " + await DescribeOwnerAsync(endpoint));
+            if (error != SocketError.AddressAlreadyInUse)
+                throw new IOException($"端口绑定检查失败，已中止启动 / Listener bind check failed: {endpoint} ({error}).");
+            throw new IOException($"端口无法绑定，已中止启动 / Cannot bind listener: {endpoint} ({error}). " +
+                "未确认匹配的监听进程；端口可能仍由非监听套接字占用或尚未释放，请稍后重试。" +
+                "未终止任何未知进程。 / No confirmed listener owner; the socket may still be reserved. No unknown process was terminated.");
         }
-        catch (SocketException ex) when (ex.SocketErrorCode == SocketError.AddressAlreadyInUse) { return false; }
     }
 
     private static async Task<string> DescribeOwnerAsync(CoreListener endpoint)

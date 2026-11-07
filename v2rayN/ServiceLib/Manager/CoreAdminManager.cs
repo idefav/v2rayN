@@ -1,3 +1,6 @@
+using CliWrap;
+using CliWrap.Buffered;
+
 namespace ServiceLib.Manager;
 
 public class CoreAdminManager
@@ -39,4 +42,19 @@ public class CoreAdminManager
     }
 
     public Task<ProcessStopResult> KillProcessAsLinuxSudo(ProcessService process) => process.StopAndWaitAsync();
+
+    internal static async Task<SocketError> CheckListenerAsSudoAsync(CoreListener endpoint, CancellationToken token,
+        string? helperPath = null)
+    {
+        if (helperPath == null && !Utils.UpgradeAppExists(out helperPath))
+            throw new IOException("缺少端口检查帮助程序 / Listener probe helper is missing.");
+        var result = await Cli.Wrap("/usr/bin/sudo")
+            .WithArguments(["-S", "-p", "", "--", helperPath!, ListenerBindProbe.Command,
+                endpoint.Protocol == ProtocolType.Tcp ? "tcp" : "udp", endpoint.Address.ToString(), endpoint.Port.ToString()])
+            .WithStandardInputPipe(PipeSource.FromString((AppManager.Instance.LinuxSudoPwd ?? "") + "\n"))
+            .WithValidation(CommandResultValidation.None).ExecuteBufferedAsync(token);
+        if (result.ExitCode != 0)
+            throw new IOException($"端口检查提权失败，已中止启动 / Elevated listener probe failed (exit {result.ExitCode}).");
+        return ListenerBindProbe.ParseResult(result.StandardOutput);
+    }
 }

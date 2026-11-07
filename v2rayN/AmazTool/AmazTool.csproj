@@ -4,6 +4,10 @@
 		<OutputType>Exe</OutputType>
 	</PropertyGroup>
 
+    <ItemGroup>
+        <Compile Include="../Shared/ListenerBindProbe.cs" Link="ListenerBindProbe.cs" />
+    </ItemGroup>
+
 	<ItemGroup>
 		<EmbeddedResource Update="Resx\Resource.resx">
 			<Generator>ResXFileCodeGenerator</Generator>
