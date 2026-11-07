@@ -4,6 +4,75 @@ namespace ServiceLib.Tests.Services;
 public class ProcessLifecycleTests
 {
     [Test]
+    public void LinuxIdentityUsesRawKernelTicksWithParenthesizedCommands()
+    {
+        var fields = new[] { "S", "42" }.Concat(Enumerable.Repeat("0", 17)).Append("123456789");
+        var row = UnixProcessControl.ParseLinuxStat(123, "123 (worker ) with spaces)) " + string.Join(" ", fields), "worker");
+        Check(row.Identity.StartTime == "linux:123456789" && row.ParentPid == 42 && !row.Zombie,
+            "kernel identity was converted to wall time or command text shifted the fields");
+        var rejected = false;
+        try { UnixProcessControl.ParseLinuxStat(124, "123 (worker) " + string.Join(" ", fields), "worker"); }
+        catch (IOException) { rejected = true; }
+        Check(rejected, "a different PID was accepted");
+        rejected = false;
+        try { UnixProcessControl.ParseLinuxStat(123, "123 (worker) S 42", "worker"); }
+        catch (IOException) { rejected = true; }
+        Check(rejected, "truncated identity was accepted");
+    }
+
+    [Test]
+    public async Task NativeIdentityReplacesProvisionalRecordAndRemainsImmutable()
+    {
+        if (OperatingSystem.IsWindows()) { Skip.Test("Unix identity fixture"); return; }
+        using var process = await Sleep();
+        try
+        {
+            var identity = process.CoreIdentity!;
+            Check(process.KnownProcesses.Single(p => p.Pid == process.Id) == identity,
+                "wrapper kept a different provisional timestamp");
+            Check(!identity.StartTime.StartsWith("unverified:"), "startup did not verify the identity");
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+            var native = (await UnixProcessControl.SnapshotAsync(timeout.Token)).Single(p => p.Identity.Pid == process.Id);
+            Check(native.Identity.StartTime == identity.StartTime, "native start time changed between reads");
+            process.Remember([identity with { StartTime = "different-process" }]);
+            Check(process.KnownProcesses.Single(p => p.Pid == process.Id) == identity, "later snapshot replaced an owned identity");
+            process.IsElevated = true;
+            Check(!process.HasExited, "live native identity was compared against a different clock");
+        }
+        finally
+        {
+            process.IsElevated = false;
+            var stopped = await process.StopAndWaitAsync();
+            Check(stopped.Success, stopped.Error ?? "native identity cleanup failed");
+        }
+    }
+
+    [Test]
+    public async Task LinuxLaunchMarkerMatchesSnapshotAndStopScript()
+    {
+        if (!OperatingSystem.IsLinux()) { Skip.Test("Linux launch identity fixture"); return; }
+        using var process = new ProcessService("/bin/bash", "", Path.GetTempPath(), true, false, null, null)
+        { IsElevated = true, IdentityMarker = "__LINUX_IDENTITY_TEST" };
+        process.SetArguments(["-c", UnixProcessControl.LinuxStartTimeShell +
+            "\nprintf '__LINUX_IDENTITY_TEST\\t%s\\t%s\\n' \"$$\" \"$birth\"\nexec /bin/sleep 30\n"]);
+        try
+        {
+            await process.StartAsync();
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+            await process.WaitForIdentityAsync(timeout.Token);
+            Check(process.CoreIdentity!.StartTime.StartsWith("linux:") && !process.HasExited, "launch marker did not report kernel identity");
+            Check(process.CoreIdentity.StartTime == process.KnownProcesses.Single(p => p.Pid == process.Id).StartTime,
+                "launch marker and snapshot use different clocks");
+        }
+        finally
+        {
+            process.IsElevated = false;
+            var stopped = await process.StopAndWaitAsync();
+            Check(stopped.Success, stopped.Error ?? "launch identity cleanup failed");
+        }
+    }
+
+    [Test]
     [Arguments("parent-exits")]
     [Arguments("ignore")]
     [Arguments("slow")]

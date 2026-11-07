@@ -25,6 +25,37 @@ internal static class UnixProcessControl
     internal static string Quote(string value) => "'" + value.Replace("'", "'\"'\"'") + "'";
     internal static string NormalizeStart(string value) => string.Join(" ", value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 
+    // Keep Linux identities in the kernel's native clock. Converting starttime to
+    // wall time through .NET and ps can differ by a second (and after clock changes).
+    internal static ProcessSnapshot? ReadLinuxProcess(int pid, string executable)
+    {
+        try { return ParseLinuxStat(pid, File.ReadAllText($"/proc/{pid}/stat"), executable); }
+        catch (FileNotFoundException) { return null; }
+        catch (DirectoryNotFoundException) { return null; }
+    }
+
+    internal static ProcessSnapshot ParseLinuxStat(int pid, string stat, string executable)
+    {
+        // comm is parenthesized and may itself contain spaces or closing parentheses.
+        var open = stat.IndexOf('(');
+        var close = stat.LastIndexOf(')');
+        if (open < 1 || close <= open || !int.TryParse(stat.AsSpan(0, open).Trim(), out var actualPid) || actualPid != pid)
+            throw new IOException($"Invalid Linux process identity: PID {pid}");
+        var fields = stat[(close + 1)..].Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        if (fields.Length < 20 || fields[0].Length != 1 || !int.TryParse(fields[1], out var parent)
+            || !ulong.TryParse(fields[19], out _))
+            throw new IOException($"Invalid Linux process starttime: PID {pid}");
+        return new(new(pid, "linux:" + fields[19], executable), parent, fields[0] == "Z");
+    }
+
+    internal const string LinuxStartTimeShell = """
+        IFS= read -r stat < /proc/$$/stat || exit 23
+        fields=${stat##*) }
+        read -r -a fields <<< "$fields"
+        [[ "${fields[19]}" =~ ^[0-9]+$ ]] || exit 23
+        birth="linux:${fields[19]}"
+        """;
+
     internal static async Task<IReadOnlyList<ProcessSnapshot>> SnapshotAsync(CancellationToken token)
     {
         var result = await Cli.Wrap("/bin/ps").WithArguments(["-axo", "pid=,ppid=,lstart=,stat=,comm="])
@@ -36,7 +67,15 @@ internal static class UnixProcessControl
             var fields = Regex.Split(line.Trim(), @"\s+", RegexOptions.None, TimeSpan.FromSeconds(1));
             if (fields.Length < 9 || !int.TryParse(fields[0], out var pid) || !int.TryParse(fields[1], out var parent))
                 throw new IOException("无法解析进程列表 / Unable to read process identities.");
-            rows.Add(new(new(pid, string.Join(" ", fields.Skip(2).Take(5)), string.Join(" ", fields.Skip(8))), parent, fields[7].StartsWith('Z')));
+            var executable = string.Join(" ", fields.Skip(8));
+            if (OperatingSystem.IsLinux())
+            {
+                // A process may exit after ps enumerates it. Other read/parse errors
+                // remain failures; never silently treat a permission error as exit.
+                var row = ReadLinuxProcess(pid, executable);
+                if (row != null) rows.Add(row);
+            }
+            else rows.Add(new(new(pid, string.Join(" ", fields.Skip(2).Take(5)), executable), parent, fields[7].StartsWith('Z')));
         }
         if (rows.Count == 0) throw new IOException("进程列表为空 / Process enumeration failed.");
         return rows;

@@ -34,6 +34,11 @@ public class ProcessService : IDisposable
         {
             if (!_started || _isDisposed) return true;
             if (!IsElevated || CoreIdentity == null) return _process.HasExited;
+            if (OperatingSystem.IsLinux())
+            {
+                var current = UnixProcessControl.ReadLinuxProcess(CoreIdentity.Pid, ExpectedExecutable);
+                return current == null || current.Zombie || current.Identity.StartTime != CoreIdentity.StartTime;
+            }
             try
             {
                 using var core = Process.GetProcessById(CoreIdentity.Pid);
@@ -85,9 +90,11 @@ public class ProcessService : IDisposable
     {
         _process.Start();
         _started = true;
+        // An unverified owner still prevents cleanup failures from losing its PID.
+        // Unix startup replaces this provisional record with one native identity;
+        // subsequent snapshots must never overwrite it after a PID has been reused.
         var initialIdentity = new ProcessIdentity(Id, Utils.IsNonWindows()
-            ? _process.StartTime.ToString("ddd MMM d HH:mm:ss yyyy", System.Globalization.CultureInfo.InvariantCulture)
-            : _process.StartTime.ToUniversalTime().Ticks.ToString(), ExpectedExecutable);
+            ? "unverified:" + LaunchId : _process.StartTime.ToUniversalTime().Ticks.ToString(), ExpectedExecutable);
         Remember([initialIdentity]);
         if (!IsElevated) CoreIdentity = initialIdentity;
         if (_process.StartInfo.RedirectStandardOutput)
@@ -101,7 +108,12 @@ public class ProcessService : IDisposable
         {
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(3));
             var row = (await UnixProcessControl.SnapshotAsync(timeout.Token)).FirstOrDefault(p => p.Identity.Pid == Id);
-            if (row != null) { Remember([row.Identity]); if (!IsElevated) CoreIdentity = row.Identity; }
+            if (!_process.HasExited)
+            {
+                if (row == null) throw new IOException("无法获取启动进程身份 / Unable to identify the started process.");
+                _identities[Id] = row.Identity;
+                if (!IsElevated) CoreIdentity = row.Identity;
+            }
         }
         else
         {

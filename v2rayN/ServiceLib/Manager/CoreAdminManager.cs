@@ -26,7 +26,8 @@ public class CoreAdminManager
         var environment = string.Join(" ", coreInfo.Environment.Where(kv => kv.Value.IsNotEmpty())
             .Select(kv => kv.Key + "=" + UnixProcessControl.Quote(string.Format(kv.Value, fullConfig))));
         var script = "#!/bin/bash\nexport LC_ALL=C\n" +
-            "birth=$(ps -p $$ -o lstart=) || exit 23\n" +
+            (OperatingSystem.IsLinux() ? UnixProcessControl.LinuxStartTimeShell + "\n"
+                : "birth=$(ps -p $$ -o lstart=) || exit 23\n") +
             $"printf '{process.IdentityMarker}\\t%s\\t%s\\n' \"$$\" \"$birth\"\n" +
             $"exec env {environment} {command}\n";
         process.LaunchScriptPath = await FileUtils.CreateLinuxShellFile("run_as_sudo-" + process.LaunchId + ".sh", script, true);

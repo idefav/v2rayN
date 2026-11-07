@@ -1,0 +1,51 @@
+name: Verify Linux core lifecycle
+
+on:
+  push:
+    branches: ['release/**', 'fix/core-process-*']
+    paths:
+      - 'v2rayN/ServiceLib/**'
+      - 'v2rayN/ServiceLib.Tests/**'
+      - '.github/workflows/core-process-lifecycle.yml'
+  pull_request:
+    paths:
+      - 'v2rayN/ServiceLib/Services/Process*.cs'
+      - 'v2rayN/ServiceLib/Manager/CoreAdminManager.cs'
+      - 'v2rayN/ServiceLib/Sample/kill_as_sudo_*'
+      - 'v2rayN/ServiceLib.Tests/Services/ProcessLifecycleTests.cs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        sdk: ['10.0.1xx', '10.0.4xx']
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: ${{ matrix.sdk }}
+      - name: Prepare isolated real-core fixture
+        env:
+          CORE_BIN_REF: b83a174e95996e19826edc9e0498323e40bf7a63
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 -o "$RUNNER_TEMP/core.zip" \
+            "https://raw.githubusercontent.com/2dust/v2rayN-core-bin/$CORE_BIN_REF/v2rayN-linux-64.zip"
+          unzip -q "$RUNNER_TEMP/core.zip" 'v2rayN-linux-64/bin/sing_box/*' -d "$RUNNER_TEMP/core"
+          core="$RUNNER_TEMP/core/v2rayN-linux-64/bin/sing_box/sing-box"
+          chmod +x "$core"
+          "$core" version
+          echo "SSH_TEST_SINGBOX=$core" >> "$GITHUB_ENV"
+      - name: Run shared-service and real process lifecycle regressions
+        run: dotnet test --project ./v2rayN/ServiceLib.Tests -c Release --results-directory ./TestResults -- --report-trx
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: linux-lifecycle-results-${{ matrix.sdk }}
+          path: TestResults

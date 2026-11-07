@@ -13,6 +13,9 @@
 
 ## 启动与诊断
 
+- Linux 的身份标识统一使用 `/proc/<pid>/stat` 第 22 字段的原始启动时钟刻度，启动报告、进程快照、存活检查及停止脚本使用同一来源。避免 `.NET StartTime` 与 `ps lstart` 的墙上时钟换算差异误报 PID 复用；不会通过放宽时间比较绕过身份校验。
+- Unix 启动期间只在原始进程句柄仍存活时，以原生身份替换临时记录；之后的快照不能覆盖已确认身份。读取失败保留临时记录并阻止不安全清理。
+
 - `CoreManager` 内部串行化启动与停止，继续兼容界面已有的重载协调器。主／前置内核分别清理，一个失败不跳过另一个；部分停止会使有效配置快照失效。
 - sing-box 监听检查覆盖 mixed／SOCKS、额外入站、Clash API 和 V2Ray API，区分 TCP／UDP、地址族、通配地址和 IPv6 专用监听。不把已连接套接字或 TIME_WAIT 当成监听占用。
 - 发现占用时中止启动，尽量显示 PID 和程序信息。权限不足时明确说明信息不可读取，不按名称或端口自动终止未知进程。
@@ -33,6 +36,8 @@ dotnet build v2rayN/v2rayN.Desktop/v2rayN.Desktop.csproj -c Release -p:UsedAvalo
 设置 `SSH_TEST_SINGBOX` 指向待验证内核可启用真实内核测试。`ProcessLifecycleTests` 使用隔离配置和随机回环端口，调用生产 `CoreManager` 完成 30 次连续重启，并验证前置内核启动失败后的完整回滚；测试存储必须位于测试程序输出目录。
 
 其他回归覆盖父进程提前退出、孤儿监听子进程、忽略 SIGTERM、缓慢退出、提权失败、帮助进程超时、枚举失败、身份不匹配、正式配置保留、应用退出与排队重启、未知监听、TCP/UDP、IPv4/IPv6 和 TIME_WAIT。
+
+`Verify Linux core lifecycle` 在 Ubuntu 24.04 上分别使用 .NET 10.0.1xx 和 10.0.4xx 执行 ServiceLib 回归，启用真实 sing-box 连续 30 次重启。该工作流先验证修复分支，再验证 release 分支；只有预览发布的完整门禁全部通过后才公开下载包。
 
 macOS 的直接 TUN／前置 TUN 验证须额外设置 `V2RAYN_TEST_TUN_RESTART=1`，并预先具备非交互 sudo 授权。测试仅使用 `198.18.77.0/30` 隔离路由，不接管默认路由或系统 DNS；如果该测试地址已经经过 VPN／特定路由则跳过，防止覆盖现有连接。未运行提权／TUN 或其他平台测试时，应明确报告，不能用普通进程测试或跨平台编译替代实机结果。
 

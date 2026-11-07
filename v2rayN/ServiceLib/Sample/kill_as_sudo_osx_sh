@@ -4,6 +4,7 @@
 # are eligible for termination. All discovered identities are returned to the owner.
 export LC_ALL=C
 export PATH=/usr/bin:/bin:/usr/sbin:/sbin
+platform=$(uname -s) || exit 23
 pids=()
 births=()
 row_pids=()
@@ -14,14 +15,26 @@ row_commands=()
 
 fail() { printf '%s\n' "$2" >&2; exit "$1"; }
 snapshot() {
-    local table pid parent weekday month day clock year state command
+    local table pid parent weekday month day clock year state command birth stat fields
     table=$(ps -axo pid=,ppid=,lstart=,stat=,comm=) || fail 23 "Process enumeration failed"
     [ -n "$table" ] || fail 23 "Empty process enumeration"
     row_pids=(); row_parents=(); row_births=(); row_states=(); row_commands=()
     while read -r pid parent weekday month day clock year state command; do
         [[ "$pid" =~ ^[0-9]+$ && "$parent" =~ ^[0-9]+$ && -n "$command" ]] || fail 23 "Invalid process identity"
+        birth="$weekday $month $day $clock $year"
+        if [ "$platform" = Linux ]; then
+            if ! IFS= read -r stat < "/proc/$pid/stat"; then
+                [ ! -d "/proc/$pid" ] && continue
+                fail 23 "Cannot read process identity: PID $pid"
+            fi
+            # Field 22 is starttime in kernel ticks; comm can contain ')' and spaces.
+            fields=${stat##*) }
+            read -r -a fields <<< "$fields"
+            [[ "${fields[1]}" =~ ^[0-9]+$ && "${fields[19]}" =~ ^[0-9]+$ ]] || fail 23 "Invalid Linux process identity: PID $pid"
+            birth="linux:${fields[19]}"; parent=${fields[1]}; state=${fields[0]}
+        fi
         row_pids+=("$pid"); row_parents+=("$parent")
-        row_births+=("$weekday $month $day $clock $year")
+        row_births+=("$birth")
         row_states+=("$state"); row_commands+=("$command")
     done <<< "$table"
 }
