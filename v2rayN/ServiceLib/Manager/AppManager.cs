@@ -140,7 +140,9 @@ public sealed class AppManager
             await ConfigHandler.SaveConfig(_config);
             await ProfileExManager.Instance.SaveTo();
             await StatisticsManager.Instance.SaveTo();
-            await CoreManager.Instance.CoreStop();
+            var stopped = await CoreManager.Instance.CoreStop();
+            if (!stopped.Success) Logging.SaveLog("AppExitAsync core stop failed: " + stopped.Error);
+            await ProcessService.RetryFailedStopsAsync(stopped.RemainingProcesses.Select(p => p.Pid));
             StatisticsManager.Instance.Close();
 
             Logging.SaveLog("AppExitAsync End");

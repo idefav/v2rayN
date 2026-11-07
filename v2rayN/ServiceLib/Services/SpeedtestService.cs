@@ -331,7 +331,8 @@ public class SpeedtestService(Config config, Func<SpeedTestResult, Task> updateF
         {
             if (processService != null)
             {
-                await processService?.StopAsync();
+                await processService.StopAsync();
+                processService.Dispose();
             }
         }
         return true;
@@ -422,7 +423,8 @@ public class SpeedtestService(Config config, Func<SpeedTestResult, Task> updateF
         {
             if (processService != null)
             {
-                await processService?.StopAsync();
+                await processService.StopAsync();
+                processService.Dispose();
             }
         }
         return true;
@@ -482,6 +484,7 @@ public class SpeedtestService(Config config, Func<SpeedTestResult, Task> updateF
                 if (processService != null)
                 {
                     await processService.StopAsync();
+                    processService.Dispose();
                 }
             }
         });

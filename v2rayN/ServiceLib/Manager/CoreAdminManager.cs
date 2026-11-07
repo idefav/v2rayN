@@ -1,104 +1,41 @@
-using CliWrap;
-using CliWrap.Buffered;
-
 namespace ServiceLib.Manager;
 
 public class CoreAdminManager
 {
     private static readonly Lazy<CoreAdminManager> _instance = new(() => new());
     public static CoreAdminManager Instance => _instance.Value;
-    private Config _config;
     private Func<bool, string, Task>? _updateFunc;
-    private int _linuxSudoPid = -1;
-    private const string _tag = "CoreAdminHandler";
 
-    public async Task Init(Config config, Func<bool, string, Task> updateFunc)
+    public Task Init(Config config, Func<bool, string, Task>? updateFunc)
     {
-        if (_config != null)
-        {
-            return;
-        }
-        _config = config;
         _updateFunc = updateFunc;
-
-        await Task.CompletedTask;
+        return Task.CompletedTask;
     }
 
-    private async Task UpdateFunc(bool notify, string msg)
+    public async Task<ProcessService> RunProcessAsLinuxSudo(string fileName, CoreInfo coreInfo, string configPath,
+        Action<ProcessService>? onCreated = null)
     {
-        await _updateFunc?.Invoke(notify, msg);
+        var fullConfig = Utils.GetBinConfigPath(configPath);
+        var process = new ProcessService("/usr/bin/sudo", "", Utils.GetBinConfigPath(), true, true, null, _updateFunc)
+        {
+            IsElevated = true, ExpectedExecutable = fileName, ConfigPath = fullConfig,
+        };
+        process.IdentityMarker = "__V2RAYN_CORE_" + process.LaunchId;
+        var command = UnixProcessControl.Quote(fileName) + " " +
+            string.Format(coreInfo.Arguments, UnixProcessControl.Quote(fullConfig));
+        var environment = string.Join(" ", coreInfo.Environment.Where(kv => kv.Value.IsNotEmpty())
+            .Select(kv => kv.Key + "=" + UnixProcessControl.Quote(string.Format(kv.Value, fullConfig))));
+        var script = "#!/bin/bash\nexport LC_ALL=C\n" +
+            "birth=$(ps -p $$ -o lstart=) || exit 23\n" +
+            $"printf '{process.IdentityMarker}\\t%s\\t%s\\n' \"$$\" \"$birth\"\n" +
+            $"exec env {environment} {command}\n";
+        process.LaunchScriptPath = await FileUtils.CreateLinuxShellFile("run_as_sudo-" + process.LaunchId + ".sh", script, true);
+        process.SetArguments(["-S", "-p", "", "--", "/bin/bash", process.LaunchScriptPath]);
+        // Retain the owner before starting: even a startup exception may leave a child.
+        onCreated?.Invoke(process);
+        await process.StartAsync(AppManager.Instance.LinuxSudoPwd);
+        return process;
     }
 
-    public async Task<ProcessService?> RunProcessAsLinuxSudo(string fileName, CoreInfo coreInfo, string configPath)
-    {
-        StringBuilder sb = new();
-        sb.AppendLine("#!/bin/bash");
-        var cmdLine = $"{fileName.AppendQuotes()} {string.Format(coreInfo.Arguments, Utils.GetBinConfigPath(configPath).AppendQuotes())}";
-
-        // Passing environment variables to the sudo command, here it only xray or sing-box.
-        if (coreInfo.Environment.Count > 0)
-        {
-            var envArgs = string.Join(" ", coreInfo.Environment.Where(kv => kv.Value.IsNotEmpty()).Select(kv => $"{kv.Key}={kv.Value.AppendQuotes()}"));
-            sb.AppendLine($"exec sudo -S -- env {envArgs} {cmdLine}");
-        }
-        else
-        {
-            sb.AppendLine($"exec sudo -S -- {cmdLine}");
-        }
-
-        var shFilePath = await FileUtils.CreateLinuxShellFile("run_as_sudo.sh", sb.ToString(), true);
-
-        var procService = new ProcessService(
-            fileName: shFilePath,
-            arguments: "",
-            workingDirectory: Utils.GetBinConfigPath(),
-            displayLog: true,
-            redirectInput: true,
-            environmentVars: null,
-            updateFunc: _updateFunc
-        );
-
-        await procService.StartAsync(AppManager.Instance.LinuxSudoPwd);
-
-        if (procService is null or { HasExited: true })
-        {
-            throw new Exception(ResUI.FailedToRunCore);
-        }
-        _linuxSudoPid = procService.Id;
-
-        return procService;
-    }
-
-    public async Task KillProcessAsLinuxSudo()
-    {
-        if (_linuxSudoPid < 0)
-        {
-            return;
-        }
-
-        try
-        {
-            var shellFileName = Utils.IsMacOS() ? Global.KillAsSudoOSXShellFileName : Global.KillAsSudoLinuxShellFileName;
-            var shFilePath = await FileUtils.CreateLinuxShellFile("kill_as_sudo.sh", EmbedUtils.GetEmbedText(shellFileName), true);
-            if (shFilePath.Contains(' '))
-            {
-                shFilePath = shFilePath.AppendQuotes();
-            }
-            var arg = new List<string>() { "-c", $"sudo -S {shFilePath} {_linuxSudoPid}" };
-            var result = await Cli.Wrap(Global.LinuxBash)
-                .WithArguments(arg)
-                .WithStandardInputPipe(PipeSource.FromString(AppManager.Instance.LinuxSudoPwd))
-                .ExecuteBufferedAsync();
-
-            await UpdateFunc(false, result.StandardOutput.ToString());
-
-            await Task.Delay(1000); // Wait for a second to ensure the process is killed
-        }
-        catch (Exception ex)
-        {
-            Logging.SaveLog(_tag, ex);
-        }
-
-        _linuxSudoPid = -1;
-    }
+    public Task<ProcessStopResult> KillProcessAsLinuxSudo(ProcessService process) => process.StopAndWaitAsync();
 }

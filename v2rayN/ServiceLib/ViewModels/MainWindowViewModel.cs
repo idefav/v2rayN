@@ -768,7 +768,11 @@ public partial class MainWindowViewModel : MyReactiveObject
                 await Task.Delay(1000);
             });
             if (loadResult == CoreLoadResult.Unchanged) return true;
-            if (loadResult == CoreLoadResult.Failed) return false;
+            if (loadResult == CoreLoadResult.Failed)
+            {
+                StatusBarViewModel.ConnectionError = CoreManager.Instance.LastError ?? ResUI.FailedToRunCore;
+                return false;
+            }
             if (expected == null) RxSchedulers.MainThreadScheduler.Schedule(async () =>
             {
                 var result = await StatusBarViewModel.TestServerAvailability();

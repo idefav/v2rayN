@@ -10,12 +10,24 @@ public class CoreManager
     private static readonly Lazy<CoreManager> _instance = new(() => new());
     public static CoreManager Instance => _instance.Value;
     private Config _config;
+    private readonly Func<CoreInfo?, (string FileName, string Message)> _resolveExecutable;
+
+    public CoreManager() : this(info =>
+    {
+        var file = CoreInfoManager.Instance.GetCoreExecFile(info, out var message);
+        return (file, message);
+    }) { }
+
+    internal CoreManager(Func<CoreInfo?, (string FileName, string Message)> resolveExecutable)
+        => _resolveExecutable = resolveExecutable;
 
     [SupportedOSPlatform("windows")]
     private WindowsJobService? _processJob;
 
     private ProcessService? _processService;
     private ProcessService? _processPreService;
+    private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
+    public string? LastError { get; private set; }
     private EffectiveCoreConfig? _runningConfig;
     // Startup requirements survive a partial launch; effective config is recorded only
     // after every required process starts successfully.
@@ -36,11 +48,10 @@ public class CoreManager
     {
         get
         {
-            try { return _processService is { HasExited: false }; }
+            try { return _processService is { HasExited: false, IsReady: true }; }
             catch (InvalidOperationException) { return false; }
         }
     }
-    private bool _linuxSudo = false;
     private Func<bool, string, Task>? _updateFunc;
     private const string _tag = "CoreHandler";
 
@@ -91,8 +102,18 @@ public class CoreManager
     public async Task<CoreLoadResult> LoadCore(CoreConfigContext? mainContext, CoreConfigContext? preContext,
         bool onlyIfChanged = false, string reason = "用户操作或配置变更")
     {
+        await _lifecycleGate.WaitAsync();
+        try { return await LoadCoreUnderLock(mainContext, preContext, onlyIfChanged, reason); }
+        finally { _lifecycleGate.Release(); }
+    }
+
+    private async Task<CoreLoadResult> LoadCoreUnderLock(CoreConfigContext? mainContext, CoreConfigContext? preContext,
+        bool onlyIfChanged, string reason)
+    {
+        LastError = null;
         if (mainContext == null)
         {
+            LastError = ResUI.CheckServerSettings;
             await UpdateFunc(false, ResUI.CheckServerSettings);
             return CoreLoadResult.Failed;
         }
@@ -101,11 +122,13 @@ public class CoreManager
         // Generate candidates away from the files in use. A skipped reload must not touch them.
         var fileName = Utils.GetBinConfigPath($"candidate-{Utils.GetGuid(false)}.json");
         var preFileName = Utils.GetBinConfigPath($"candidate-pre-{Utils.GetGuid(false)}.json");
+        var startingNewProcesses = false;
         try
         {
             var result = await CoreConfigHandler.GenerateClientConfig(mainContext, fileName);
             if (result.Success != true)
             {
+                LastError = result.Msg;
                 await UpdateFunc(true, result.Msg);
                 return CoreLoadResult.Failed;
             }
@@ -115,6 +138,7 @@ public class CoreManager
                 var preResult = await CoreConfigHandler.GenerateClientConfig(preContext, preFileName);
                 if (!preResult.Success)
                 {
+                    LastError = preResult.Msg;
                     await UpdateFunc(true, preResult.Msg);
                     return CoreLoadResult.Failed;
                 }
@@ -132,15 +156,20 @@ public class CoreManager
             await UpdateFunc(false, reloadLog);
             if (onlyIfChanged && changeReason == null) return CoreLoadResult.Unchanged;
 
-            File.Move(fileName, Utils.GetBinConfigPath(Global.CoreConfigFileName), true);
-            if (preContext != null) File.Move(preFileName, Utils.GetBinConfigPath(Global.CorePreConfigFileName), true);
-
             await UpdateFunc(false, $"{node.GetSummary()}");
             await UpdateFunc(false, $"{Utils.GetRuntimeInfo()}");
             await UpdateFunc(false, string.Format(ResUI.StartService, DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss")));
-            await CoreStop();
+            var stopped = await CoreStopUnderLock();
+            if (!stopped.Success) throw new IOException(stopped.Error);
+            if (mainContext.RunCoreType == ECoreType.sing_box)
+                await CoreListenerCheck.EnsureAvailableAsync(CoreListenerCheck.Read(await File.ReadAllTextAsync(fileName)));
+            if (preContext?.RunCoreType == ECoreType.sing_box)
+                await CoreListenerCheck.EnsureAvailableAsync(CoreListenerCheck.Read(await File.ReadAllTextAsync(preFileName)));
+            if (AppManager.Instance.IsExiting) throw new OperationCanceledException("应用正在退出，已取消启动 / Application is exiting.");
+            File.Move(fileName, Utils.GetBinConfigPath(Global.CoreConfigFileName), true);
+            if (preContext != null) File.Move(preFileName, Utils.GetBinConfigPath(Global.CorePreConfigFileName), true);
             _processRequirements = new(preContext != null);
-            await Task.Delay(100);
+            startingNewProcesses = true;
 
             if (Utils.IsWindows() && (mainContext.IsTunEnabled || preContext?.IsTunEnabled == true))
             {
@@ -149,7 +178,10 @@ public class CoreManager
             }
 
             await CoreStart(mainContext);
+            if (_processService is not { IsReady: true, HasExited: false })
+                throw new IOException(LastError ?? ResUI.FailedToRunCore);
             await WaitForProxyPort(preContext);
+            if (AppManager.Instance.IsExiting) throw new OperationCanceledException("应用正在退出，已取消启动 / Application is exiting.");
             await CoreStartPreService(preContext);
 
             AppManager.Instance.RunningCoreType = preContext?.RunCoreType ?? mainContext.RunCoreType;
@@ -158,10 +190,22 @@ public class CoreManager
             {
                 await UpdateFunc(true, $"{node.GetSummary()}");
             }
-            if (!IsCoreRunning || preContext != null && _processPreService is not { HasExited: false })
-                return CoreLoadResult.Failed;
+            if (!IsCoreRunning || preContext != null && _processPreService is not { HasExited: false, IsReady: true })
+                throw new IOException(LastError ?? ResUI.FailedToRunCore);
             _runningConfig = candidate;
             return CoreLoadResult.Started;
+        }
+        catch (Exception ex)
+        {
+            LastError = ex.Message;
+            if (startingNewProcesses)
+            {
+                var cleanup = await CoreStopUnderLock(clearRequirements: false);
+                if (!cleanup.Success) LastError += Environment.NewLine + cleanup.Error;
+            }
+            Logging.SaveLog(_tag + ": " + LastError);
+            await UpdateFunc(true, LastError);
+            return CoreLoadResult.Failed;
         }
         finally
         {
@@ -210,40 +254,42 @@ public class CoreManager
         var coreInfo = CoreInfoManager.Instance.GetCoreInfo(coreType);
         var process = await RunProcess(coreInfo, fileName, true, false, logPrefix: logPrefix);
         if (process != null) process.TemporaryConfigPath = configPath;
-        else File.Delete(configPath);
+        else if (!ProcessService.HasUnstoppedConfig(configPath)) File.Delete(configPath);
         return process;
     }
 
-    public async Task CoreStop()
+    public async Task<ProcessStopResult> CoreStop()
+    {
+        await _lifecycleGate.WaitAsync();
+        try { return await CoreStopUnderLock(); }
+        finally { _lifecycleGate.Release(); }
+    }
+
+    private async Task<ProcessStopResult> CoreStopUnderLock(bool clearRequirements = true)
     {
         _runningConfig = null;
-        _processRequirements = null;
-        try
+        var results = new List<ProcessStopResult>();
+        foreach (var process in new[] { _processPreService, _processService })
         {
-            if (_linuxSudo)
+            if (process == null) continue;
+            try
             {
-                await CoreAdminManager.Instance.KillProcessAsLinuxSudo();
-                _linuxSudo = false;
+                var result = await process.StopAndWaitAsync();
+                results.Add(result);
+                if (!result.Success) continue;
+                process.Dispose();
+                if (ReferenceEquals(process, _processPreService)) _processPreService = null;
+                if (ReferenceEquals(process, _processService)) _processService = null;
             }
-
-            if (_processService != null)
+            catch (Exception ex)
             {
-                await _processService.StopAsync();
-                _processService.Dispose();
-                _processService = null;
-            }
-
-            if (_processPreService != null)
-            {
-                await _processPreService.StopAsync();
-                _processPreService.Dispose();
-                _processPreService = null;
+                results.Add(new(ProcessStopStatus.Failed, process.KnownProcesses, ex.Message));
             }
         }
-        catch (Exception ex)
-        {
-            Logging.SaveLog(_tag, ex);
-        }
+        var combined = ProcessStopResult.Combine(results);
+        if (combined.Success && clearRequirements) _processRequirements = null;
+        if (!combined.Success) Logging.SaveLog(_tag + ": " + combined.Error);
+        return combined;
     }
 
     #region Private
@@ -255,7 +301,8 @@ public class CoreManager
         var coreInfo = CoreInfoManager.Instance.GetCoreInfo(coreType);
 
         var displayLog = node.ConfigType != EConfigType.Custom || node.DisplayLog;
-        var proc = await RunProcess(coreInfo, Global.CoreConfigFileName, displayLog, true, context.IsTunEnabled);
+        var proc = await RunProcess(coreInfo, Global.CoreConfigFileName, displayLog, true, context.IsTunEnabled,
+            onCreated: process => _processService = process, requireSingboxReady: node.ConfigType != EConfigType.Custom);
         if (proc is null)
         {
             return;
@@ -269,7 +316,8 @@ public class CoreManager
         {
             var preCoreType = preContext?.Node?.CoreType ?? ECoreType.sing_box;
             var coreInfo = CoreInfoManager.Instance.GetCoreInfo(preCoreType);
-            var proc = await RunProcess(coreInfo, Global.CorePreConfigFileName, true, true, preContext.IsTunEnabled);
+            var proc = await RunProcess(coreInfo, Global.CorePreConfigFileName, true, true, preContext.IsTunEnabled,
+                onCreated: process => _processPreService = process);
             if (proc is null)
             {
                 return;
@@ -280,7 +328,7 @@ public class CoreManager
 
     private async Task UpdateFunc(bool notify, string msg)
     {
-        await _updateFunc?.Invoke(notify, msg);
+        if (_updateFunc != null) await _updateFunc(notify, msg);
     }
 
     private static async Task WaitForProxyPort(CoreConfigContext? preContext)
@@ -318,7 +366,7 @@ public class CoreManager
                 var read = await stream.ReadAsync(buf.AsMemory(0, 2), linkedToken);
 
                 // Server selection: VER=5, METHOD=0x00 — proxy is fully ready
-                if (read == 2 && buf[0] == 0x05)
+                if (read == 2 && buf[0] == 0x05 && buf[1] == 0)
                 {
                     return;
                 }
@@ -329,8 +377,7 @@ public class CoreManager
                 {
                     continue;
                 }
-                Logging.SaveLog($"WaitForProxyPort Timeout waiting for proxy port {port} to be ready.");
-                return;
+                throw new TimeoutException($"主内核代理端口未就绪 / Proxy port {port} did not become ready.");
             }
             catch (SocketException ex) when (ex.SocketErrorCode == SocketError.ConnectionRefused)
             {
@@ -341,8 +388,7 @@ public class CoreManager
                 }
                 catch (OperationCanceledException)
                 {
-                    Logging.SaveLog($"WaitForProxyPort Timeout waiting for proxy port {port} to be ready.");
-                    return;
+                    throw new TimeoutException($"主内核代理端口未就绪 / Proxy port {port} did not become ready.");
                 }
             }
             catch
@@ -350,6 +396,7 @@ public class CoreManager
                 // Ignore other exceptions and continue
             }
         }
+        throw new TimeoutException($"主内核代理端口未就绪 / Proxy port {port} did not become ready.");
     }
 
     #endregion Private
@@ -369,7 +416,8 @@ public class CoreManager
             && isNonWindows;
     }
 
-    private async Task<ProcessService?> RunProcess(CoreInfo? coreInfo, string configPath, bool displayLog, bool mayNeedSudo, bool isTunLaunch = false, string? logPrefix = null)
+    private async Task<ProcessService?> RunProcess(CoreInfo? coreInfo, string configPath, bool displayLog, bool mayNeedSudo, bool isTunLaunch = false, string? logPrefix = null,
+        Action<ProcessService>? onCreated = null, bool requireSingboxReady = true)
     {
         // Keep the context on this process, since independent probes can run concurrently.
         Func<bool, string, Task>? updateFunc = _updateFunc;
@@ -381,34 +429,67 @@ public class CoreManager
                     .Select(line => line.Length == 0 ? line : logPrefix + line))) ?? Task.CompletedTask;
         }
 
-        var fileName = CoreInfoManager.Instance.GetCoreExecFile(coreInfo, out var msg);
+        var (fileName, msg) = _resolveExecutable(coreInfo);
         if (fileName.IsNullOrEmpty())
         {
+            if (mayNeedSudo) LastError = msg;
             if (updateFunc != null) await updateFunc(false, msg);
             return null;
         }
 
+        ProcessService? process = null;
+        void Track(ProcessService value)
+        {
+            process = value;
+            if (!mayNeedSudo) value.TemporaryConfigPath = Utils.GetBinConfigPath(configPath);
+            onCreated?.Invoke(value);
+        }
         try
         {
+            using var startupTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var listeners = coreInfo.CoreType == ECoreType.sing_box
+                ? CoreListenerCheck.Read(await File.ReadAllTextAsync(Utils.GetBinConfigPath(configPath))) : [];
+            if (coreInfo.CoreType == ECoreType.sing_box) await CoreListenerCheck.EnsureAvailableAsync(listeners);
+            startupTimeout.Token.ThrowIfCancellationRequested();
+            if (mayNeedSudo && AppManager.Instance.IsExiting) throw new OperationCanceledException("Application is exiting.");
             if (mayNeedSudo
                 && ShouldRunAsSudo(isTunLaunch, coreInfo.CoreType, Utils.IsNonWindows()))
             {
-                _linuxSudo = true;
                 await CoreAdminManager.Instance.Init(_config, _updateFunc);
-                return await CoreAdminManager.Instance.RunProcessAsLinuxSudo(fileName, coreInfo, configPath);
+                process = await CoreAdminManager.Instance.RunProcessAsLinuxSudo(fileName, coreInfo, configPath, Track);
             }
-
-            return await RunProcessNormal(fileName, coreInfo, configPath, displayLog, updateFunc);
+            else process = await RunProcessNormal(fileName, coreInfo, configPath, displayLog || coreInfo.CoreType == ECoreType.sing_box,
+                displayLog ? updateFunc : null, Track);
+            await process.WaitForIdentityAsync(startupTimeout.Token);
+            if (coreInfo.CoreType == ECoreType.sing_box && (listeners.Count > 0 || requireSingboxReady))
+                await CoreListenerCheck.WaitForReadyAsync(process, listeners, startupTimeout.Token);
+            else
+            {
+                await Task.Delay(100, startupTimeout.Token);
+                if (process.HasExited) throw new IOException(ResUI.FailedToRunCore + " " + process.RecentError);
+                process.IsReady = true;
+            }
+            Logging.SaveLog($"CoreLifecycle launch={process.LaunchId} ready core={process.CoreIdentity?.Pid} born={process.CoreIdentity?.StartTime} executable={process.ExpectedExecutable}");
+            return process;
         }
         catch (Exception ex)
         {
             Logging.SaveLog(_tag, ex);
-            if (updateFunc != null) await updateFunc(mayNeedSudo, ex.Message);
+            var error = ex is OperationCanceledException
+                ? "内核启动超时 / Core startup timed out. " + process?.RecentError : ex.Message;
+            if (mayNeedSudo) LastError = error;
+            if (onCreated == null && process != null)
+            {
+                var stopped = await process.StopAndWaitAsync();
+                if (stopped.Success) process.Dispose();
+            }
+            if (updateFunc != null) await updateFunc(mayNeedSudo, error);
             return null;
         }
     }
 
-    private async Task<ProcessService?> RunProcessNormal(string fileName, CoreInfo? coreInfo, string configPath, bool displayLog, Func<bool, string, Task>? updateFunc)
+    private async Task<ProcessService> RunProcessNormal(string fileName, CoreInfo? coreInfo, string configPath, bool displayLog, Func<bool, string, Task>? updateFunc,
+        Action<ProcessService> onCreated)
     {
         var environmentVars = new Dictionary<string, string>();
         foreach (var kv in coreInfo.Environment)
@@ -424,16 +505,10 @@ public class CoreManager
             redirectInput: false,
             environmentVars: environmentVars,
             updateFunc: updateFunc
-        );
+        ) { ConfigPath = Utils.GetBinConfigPath(configPath) };
 
+        onCreated(procService);
         await procService.StartAsync();
-
-        await Task.Delay(100);
-
-        if (procService is null or { HasExited: true })
-        {
-            throw new Exception(ResUI.FailedToRunCore);
-        }
         AddProcessJob(procService.Handle);
 
         return procService;
