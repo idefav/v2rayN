@@ -18,6 +18,9 @@ public record FileDownloadRequest
     public required string FileUrl { get; init; }
     public required string FilePath { get; init; }
     public string? DisplayFileName { get; init; }
+    public string? AlternateUrl { get; init; }
+    public long? ExpectedSize { get; init; }
+    public string? ExpectedSha256 { get; init; }
 
     public string FileName => DisplayFileName ?? Path.GetFileName(FilePath);
 }

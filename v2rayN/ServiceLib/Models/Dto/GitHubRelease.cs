@@ -17,6 +17,7 @@ public class GitHubReleaseAsset
     [JsonPropertyName("state")] public string? State { get; set; }
 
     [JsonPropertyName("size")] public int Size { get; set; }
+    [JsonPropertyName("digest")] public string? Digest { get; set; }
 
     [JsonPropertyName("download_count")] public int DownloadCount { get; set; }
 

@@ -10,6 +10,9 @@ public class UpdateResult
     public string? Tag { get; set; }
     public bool IsSourceSwitch { get; set; }
     public string? FileName { get; set; }
+    public string? AssetApiUrl { get; set; }
+    public long? AssetSize { get; set; }
+    public string? AssetSha256 { get; set; }
 
     public UpdateResult(bool success, string? msg)
     {

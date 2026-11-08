@@ -35,6 +35,9 @@ public partial class UpdateService
         return new(true, version)
         {
             Repository = repository, Tag = release.TagName, Url = asset.BrowserDownloadUrl,
+            AssetApiUrl = asset.Id > 0 ? $"{Global.GithubApiUrl}/{repository}/releases/assets/{asset.Id}" : null,
+            AssetSize = asset.Size > 0 ? asset.Size : null,
+            AssetSha256 = asset.Digest?.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase) == true ? asset.Digest[7..] : null,
             IsSourceSwitch = switching, Msg = message
         };
     }
@@ -57,14 +60,16 @@ public partial class UpdateService
         download.Error += (_, state) => error = state.GetException();
         try
         {
-            await download.DownloadFileAsync(new() { FileUrl = result.Url, FilePath = file }, proxy, token);
+            await download.DownloadFileAsync(new() { FileUrl = result.Url, FilePath = file,
+                AlternateUrl = result.AssetApiUrl, ExpectedSize = result.AssetSize, ExpectedSha256 = result.AssetSha256 }, proxy, token);
             if (error != null || !complete || !File.Exists(file)) throw error ?? new IOException("Download did not complete");
             result.FileName = file;
             return result;
         }
         catch
         {
-            File.Delete(file);
+            try { File.Delete(file); }
+            catch (Exception cleanup) { Logging.SaveLog("Update download cleanup", cleanup); }
             throw;
         }
     }

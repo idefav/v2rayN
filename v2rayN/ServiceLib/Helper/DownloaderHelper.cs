@@ -124,15 +124,18 @@ public class DownloaderHelper
         ArgumentException.ThrowIfNullOrWhiteSpace(request.FilePath);
         if (!Uri.TryCreate(request.FileUrl, UriKind.Absolute, out var address) || address.Scheme is not ("http" or "https"))
             throw new ArgumentException("Invalid download URL");
+        if (request.AlternateUrl != null && (!Uri.TryCreate(request.AlternateUrl, UriKind.Absolute, out var alternate) || alternate.Scheme is not ("http" or "https")))
+            throw new ArgumentException("Invalid alternate download URL");
         const int attempts = 3;
         for (var attempt = 1; ; attempt++)
         {
             cancellationToken.ThrowIfCancellationRequested();
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             deadline.CancelAfter(TimeSpan.FromMinutes(5));
+            var current = attempt > 1 && request.AlternateUrl != null ? request with { FileUrl = request.AlternateUrl } : request;
             try
             {
-                await DownloadFileAttemptAsync(webProxy, request, onProgress, deadline.Token);
+                await DownloadFileAttemptAsync(webProxy, current, onProgress, deadline.Token);
                 return;
             }
             catch (Exception ex)
@@ -140,13 +143,18 @@ public class DownloaderHelper
                 try { File.Delete(request.FilePath); }
                 catch (Exception cleanup) { Logging.SaveLog("Download cleanup", cleanup); }
                 cancellationToken.ThrowIfCancellationRequested();
-                var source = new Uri(request.FileUrl).GetComponents(UriComponents.SchemeAndServer | UriComponents.Path, UriFormat.UriEscaped);
-                var reason = ex is OperationCanceledException ? "下载超时 / Download timed out" : ex.Message;
+                var source = new Uri(current.FileUrl).GetComponents(UriComponents.SchemeAndServer | UriComponents.Path, UriFormat.UriEscaped);
+                var reason = ex switch
+                {
+                    HttpRequestException { StatusCode: { } status } => $"HTTP {(int)status} ({status})",
+                    OperationCanceledException => "下载超时 / Download timed out",
+                    _ => ex.Message
+                };
                 var message = $"下载失败 / Download failed ({attempt}/{attempts}, {(webProxy == null ? "direct" : "proxy")}): {reason}. {source}";
                 Logging.SaveLog(message);
                 if (attempt == attempts || !IsTransientDownloadError(ex)) throw new IOException(message, ex);
                 onProgress(new FileDownloadState { Request = request, RetryMessage =
-                    $"下载重试 / Retrying download ({attempt + 1}/{attempts}): {reason}" });
+                    $"下载重试 / Retrying download ({attempt + 1}/{attempts}{(request.AlternateUrl == null ? "" : ", asset API")}): {reason}" });
                 await Task.Delay(TimeSpan.FromSeconds(attempt), cancellationToken);
             }
         }
@@ -154,6 +162,7 @@ public class DownloaderHelper
 
     private static bool IsTransientDownloadError(Exception error) => error switch
     {
+        InvalidDataException => false,
         HttpRequestException http when http.InnerException is AuthenticationException => false,
         HttpRequestException http => http.StatusCode == null || http.StatusCode is HttpStatusCode.RequestTimeout
             or HttpStatusCode.TooManyRequests || (int)http.StatusCode >= 500,
@@ -186,12 +195,14 @@ public class DownloaderHelper
         };
         using var client = new HttpClient(GetSocketsHttpHandler(requestConfiguration)) { Timeout = Timeout.InfiniteTimeSpan };
         client.DefaultRequestHeaders.UserAgent.ParseAdd("v2rayN");
+        client.DefaultRequestHeaders.Accept.ParseAdd("application/octet-stream");
         using var response = await client.GetAsync(request.FileUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         response.EnsureSuccessStatusCode();
         state = state with { TotalBytes = response.Content.Headers.ContentLength ?? 0 };
         onProgress(state);
         var elapsed = Stopwatch.StartNew();
         var lastReport = TimeSpan.Zero;
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(request.FilePath))!);
         await using (var input = await response.Content.ReadAsStreamAsync(cancellationToken))
         await using (var output = new FileStream(request.FilePath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 65536, true))
         {
@@ -210,6 +221,15 @@ public class DownloaderHelper
             await output.FlushAsync(cancellationToken);
         }
         cancellationToken.ThrowIfCancellationRequested();
+        if (request.ExpectedSize is > 0 && state.DownloadedBytes != request.ExpectedSize)
+            throw new InvalidDataException("发布资产大小不符 / Release asset size mismatch");
+        if (request.ExpectedSha256 != null)
+        {
+            await using var file = File.OpenRead(request.FilePath);
+            var digest = Convert.ToHexString(await SHA256.HashDataAsync(file, cancellationToken));
+            if (!digest.Equals(request.ExpectedSha256, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("发布资产 SHA-256 不符 / Release asset SHA-256 mismatch");
+        }
         onProgress(state with { Completed = true });
     }
 

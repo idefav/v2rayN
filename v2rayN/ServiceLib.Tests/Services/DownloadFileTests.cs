@@ -12,6 +12,8 @@ public class DownloadFileTests
     [Arguments("429")]
     [Arguments("cancel")]
     [Arguments("truncated")]
+    [Arguments("fallback")]
+    [Arguments("corrupt")]
     public async Task ActualDownloaderPreservesErrorsRetriesAndCleansPartialFiles(string mode)
     {
         await CertPemManager.Instance.Init(new Config { GuiItem = new GUIItem() });
@@ -33,7 +35,7 @@ public class DownloadFileTests
                     var head = line!.StartsWith("HEAD ");
                     if (!head) gets++;
                     var status = head ? "200 OK" : mode == "404" ? "404 Not Found" : mode == "429" ? "429 Too Many Requests"
-                        : mode == "recover" && gets > 1 || mode == "truncated" ? "200 OK" : "504 Gateway Time-out";
+                        : mode == "recover" && gets > 1 || mode is "truncated" or "corrupt" || line.Contains("/api/") ? "200 OK" : "504 Gateway Time-out";
                     var body = head ? "" : mode == "truncated" ? "x" : "test-package";
                     await stream.WriteAsync(Encoding.ASCII.GetBytes($"HTTP/1.1 {status}\r\nContent-Length: 12\r\nConnection: close\r\n\r\n{body}"), stop.Token);
                 }
@@ -41,7 +43,7 @@ public class DownloadFileTests
             catch (OperationCanceledException) { }
         });
         var directory = Directory.CreateTempSubdirectory("download-test-").FullName;
-        var path = Path.Combine(directory, "package.zip");
+        var path = Path.Combine(directory, "nested", "package.zip");
         var service = new DownloadService();
         var successes = 0;
         Exception? error = null;
@@ -57,10 +59,13 @@ public class DownloadFileTests
             var cancelled = false;
             try
             {
-                await service.DownloadFileAsync(new() { FileUrl = $"http://127.0.0.1:{((IPEndPoint)listener.LocalEndpoint).Port}/package.zip", FilePath = path }, false, cancel.Token);
+                var url = $"http://127.0.0.1:{((IPEndPoint)listener.LocalEndpoint).Port}";
+                await service.DownloadFileAsync(new() { FileUrl = url + "/package.zip", FilePath = path,
+                    AlternateUrl = mode is "fallback" or "404" ? url + "/api/package" : null,
+                    ExpectedSha256 = mode == "corrupt" ? new string('0', 64) : null }, false, cancel.Token);
             }
             catch (OperationCanceledException) { cancelled = true; }
-            if (mode == "recover")
+            if (mode is "recover" or "fallback")
             {
                 Check(gets == 2 && successes == 1 && error == null && File.ReadAllText(path) == "test-package", "retry did not complete correctly");
             }
@@ -70,9 +75,10 @@ public class DownloadFileTests
                 if (mode == "cancel") Check(cancelled && gets == 1 && error == null, "cancellation retried or became a download error");
                 else
                 {
-                    Check(gets == (mode == "404" ? 1 : 3), "unexpected retry count: " + gets);
+                    Check(gets == (mode is "404" or "corrupt" ? 1 : 3), "unexpected retry count: " + gets);
                     Check(error != null && error.Message.Contains("direct") && error.Message.Contains("package.zip"), "missing download context");
-                    if (mode != "truncated") Check(error!.Message.Contains(mode), "HTTP status was lost");
+                    if (mode is not ("truncated" or "corrupt")) Check(error!.Message.Contains(mode), "HTTP status was lost");
+                    if (mode == "corrupt") Check(error!.Message.Contains("SHA-256"), "digest failure was hidden");
                 }
             }
         }
@@ -103,6 +109,9 @@ public class DownloadFileTests
             await service.DownloadFileAsync(new()
             {
                 FileUrl = "https://github.com/idefav/v2rayN/releases/download/v7.25.6-ssh-preview.29/v2rayN-macos-arm64.zip",
+                AlternateUrl = "https://api.github.com/repos/idefav/v2rayN/releases/assets/722818767",
+                ExpectedSize = 149891075,
+                ExpectedSha256 = "dbf16684eb313791ecbdce20531983860aee271b0232489937853c0de57c102b",
                 FilePath = path
             }, false, timeout.Token);
             if (error != null) throw error;
