@@ -56,7 +56,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          helper="$RUNNER_TEMP/listener-probe/AmazTool"
+          helper="$RUNNER_TEMP/listener-probe/AmazToolV2"
           if [[ "$RUNNER_OS" == Windows ]]; then
             helper=$(cygpath -w "$helper.exe")
           else

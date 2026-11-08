@@ -212,12 +212,7 @@ public partial class CheckUpdateViewModel : MyReactiveObject
                 if (type == ECoreType.v2rayN)
                 {
                     if (!Utils.UpgradeAppExists(out var helper)) throw new FileNotFoundException(ResUI.UpgradeAppNotExistTip);
-                    AppUpdateProvenance.Stage(result, archive);
-                    if (ProcUtils.ProcessStart(helper, Utils.UrlEncode(archive), Utils.StartupPath()) <= 0)
-                    {
-                        AppUpdateProvenance.ClearPending();
-                        throw new IOException("Could not start the application updater");
-                    }
+                    await AppUpdateLauncher.PrepareAsync(result, archive, helper);
                     archive = null; // The upgrade assistant owns the archive until the application exits.
                     await AppManager.Instance.AppExitAsync(true);
                     return;

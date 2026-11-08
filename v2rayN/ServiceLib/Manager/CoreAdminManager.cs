@@ -28,7 +28,7 @@ public class CoreAdminManager
             string.Format(coreInfo.Arguments, UnixProcessControl.Quote(fullConfig));
         var environment = string.Join(" ", coreInfo.Environment.Where(kv => kv.Value.IsNotEmpty())
             .Select(kv => kv.Key + "=" + UnixProcessControl.Quote(string.Format(kv.Value, fullConfig))));
-        var script = "#!/bin/bash\nexport LC_ALL=C\n" +
+        var script = "#!/bin/bash\nexport LC_ALL=C TZ=UTC\n" +
             (OperatingSystem.IsLinux() ? UnixProcessControl.LinuxStartTimeShell + "\n"
                 : "birth=$(ps -p $$ -o lstart=) || exit 23\n") +
             $"printf '{process.IdentityMarker}\\t%s\\t%s\\n' \"$$\" \"$birth\"\n" +

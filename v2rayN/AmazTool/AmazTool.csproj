@@ -2,10 +2,13 @@
 
 	<PropertyGroup>
 		<OutputType>Exe</OutputType>
+        <AssemblyName>AmazToolV2</AssemblyName>
+        <RootNamespace>AmazTool</RootNamespace>
 	</PropertyGroup>
 
     <ItemGroup>
         <Compile Include="../Shared/ListenerBindProbe.cs" Link="ListenerBindProbe.cs" />
+        <Compile Include="../Shared/AppUpgradeRequest.cs" Link="AppUpgradeRequest.cs" />
     </ItemGroup>
 
 	<ItemGroup>

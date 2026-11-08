@@ -22,6 +22,9 @@ internal sealed record ProcessSnapshot(ProcessIdentity Identity, int ParentPid, 
 
 internal static class UnixProcessControl
 {
+    private static readonly Dictionary<string, string?> PsEnvironment = new() { ["LC_ALL"] = "C", ["TZ"] = "UTC" };
+    private const string PsColumns = "pid=,ppid=,lstart=,stat=,comm=";
+
     internal static string Quote(string value) => "'" + value.Replace("'", "'\"'\"'") + "'";
     internal static string NormalizeStart(string value) => string.Join(" ", value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 
@@ -58,27 +61,68 @@ internal static class UnixProcessControl
 
     internal static async Task<IReadOnlyList<ProcessSnapshot>> SnapshotAsync(CancellationToken token)
     {
-        var result = await Cli.Wrap("/bin/ps").WithArguments(["-axo", "pid=,ppid=,lstart=,stat=,comm="])
-            .WithEnvironmentVariables(new Dictionary<string, string?> { ["LC_ALL"] = "C" })
+        var result = await Cli.Wrap("/bin/ps").WithArguments(["-axo", PsColumns])
+            .WithEnvironmentVariables(PsEnvironment)
             .ExecuteBufferedAsync(token);
         var rows = new List<ProcessSnapshot>();
         foreach (var line in result.StandardOutput.Split('\n', StringSplitOptions.RemoveEmptyEntries))
         {
-            var fields = Regex.Split(line.Trim(), @"\s+", RegexOptions.None, TimeSpan.FromSeconds(1));
-            if (fields.Length < 9 || !int.TryParse(fields[0], out var pid) || !int.TryParse(fields[1], out var parent))
-                throw new IOException("无法解析进程列表 / Unable to read process identities.");
-            var executable = string.Join(" ", fields.Skip(8));
+            var row = ParsePsRow(line);
             if (OperatingSystem.IsLinux())
             {
                 // A process may exit after ps enumerates it. Other read/parse errors
                 // remain failures; never silently treat a permission error as exit.
-                var row = ReadLinuxProcess(pid, executable);
-                if (row != null) rows.Add(row);
+                var native = ReadLinuxProcess(row.Identity.Pid, row.Identity.Executable);
+                if (native != null) rows.Add(native);
             }
-            else rows.Add(new(new(pid, string.Join(" ", fields.Skip(2).Take(5)), executable), parent, fields[7].StartsWith('Z')));
+            else rows.Add(row);
         }
         if (rows.Count == 0) throw new IOException("进程列表为空 / Process enumeration failed.");
         return rows;
+    }
+
+    // The BSD task-info call used by Process.StartTime is restricted across UIDs.
+    // ps can read the same root process identity as the launch and stop scripts.
+    internal static async Task<ProcessSnapshot?> ReadMacProcessAsync(int pid, CancellationToken token)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
+        timeout.CancelAfter(TimeSpan.FromSeconds(1));
+        try
+        {
+            var result = await Cli.Wrap("/bin/ps").WithArguments(["-p", pid.ToString(), "-o", PsColumns])
+                .WithEnvironmentVariables(PsEnvironment).WithValidation(CommandResultValidation.None)
+                .ExecuteBufferedAsync(timeout.Token).ConfigureAwait(false);
+            return ParseMacProcessResult(pid, result.ExitCode, result.StandardOutput, result.StandardError);
+        }
+        catch (OperationCanceledException ex) when (!token.IsCancellationRequested)
+        {
+            throw new InvalidOperationException($"进程身份查询超时 / Process identity query timed out: PID {pid}.", ex);
+        }
+        catch (Exception ex) when (ex is IOException or Win32Exception)
+        {
+            throw new InvalidOperationException($"无法核验进程身份 / Cannot verify process identity: PID {pid}. {ex.Message}", ex);
+        }
+    }
+
+    internal static ProcessSnapshot? ParseMacProcessResult(int pid, int exitCode, string output, string error)
+    {
+        if (exitCode == 1 && string.IsNullOrWhiteSpace(output) && string.IsNullOrWhiteSpace(error))
+            return null; // BSD ps found no selected process.
+        if (exitCode != 0 || !string.IsNullOrWhiteSpace(error))
+            throw new InvalidOperationException($"无法核验进程身份 / Cannot verify process identity: PID {pid}. {error.Trim()}");
+        var row = ParsePsRow(output.Trim());
+        if (output.Trim().Contains('\n') || row.Identity.Pid != pid)
+            throw new InvalidOperationException($"进程查询返回不匹配的 PID / Unexpected process identity: PID {pid}.");
+        return row;
+    }
+
+    private static ProcessSnapshot ParsePsRow(string line)
+    {
+        var fields = Regex.Split(line.Trim(), @"\s+", RegexOptions.None, TimeSpan.FromSeconds(1));
+        if (fields.Length < 9 || !int.TryParse(fields[0], out var pid) || !int.TryParse(fields[1], out var parent))
+            throw new IOException("无法解析进程列表 / Unable to read process identities.");
+        return new(new(pid, string.Join(" ", fields.Skip(2).Take(5)), string.Join(" ", fields.Skip(8))),
+            parent, fields[7].StartsWith('Z'));
     }
 
     internal static IReadOnlyList<ProcessIdentity> Descendants(IReadOnlyList<ProcessSnapshot> snapshot, IEnumerable<ProcessIdentity> roots)

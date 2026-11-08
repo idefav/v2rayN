@@ -2,7 +2,7 @@
 # Portable macOS/Linux helper. Arguments are pairs: PID, immutable start time.
 # Only identities supplied by the owner, and descendants found before signalling,
 # are eligible for termination. All discovered identities are returned to the owner.
-export LC_ALL=C
+export LC_ALL=C TZ=UTC
 export PATH=/usr/bin:/bin:/usr/sbin:/sbin
 platform=$(uname -s) || exit 23
 pids=()

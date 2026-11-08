@@ -28,24 +28,24 @@ public class ProcessService : IDisposable
     internal string RecentError => string.Join(Environment.NewLine, _recentErrors);
     public int Id => _process.Id;
     public IntPtr Handle => _process.Handle;
-    public bool HasExited
+    public bool HasExited => HasExitedAsync(CancellationToken.None).GetAwaiter().GetResult();
+
+    internal async Task<bool> HasExitedAsync(CancellationToken token)
     {
-        get
+        if (!_started || _isDisposed || _stopConfirmed) return true;
+        var identity = CoreIdentity;
+        if (!IsElevated || identity == null) return _process.HasExited;
+        if (OperatingSystem.IsLinux())
         {
-            if (!_started || _isDisposed) return true;
-            if (!IsElevated || CoreIdentity == null) return _process.HasExited;
-            if (OperatingSystem.IsLinux())
-            {
-                var current = UnixProcessControl.ReadLinuxProcess(CoreIdentity.Pid, ExpectedExecutable);
-                return current == null || current.Zombie || current.Identity.StartTime != CoreIdentity.StartTime;
-            }
-            try
-            {
-                using var core = Process.GetProcessById(CoreIdentity.Pid);
-                return core.HasExited || core.StartTime.ToString("ddd MMM d HH:mm:ss yyyy", System.Globalization.CultureInfo.InvariantCulture) != CoreIdentity.StartTime;
-            }
-            catch (ArgumentException) { return true; }
+            var current = UnixProcessControl.ReadLinuxProcess(identity.Pid, ExpectedExecutable);
+            return current == null || current.Zombie || current.Identity.StartTime != identity.StartTime;
         }
+        if (!OperatingSystem.IsMacOS()) return _process.HasExited;
+        var row = await UnixProcessControl.ReadMacProcessAsync(identity.Pid, token).ConfigureAwait(false);
+        if (row == null || row.Zombie) return true;
+        if (row.Identity.StartTime != identity.StartTime)
+            throw new InvalidOperationException($"内核进程身份已变化 / Core process identity changed: PID {identity.Pid}.");
+        return false;
     }
 
     public ProcessService(string fileName, string arguments, string workingDirectory, bool displayLog,

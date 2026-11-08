@@ -111,6 +111,7 @@
     <ItemGroup>
         <ProjectReference Include="..\ServiceLib.UdpTest\ServiceLib.UdpTest.csproj" />
         <Compile Include="../Shared/ListenerBindProbe.cs" Link="Services/ListenerBindProbe.cs" />
+        <Compile Include="../Shared/AppUpgradeRequest.cs" Link="Services/AppUpgradeRequest.cs" />
     </ItemGroup>
 
 </Project>

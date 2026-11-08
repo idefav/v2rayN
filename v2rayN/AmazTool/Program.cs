@@ -1,3 +1,5 @@
+using ServiceLib.Services;
+
 namespace AmazTool;
 
 internal static class Program
@@ -7,10 +9,15 @@ internal static class Program
     {
         // This internal command must never enter updater/restart handling or wait
         // for keyboard input, including malformed requests and probe failures.
-        if (args.FirstOrDefault() == ServiceLib.Services.ListenerBindProbe.Command)
+        if (args.FirstOrDefault() == ListenerBindProbe.Command)
         {
-            try { Environment.ExitCode = ServiceLib.Services.ListenerBindProbe.Run(args, Console.Out); }
+            try { Environment.ExitCode = ListenerBindProbe.Run(args, Console.Out); }
             catch { Environment.ExitCode = 2; }
+            return;
+        }
+        if (args.FirstOrDefault() == AppUpgradeRequest.Command)
+        {
+            Environment.ExitCode = UpgradeApp.Run(args);
             return;
         }
         try
@@ -20,12 +27,6 @@ internal static class Program
             {
                 ShowHelp();
                 return;
-            }
-
-            // Log all arguments for debugging purposes
-            foreach (var arg in args)
-            {
-                Console.WriteLine(arg);
             }
 
             // Parse command based on first argument
@@ -45,19 +46,15 @@ internal static class Program
                     break;
 
                 default:
-                    // Default behavior: handle as upgrade data
-                    // Maintain backward compatibility with existing usage pattern
-                    var argData = Uri.UnescapeDataString(string.Join(" ", args));
-                    HandleUpgrade(argData);
+                    Console.Error.WriteLine("Invalid AmazToolV2 command.");
+                    Environment.ExitCode = 2;
                     break;
             }
         }
         catch (Exception ex)
         {
-            // Global exception handling
-            Console.WriteLine($"An error occurred: {ex.Message}");
-            Console.WriteLine("Press any key to exit...");
-            Console.ReadKey();
+            Console.Error.WriteLine($"An error occurred: {ex.Message}");
+            Environment.ExitCode = 1;
         }
     }
 
@@ -83,13 +80,4 @@ internal static class Program
         Utils.StartV2RayN();
     }
 
-    /// <summary>
-    /// Handle application upgrade with the provided data
-    /// </summary>
-    /// <param name="upgradeData">Data for the upgrade process</param>
-    private static void HandleUpgrade(string upgradeData)
-    {
-        Console.WriteLine("Upgrading application...");
-        UpgradeApp.Upgrade(upgradeData);
-    }
 }

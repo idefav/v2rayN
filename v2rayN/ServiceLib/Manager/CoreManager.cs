@@ -474,7 +474,7 @@ public class CoreManager
             else
             {
                 await Task.Delay(100, startupTimeout.Token);
-                if (process.HasExited) throw new IOException(ResUI.FailedToRunCore + " " + process.RecentError);
+                if (await process.HasExitedAsync(startupTimeout.Token)) throw new IOException(ResUI.FailedToRunCore + " " + process.RecentError);
                 process.IsReady = true;
             }
             Logging.SaveLog($"CoreLifecycle launch={process.LaunchId} ready core={process.CoreIdentity?.Pid} born={process.CoreIdentity?.StartTime} executable={process.ExpectedExecutable}");

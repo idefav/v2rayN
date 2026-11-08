@@ -189,8 +189,14 @@ jobs:
             "https://raw.githubusercontent.com/2dust/v2rayN-core-bin/$CORE_BIN_REF/$root.zip"
           unzip -q core.zip
           cp -R publish/. "$root/"
+          rm -f "$root/AmazTool" "$root/AmazTool.exe"
+          if [[ "$platform" == windows ]]; then
+            test -f "$root/AmazToolV2.exe"
+          else
+            test -f "$root/AmazToolV2"
+          fi
           if [[ "$platform" != windows ]]; then
-            chmod +x "$root/v2rayN" "$root/AmazTool"
+            chmod +x "$root/v2rayN" "$root/AmazToolV2"
             chmod +x "$root/proxy-check"
             chmod -R +x "$root/bin"
           fi
@@ -235,8 +241,14 @@ jobs:
           path: v2rayN*.dmg
           if-no-files-found: error
 
+  macos-upgrade-tun:
+    needs: package-zip
+    uses: ./.github/workflows/macos-upgrade-tun.yml
+    with:
+      candidate_artifact: preview-package-macos-arm64
+
   release:
-    needs: [validate, test, native-ui, listener-bind, package-zip, package-dmg]
+    needs: [validate, test, native-ui, listener-bind, package-zip, package-dmg, macos-upgrade-tun]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

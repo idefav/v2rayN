@@ -54,6 +54,14 @@ jobs:
     
     - name: Package zip archive
       run: |
+        set -euo pipefail
+        rm -f "v2rayN-$Target-$Arch/AmazTool" "v2rayN-$Target-$Arch/AmazTool.exe"
+        7z d "v2rayN-$Target-$Arch.zip" "v2rayN-$Target-$Arch/AmazTool" "v2rayN-$Target-$Arch/AmazTool.exe"
+        if [[ "$Target" == windows ]]; then
+          test -f "v2rayN-$Target-$Arch/AmazToolV2.exe"
+        else
+          chmod +x "v2rayN-$Target-$Arch/v2rayN" "v2rayN-$Target-$Arch/AmazToolV2"
+        fi
         if [[ "$Target" != windows && -f "v2rayN-$Target-$Arch/proxy-check" ]]; then
           chmod +x "v2rayN-$Target-$Arch/proxy-check"
           chmod -R +x "v2rayN-$Target-$Arch/bin"

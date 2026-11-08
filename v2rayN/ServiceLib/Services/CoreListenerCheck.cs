@@ -156,7 +156,7 @@ internal static class CoreListenerCheck
         while (true)
         {
             token.ThrowIfCancellationRequested();
-            if (process.HasExited) throw new IOException("内核启动失败 / Core exited during startup. " + process.RecentError);
+            if (await process.HasExitedAsync(token)) throw new IOException("内核启动失败 / Core exited during startup. " + process.RecentError);
             var ready = endpoints.Count > 0;
             foreach (var endpoint in endpoints)
             {
@@ -182,7 +182,7 @@ internal static class CoreListenerCheck
                 }
                 catch (Exception ex) when (ex is SocketException or IOException or OperationCanceledException) { ready = false; }
             }
-            if ((ready || endpoints.Count == 0 && process.StartupReported) && !process.HasExited)
+            if ((ready || endpoints.Count == 0 && process.StartupReported) && !await process.HasExitedAsync(token))
             {
                 if (++consecutive >= 2)
                 {

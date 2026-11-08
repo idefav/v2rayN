@@ -4,6 +4,26 @@ namespace ServiceLib.Tests.Services;
 public class ProcessLifecycleTests
 {
     [Test]
+    public void MacTargetedQueryDistinguishesExitFromQueryFailure()
+    {
+        var row = UnixProcessControl.ParseMacProcessResult(123, 0,
+            " 123 1 Sun Nov  8 01:02:03 2026 S /tmp/内核 with spaces\n", "")!;
+        Check(row.Identity.StartTime == "Sun Nov 8 01:02:03 2026", "start time is not normalized");
+        Check(row.Identity.Executable == "/tmp/内核 with spaces" && !row.Zombie, "executable was truncated");
+        Check(UnixProcessControl.ParseMacProcessResult(123, 1, "", "") == null, "missing PID is not exited");
+        Check(UnixProcessControl.ParseMacProcessResult(123, 0,
+            "123 1 Sun Nov 8 01:02:03 2026 Z /tmp/core", "")!.Zombie, "zombie was not detected");
+        foreach (var result in new[] { (1, "", "permission denied"), (0, "", ""),
+            (0, "124 1 Sun Nov 8 01:02:03 2026 S /tmp/core", "") })
+        {
+            var rejected = false;
+            try { UnixProcessControl.ParseMacProcessResult(123, result.Item1, result.Item2, result.Item3); }
+            catch (Exception ex) when (ex is IOException or InvalidOperationException) { rejected = true; }
+            Check(rejected, "invalid process information was treated as exit");
+        }
+    }
+
+    [Test]
     public void LinuxIdentityUsesRawKernelTicksWithParenthesizedCommands()
     {
         var fields = new[] { "S", "42" }.Concat(Enumerable.Repeat("0", 17)).Append("123456789");

@@ -8,7 +8,7 @@ public static class AppUpdateProvenance
     public static void Stage(UpdateResult update, string archive)
         => Stage(update, archive, Utils.GetConfigPath(), Environment.ProcessPath!);
 
-    internal static void Stage(UpdateResult update, string archive, string configDirectory, string executable)
+    internal static InstalledUpdate Stage(UpdateResult update, string archive, string configDirectory, string executable)
     {
         using var zip = System.IO.Compression.ZipFile.OpenRead(archive);
         var executableName = Path.GetFileName(executable);
@@ -21,6 +21,7 @@ public static class AppUpdateProvenance
             Sha256 = Convert.ToHexString(SHA256.HashData(stream)), Executable = executableName!
         };
         File.WriteAllText(Path.Combine(configDirectory, "pending-app-update.json"), JsonSerializer.Serialize(record));
+        return record;
     }
 
     public static void ClearPending() => File.Delete(RecordPath("pending-app-update"));

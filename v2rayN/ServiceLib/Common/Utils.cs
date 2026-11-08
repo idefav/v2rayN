@@ -914,7 +914,7 @@ public class Utils
 
     public static bool UpgradeAppExists(out string upgradeFileName)
     {
-        upgradeFileName = Path.Combine(GetBaseDirectory(), GetExeName("AmazTool"));
+        upgradeFileName = Path.Combine(GetBaseDirectory(), GetExeName(AppUpgradeRequest.HelperName));
         return File.Exists(upgradeFileName);
     }
 

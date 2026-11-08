@@ -46,28 +46,30 @@ internal class Utils
             : StringComparison.Ordinal;
     }
 
-    public static string V2rayN => "v2rayN";
-
     public static void StartV2RayN()
-    {
-        Process process = new()
-        {
-            StartInfo = new()
-            {
-                UseShellExecute = true,
-                FileName = V2rayN,
-                WorkingDirectory = StartupPath()
-            }
-        };
-        process.Start();
-    }
+        => StartApplication(GetPath(OperatingSystem.IsWindows() ? "v2rayN.exe" : "v2rayN"));
 
-    public static void Waiting(int second)
+    internal static void StartApplication(string executable)
     {
-        for (var i = second; i > 0; i--)
+        var directory = new DirectoryInfo(Path.GetDirectoryName(executable)!);
+        var bundle = OperatingSystem.IsMacOS() && directory.Name == "MacOS" && directory.Parent?.Name == "Contents"
+            && directory.Parent.Parent is { Extension: ".app" } app ? app : null;
+        var start = new ProcessStartInfo(bundle == null ? executable : "/usr/bin/open")
         {
-            Console.WriteLine(i);
-            Thread.Sleep(1000);
+            UseShellExecute = false,
+            WorkingDirectory = directory.FullName
+        };
+        if (bundle != null)
+        {
+            start.ArgumentList.Add("-n");
+            start.ArgumentList.Add(bundle.FullName);
         }
+        using var process = Process.Start(start) ?? throw new IOException("Could not start " + executable);
+        if (bundle == null) return;
+        if (!process.WaitForExit(10_000))
+            throw new RestartUnconfirmedException("Launch Services did not confirm the start request within 10 seconds.");
+        if (process.ExitCode != 0) throw new IOException($"Launch Services failed to start {bundle.FullName} ({process.ExitCode}).");
     }
 }
+
+internal sealed class RestartUnconfirmedException(string message) : IOException(message);

@@ -1,0 +1,91 @@
+name: Verify macOS upgrades and real TUN
+
+on:
+  push:
+    branches: ['fix/core-process-*']
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      candidate_artifact:
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.4xx
+      - name: Require ARM64 unprivileged harness with sudo
+        run: |
+          test "$(uname -m)" = arm64
+          test "$(id -u)" != 0
+          sudo -n true
+      - name: Download and verify published legacy packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for version in 27 28; do
+            mkdir -p "legacy/$version"
+            gh release download "v7.25.6-ssh-preview.$version" --repo idefav/v2rayN \
+              --pattern v2rayN-macos-arm64.zip --pattern SHA256SUMS --dir "legacy/$version"
+            (cd "legacy/$version" && grep 'v2rayN-macos-arm64.zip$' SHA256SUMS | shasum -a 256 -c -)
+          done
+      - uses: actions/download-artifact@v8
+        if: inputs.candidate_artifact != ''
+        with:
+          name: ${{ inputs.candidate_artifact }}
+          path: candidate
+      - name: Build candidate for branch verification
+        if: inputs.candidate_artifact == ''
+        run: |
+          set -euo pipefail
+          mkdir candidate
+          unzip -q legacy/28/v2rayN-macos-arm64.zip -d staged
+          root=staged/v2rayN-macos-arm64
+          dotnet publish v2rayN/v2rayN.Desktop/v2rayN.Desktop.csproj -c Release -r osx-arm64 \
+            --self-contained true -p:UsedAvaloniaProducts= -o "$root"
+          dotnet publish v2rayN/AmazTool/AmazTool.csproj -c Release -r osx-arm64 \
+            --self-contained true -p:PublishTrimmed=true -o "$root"
+          rm -f "$root/AmazTool"
+          chmod +x "$root/v2rayN" "$root/AmazToolV2"
+          (cd staged && zip -q -r ../candidate/v2rayN-macos-arm64.zip v2rayN-macos-arm64)
+      - name: Verify actual legacy upgrade and automatic startup
+        run: |
+          set -euo pipefail
+          for version in 27 28; do
+            python3 packaging/test-macos-legacy-upgrade.py --candidate candidate/v2rayN-macos-arm64.zip \
+              --legacy "legacy/$version/v2rayN-macos-arm64.zip" --results "TestResults/legacy-$version"
+          done
+      - name: Verify packaged updater rollback and both real root TUN topologies
+        run: |
+          set -euo pipefail
+          unzip -q candidate/v2rayN-macos-arm64.zip -d actual
+          root="$PWD/actual/v2rayN-macos-arm64"
+          chmod +x "$root/AmazToolV2" "$root/bin/sing_box/sing-box"
+          export V2RAYN_TEST_BIND_HELPER="$root/AmazToolV2"
+          export SSH_TEST_SINGBOX="$root/bin/sing_box/sing-box"
+          export V2RAYN_TEST_BIND_SUDO=1 V2RAYN_TEST_TUN_RESTART=1
+          dotnet test --project v2rayN/ServiceLib.Tests -c Release --results-directory TestResults/updater -- \
+            --treenode-filter '/*/*/AppUpgradeIntegrationTests/*' --report-trx
+          dotnet test --project v2rayN/ServiceLib.Tests -c Release --results-directory TestResults/tun -- \
+            --treenode-filter '/*/*/TunRestartIntegrationTests/*' --report-trx
+          python3 - <<'PY'
+          import pathlib, xml.etree.ElementTree as ET
+          files = list(pathlib.Path('TestResults/tun').rglob('*.trx'))
+          assert files, 'No TUN results'
+          results = [r for p in files for r in ET.parse(p).iter() if r.tag.endswith('UnitTestResult')]
+          assert len(results) == 2 and all(r.attrib['outcome'] == 'Passed' for r in results), results
+          PY
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: macos-upgrade-tun-results
+          path: TestResults
