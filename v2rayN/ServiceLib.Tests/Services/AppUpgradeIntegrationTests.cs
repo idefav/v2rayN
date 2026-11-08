@@ -13,9 +13,10 @@ public class AppUpgradeIntegrationTests
         Check(OperatingSystem.IsMacOS() && Environment.GetEnvironmentVariable("GITHUB_ACTIONS") == "true",
             "Real GUI upgrade fixture is only allowed on macOS CI");
         var archive = Environment.GetEnvironmentVariable("V2RAYN_TEST_REAL_UPGRADE_ZIP")!;
-        UpdateSources.TryVersion("v7.25.6-ssh-preview.999", out var version);
+        var tag = Environment.GetEnvironmentVariable("V2RAYN_TEST_REAL_UPGRADE_TAG") ?? "v7.25.6-ssh-preview.999";
+        Check(UpdateSources.TryVersion(tag, out var version), "Invalid fixture release tag");
         await AppUpdateLauncher.PrepareAsync(new UpdateResult(true, version)
-            { Repository = "idefav/v2rayN", Tag = "v7.25.6-ssh-preview.999" },
+            { Repository = "idefav/v2rayN", Tag = tag },
             archive, Path.Combine(install, "AmazToolV2"), Path.Combine(install, "v2rayN"),
             Path.Combine(install, "guiConfigs"), install, CancellationToken.None);
         // Returning lets this exact test host exit. The real helper then owns the

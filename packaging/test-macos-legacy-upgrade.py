@@ -59,6 +59,9 @@ def main():
     parser.add_argument('--results', type=Path, required=True)
     args = parser.parse_args()
     assert os.environ.get('GITHUB_ACTIONS') == 'true' and os.uname().machine == 'arm64', 'CI-only real GUI fixture'
+    tag = os.environ.get('GITHUB_REF_NAME', '')
+    if not tag.startswith('v7.25.6-ssh-preview.'):
+        tag = 'v7.25.6-ssh-preview.999'
     args.results.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(args.candidate) as z:
         assert not any(Path(n).name in ('AmazTool', 'AmazTool.exe') for n in z.namelist())
@@ -86,8 +89,8 @@ def main():
             'SystemProxyItem': {'SysProxyType': 2}, 'TunModeItem': {'EnableTun': False},
             'IndexId': '', 'IsFirstRun': False,
         }))
-        record = {'SchemaVersion': 1, 'Repository': 'idefav/v2rayN', 'Tag': 'v7.25.6-ssh-preview.999',
-                  'Version': 'v7.25.6-ssh-preview.999', 'Sha256': expected, 'Executable': 'v2rayN'}
+        record = {'SchemaVersion': 1, 'Repository': 'idefav/v2rayN', 'Tag': tag,
+                  'Version': tag, 'Sha256': expected, 'Executable': 'v2rayN'}
         (configs / 'pending-app-update.json').write_text(json.dumps(record))
         candidate = root / '候选 package.zip'
         shutil.copyfile(args.candidate, candidate)
@@ -98,7 +101,8 @@ def main():
                 helper_process = subprocess.Popen([str(install / 'AmazTool'), urllib.parse.quote(str(candidate), safe='')],
                                                   cwd=root, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
             else:
-                env = dict(os.environ, V2RAYN_TEST_REAL_UPGRADE_DIR=str(install), V2RAYN_TEST_REAL_UPGRADE_ZIP=str(candidate))
+                env = dict(os.environ, V2RAYN_TEST_REAL_UPGRADE_DIR=str(install),
+                           V2RAYN_TEST_REAL_UPGRADE_ZIP=str(candidate), V2RAYN_TEST_REAL_UPGRADE_TAG=tag)
                 helper_process = subprocess.Popen(['dotnet', 'test', '--project', 'v2rayN/ServiceLib.Tests', '-c', 'Release',
                     '--', '--treenode-filter', '/*/*/AppUpgradeIntegrationTests/RealApplicationHandoffOnDisposableMacRunner'],
                     env=env, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
