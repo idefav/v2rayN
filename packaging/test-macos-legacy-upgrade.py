@@ -96,7 +96,7 @@ def main():
             # Exactly the existing URI-escaped single-argument upgrade protocol.
             if args.legacy:
                 helper_process = subprocess.Popen([str(install / 'AmazTool'), urllib.parse.quote(str(candidate), safe='')],
-                                                  cwd=install, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
+                                                  cwd=root, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
             else:
                 env = dict(os.environ, V2RAYN_TEST_REAL_UPGRADE_DIR=str(install), V2RAYN_TEST_REAL_UPGRADE_ZIP=str(candidate))
                 helper_process = subprocess.Popen(['dotnet', 'test', '--project', 'v2rayN/ServiceLib.Tests', '-c', 'Release',

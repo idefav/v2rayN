@@ -65,6 +65,8 @@ jobs:
           export V2RAYN_TEST_BIND_HELPER="$helper"
           dotnet test --project v2rayN/ServiceLib.Tests -c Release --results-directory TestResults -- \
             --treenode-filter '/*/*/CoreListenerCheckTests/*' --report-trx
+          dotnet test --project v2rayN/ServiceLib.Tests -c Release --results-directory TestResults/updater -- \
+            --treenode-filter '/*/*/AppUpgradeIntegrationTests/*' --report-trx
       - uses: actions/upload-artifact@v7
         if: always()
         with:
