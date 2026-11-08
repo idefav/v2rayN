@@ -68,6 +68,11 @@ public class DownloadService
             void OnProgress(FileDownloadState state)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                if (state.RetryMessage != null)
+                {
+                    UpdateCompleted?.Invoke(this, new UpdateResult(false, state.RetryMessage));
+                    return;
+                }
                 UpdateCompleted?.Invoke(this, new UpdateResult(state.Completed, $"{Utils.HumanFy((long)state.SpeedBytesPerSecond / 1024)}/s | {Utils.HumanFy(state.DownloadedBytes / 1024)}/{Utils.HumanFy(state.TotalBytes / 1024)}"));
             }
         }
@@ -80,10 +85,6 @@ public class DownloadService
             Logging.SaveLog(_tag, ex);
 
             Error?.Invoke(this, new ErrorEventArgs(ex));
-            if (ex.InnerException != null)
-            {
-                Error?.Invoke(this, new ErrorEventArgs(ex.InnerException));
-            }
         }
     }
 

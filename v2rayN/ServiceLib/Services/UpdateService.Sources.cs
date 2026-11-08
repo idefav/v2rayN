@@ -49,7 +49,11 @@ public partial class UpdateService
         var file = Utils.GetTempPath(Guid.NewGuid().ToString("N") + extension);
         var complete = false;
         Exception? error = null;
-        download.UpdateCompleted += (_, state) => { if (state.Success) complete = true; };
+        download.UpdateCompleted += (_, state) =>
+        {
+            if (state.Success) complete = true;
+            else if (state.Msg != null) _ = UpdateFunc(false, state.Msg);
+        };
         download.Error += (_, state) => error = state.GetException();
         try
         {

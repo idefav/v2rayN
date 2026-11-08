@@ -63,6 +63,9 @@ jobs:
             export V2RAYN_TEST_BIND_SUDO=1
           fi
           export V2RAYN_TEST_BIND_HELPER="$helper"
+          export V2RAYN_TEST_REAL_DOWNLOAD=1
+          dotnet test --project v2rayN/ServiceLib.Tests -c Release --results-directory TestResults/download -- \
+            --treenode-filter '/*/*/DownloadFileTests/*' --report-trx
           dotnet test --project v2rayN/ServiceLib.Tests -c Release --results-directory TestResults -- \
             --treenode-filter '/*/*/CoreListenerCheckTests/*' --report-trx
           dotnet test --project v2rayN/ServiceLib.Tests -c Release --results-directory TestResults/updater -- \

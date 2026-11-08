@@ -121,6 +121,50 @@ public class DownloaderHelper
     public async Task DownloadFileAsync(IWebProxy? webProxy, FileDownloadRequest request, Action<FileDownloadState> onProgress, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.FilePath);
+        if (!Uri.TryCreate(request.FileUrl, UriKind.Absolute, out var address) || address.Scheme is not ("http" or "https"))
+            throw new ArgumentException("Invalid download URL");
+        const int attempts = 3;
+        for (var attempt = 1; ; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            deadline.CancelAfter(TimeSpan.FromMinutes(5));
+            try
+            {
+                await DownloadFileAttemptAsync(webProxy, request, onProgress, deadline.Token);
+                return;
+            }
+            catch (Exception ex)
+            {
+                try { File.Delete(request.FilePath); }
+                catch (Exception cleanup) { Logging.SaveLog("Download cleanup", cleanup); }
+                cancellationToken.ThrowIfCancellationRequested();
+                var source = new Uri(request.FileUrl).GetComponents(UriComponents.SchemeAndServer | UriComponents.Path, UriFormat.UriEscaped);
+                var reason = ex is OperationCanceledException ? "下载超时 / Download timed out" : ex.Message;
+                var message = $"下载失败 / Download failed ({attempt}/{attempts}, {(webProxy == null ? "direct" : "proxy")}): {reason}. {source}";
+                Logging.SaveLog(message);
+                if (attempt == attempts || !IsTransientDownloadError(ex)) throw new IOException(message, ex);
+                onProgress(new FileDownloadState { Request = request, RetryMessage =
+                    $"下载重试 / Retrying download ({attempt + 1}/{attempts}): {reason}" });
+                await Task.Delay(TimeSpan.FromSeconds(attempt), cancellationToken);
+            }
+        }
+    }
+
+    private static bool IsTransientDownloadError(Exception error) => error switch
+    {
+        HttpRequestException http when http.InnerException is AuthenticationException => false,
+        HttpRequestException http => http.StatusCode == null || http.StatusCode is HttpStatusCode.RequestTimeout
+            or HttpStatusCode.TooManyRequests || (int)http.StatusCode >= 500,
+        OperationCanceledException => true,
+        IOException => true,
+        _ => false
+    };
+
+    private async Task DownloadFileAttemptAsync(IWebProxy? webProxy, FileDownloadRequest request, Action<FileDownloadState> onProgress, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
         if (request.FilePath.IsNullOrEmpty())
         {
             throw new ArgumentNullException(nameof(request.FilePath));
@@ -140,48 +184,33 @@ public class DownloaderHelper
             ConnectTimeout = GetConnectTimeoutMs(webProxy != null),
             Proxy = webProxy,
         };
-        var downloadOpt = new DownloadConfiguration()
+        using var client = new HttpClient(GetSocketsHttpHandler(requestConfiguration)) { Timeout = Timeout.InfiniteTimeSpan };
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("v2rayN");
+        using var response = await client.GetAsync(request.FileUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        state = state with { TotalBytes = response.Content.Headers.ContentLength ?? 0 };
+        onProgress(state);
+        var elapsed = Stopwatch.StartNew();
+        var lastReport = TimeSpan.Zero;
+        await using (var input = await response.Content.ReadAsStreamAsync(cancellationToken))
+        await using (var output = new FileStream(request.FilePath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 65536, true))
         {
-            ChunkCount = 100,
-            MinimumChunkSize = 8 * 1024 * 1024, // 8 MB
-            MinimumSizeOfChunking = 8 * 1024 * 1024, // 8 MB
-            ParallelDownload = true,
-            ParallelCount = 4,
-
-            RequestConfiguration = requestConfiguration,
-            CustomHttpMessageHandlerFactory = () => GetSocketsHttpHandler(requestConfiguration),
-        };
-
-        await using var downloader = new Downloader.DownloadService(downloadOpt);
-        downloader.DownloadStarted += (sender, value) =>
-        {
-            state = state with
+            var buffer = new byte[65536];
+            int count;
+            while ((count = await input.ReadAsync(buffer, cancellationToken)) != 0)
             {
-                TotalBytes = value.TotalBytesToReceive,
-            };
-            onProgress.Invoke(state);
-        };
-        downloader.DownloadProgressChanged += (sender, value) =>
-        {
-            state = state with
-            {
-                DownloadedBytes = value.ReceivedBytesSize,
-                TotalBytes = value.TotalBytesToReceive,
-                SpeedBytesPerSecond = value.BytesPerSecondSpeed,
-            };
-            onProgress.Invoke(state);
-        };
-        downloader.DownloadFileCompleted += (sender, value) =>
-        {
-            state = state with
-            {
-                Completed = true,
-                Error = value.Error,
-            };
-            onProgress.Invoke(state);
-        };
-
-        await downloader.DownloadFileTaskAsync(request.FileUrl, request.FilePath, cancellationToken);
+                await output.WriteAsync(buffer.AsMemory(0, count), cancellationToken);
+                state = state with { DownloadedBytes = state.DownloadedBytes + count };
+                if (elapsed.Elapsed - lastReport < TimeSpan.FromMilliseconds(250)) continue;
+                lastReport = elapsed.Elapsed;
+                onProgress(state with { SpeedBytesPerSecond = state.DownloadedBytes / elapsed.Elapsed.TotalSeconds });
+            }
+            if (state.TotalBytes > 0 && state.DownloadedBytes != state.TotalBytes)
+                throw new IOException("下载文件长度不符 / Download size mismatch");
+            await output.FlushAsync(cancellationToken);
+        }
+        cancellationToken.ThrowIfCancellationRequested();
+        onProgress(state with { Completed = true });
     }
 
     public async Task DownloadSmallFilesAsync(IWebProxy? webProxy, List<FileDownloadRequest> requests, Action<ReadOnlyMemory<FileDownloadState>> onProgress, CancellationToken cancellationToken = default)

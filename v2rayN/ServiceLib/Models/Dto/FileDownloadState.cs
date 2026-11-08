@@ -7,6 +7,7 @@ public record FileDownloadState
     public long TotalBytes { get; init; } = 0;
     public double SpeedBytesPerSecond { get; init; } = 0;
     public bool Completed { get; init; } = false;
+    public string? RetryMessage { get; init; }
 
     public Exception? Error { get; init; }
     public bool IsFailed => Error != null;
