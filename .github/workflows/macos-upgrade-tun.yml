@@ -19,6 +19,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
+        with:
+          submodules: recursive
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 10.0.4xx
@@ -64,6 +66,8 @@ jobs:
             python3 packaging/test-macos-legacy-upgrade.py --candidate candidate/v2rayN-macos-arm64.zip \
               --legacy "legacy/$version/v2rayN-macos-arm64.zip" --results "TestResults/legacy-$version"
           done
+          python3 packaging/test-macos-legacy-upgrade.py --candidate candidate/v2rayN-macos-arm64.zip \
+            --results TestResults/upgrade-v2
       - name: Verify packaged updater rollback and both real root TUN topologies
         run: |
           set -euo pipefail

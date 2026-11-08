@@ -44,7 +44,7 @@ def processes(executable):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--candidate', type=Path, required=True)
-    parser.add_argument('--legacy', type=Path, required=True)
+    parser.add_argument('--legacy', type=Path)
     parser.add_argument('--results', type=Path, required=True)
     args = parser.parse_args()
     assert os.environ.get('GITHUB_ACTIONS') == 'true' and os.uname().machine == 'arm64', 'CI-only real GUI fixture'
@@ -61,9 +61,10 @@ def main():
     install.mkdir(parents=True)
     helper_process = None
     try:
-        extract(args.legacy, install)
+        extract(args.legacy or args.candidate, install)
         (install / 'NotStoreConfigHere.txt').unlink(missing_ok=True)
-        for name in ('v2rayN', 'AmazTool'):
+        helper_name = 'AmazTool' if args.legacy else 'AmazToolV2'
+        for name in ('v2rayN', helper_name):
             (install / name).chmod(0o755)
         with (install.parent / 'Info.plist').open('wb') as f:
             plistlib.dump({'CFBundleExecutable': 'v2rayN', 'CFBundleIdentifier': 'org.v2rayn.upgrade-fixture',
@@ -79,11 +80,17 @@ def main():
         (configs / 'pending-app-update.json').write_text(json.dumps(record))
         candidate = root / '候选 package.zip'
         shutil.copyfile(args.candidate, candidate)
-        original_helper = digest(install / 'AmazTool')
+        original_helper = digest(install / helper_name)
         with (args.results / 'legacy-helper.log').open('wb') as log:
             # Exactly the existing URI-escaped single-argument upgrade protocol.
-            helper_process = subprocess.Popen([str(install / 'AmazTool'), urllib.parse.quote(str(candidate), safe='')],
-                                              cwd=install, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
+            if args.legacy:
+                helper_process = subprocess.Popen([str(install / 'AmazTool'), urllib.parse.quote(str(candidate), safe='')],
+                                                  cwd=install, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
+            else:
+                env = dict(os.environ, V2RAYN_TEST_REAL_UPGRADE_DIR=str(install), V2RAYN_TEST_REAL_UPGRADE_ZIP=str(candidate))
+                helper_process = subprocess.Popen(['dotnet', 'test', '--project', 'v2rayN/ServiceLib.Tests', '-c', 'Release',
+                    '--', '--treenode-filter', '/*/*/AppUpgradeIntegrationTests/RealApplicationHandoffOnDisposableMacRunner'],
+                    env=env, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
             deadline = time.monotonic() + 90
             installed = configs / 'installed-app-update.json'
             while time.monotonic() < deadline:
@@ -94,10 +101,10 @@ def main():
             assert processes(executable), 'Candidate application is not running'
             assert json.loads(installed.read_text()) == record
             assert digest(executable) == expected
-            assert digest(install / 'AmazTool') == original_helper, 'Legacy running helper was overwritten'
+            assert digest(install / helper_name) == original_helper, 'Helper bytes did not match expected package'
             helper_process.wait(timeout=15)
             assert helper_process.returncode == 0
-        (args.results / 'verified.json').write_text(json.dumps({'legacy': args.legacy.name,
+        (args.results / 'verified.json').write_text(json.dumps({'legacy': args.legacy.name if args.legacy else 'upgrade-v2',
             'running_sha256': digest(executable), 'legacy_helper_unchanged': True, 'installed_record': record}, indent=2))
     finally:
         for pid in processes(executable):

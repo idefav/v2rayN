@@ -6,6 +6,23 @@ namespace ServiceLib.Tests.Services;
 public class AppUpgradeIntegrationTests
 {
     [Test]
+    public async Task RealApplicationHandoffOnDisposableMacRunner()
+    {
+        var install = Environment.GetEnvironmentVariable("V2RAYN_TEST_REAL_UPGRADE_DIR");
+        if (string.IsNullOrEmpty(install)) { Skip.Test("CI-only real application handoff"); return; }
+        Check(OperatingSystem.IsMacOS() && Environment.GetEnvironmentVariable("GITHUB_ACTIONS") == "true",
+            "Real GUI upgrade fixture is only allowed on macOS CI");
+        var archive = Environment.GetEnvironmentVariable("V2RAYN_TEST_REAL_UPGRADE_ZIP")!;
+        UpdateSources.TryVersion("v7.25.6-ssh-preview.999", out var version);
+        await AppUpdateLauncher.PrepareAsync(new UpdateResult(true, version)
+            { Repository = "idefav/v2rayN", Tag = "v7.25.6-ssh-preview.999" },
+            archive, Path.Combine(install, "AmazToolV2"), Path.Combine(install, "v2rayN"),
+            Path.Combine(install, "guiConfigs"), install, CancellationToken.None);
+        // Returning lets this exact test host exit. The real helper then owns the
+        // transaction; the outer fixture requires the new GUI's hash confirmation.
+    }
+
+    [Test]
     public async Task PreparationFailureIsReportedBeforeApplicationExit()
     {
         var helper = Environment.GetEnvironmentVariable("V2RAYN_TEST_BIND_HELPER");
