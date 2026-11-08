@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Diagnostics;
 
 namespace ServiceLib.Services;
 
@@ -12,6 +13,22 @@ internal sealed record AppUpgradeRequest(string Archive, string Executable, int 
     internal string CommitPath => Path.Combine(StatusDirectory, "commit");
     internal string ErrorPath => Path.Combine(StatusDirectory, "error.txt");
     internal string Workspace => Path.Combine(Path.GetDirectoryName(Executable)!, "." + Path.GetFileName(StatusDirectory));
+
+    internal static long StartIdentity(Process process)
+    {
+        if (!OperatingSystem.IsLinux()) return process.StartTime.ToUniversalTime().Ticks;
+        // Linux Process.StartTime converts boot-relative ticks using a wall-clock
+        // offset cached separately in each process. Keep the kernel identity exact.
+        var stat = File.ReadAllText($"/proc/{process.Id}/stat");
+        var open = stat.IndexOf('(');
+        var close = stat.LastIndexOf(')');
+        if (open < 1 || close <= open || !int.TryParse(stat.AsSpan(0, open).Trim(), out var pid) || pid != process.Id)
+            throw new IOException("Cannot identify the application process.");
+        var fields = stat[(close + 1)..].Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        if (fields.Length < 20 || !long.TryParse(fields[19], NumberStyles.None, CultureInfo.InvariantCulture, out var ticks) || ticks <= 0)
+            throw new IOException("Cannot read the application process start time.");
+        return ticks;
+    }
 
     internal string[] Arguments() =>
     [

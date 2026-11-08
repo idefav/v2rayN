@@ -123,7 +123,7 @@ public class AppUpgradeIntegrationTests
         var digestBefore = SHA256.HashData(File.ReadAllBytes(worker));
         using var parent = Process.Start(new ProcessStartInfo("/bin/sleep", "90") { UseShellExecute = false })!;
         var request = new AppUpgradeRequest(zip, executable, parent.Id,
-            parent.StartTime.ToUniversalTime().Ticks + (scenario == "identity-mismatch" ? 1 : 0),
+            AppUpgradeRequest.StartIdentity(parent) + (scenario == "identity-mismatch" ? 1 : 0),
             operation, Path.Combine(root, "upgrade.log"), Path.Combine(install, "guiConfigs", "pending-app-update.json"),
             Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(newApp))));
         var start = new ProcessStartInfo(worker) { UseShellExecute = false };
@@ -136,7 +136,8 @@ public class AppUpgradeIntegrationTests
                 await Task.Delay(50, deadline.Token);
             if (scenario is not ("unsafe-zip" or "identity-mismatch"))
             {
-                Check(File.Exists(request.ReadyPath), "preparation failed");
+                Check(File.Exists(request.ReadyPath), "preparation failed: " +
+                    (File.Exists(request.ErrorPath) ? File.ReadAllText(request.ErrorPath) : "no error report"));
                 Check(File.ReadAllText(executable) == oldApp, "installed before parent exit");
                 if (scenario == "rollback") Directory.CreateDirectory(Path.Combine(install, "last-file"));
                 File.WriteAllText(request.CommitPath, "");

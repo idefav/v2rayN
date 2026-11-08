@@ -49,7 +49,7 @@ internal static class UpgradeApp
             throw new IOException("The updater must run outside the target installation.");
 
         using var parent = Process.GetProcessById(request.ParentPid);
-        if (parent.StartTime.ToUniversalTime().Ticks != request.ParentStartTicks)
+        if (AppUpgradeRequest.StartIdentity(parent) != request.ParentStartTicks)
             throw new InvalidOperationException("The application process identity changed before update preparation.");
 
         var lockKey = OperatingSystem.IsLinux() ? installDirectory : installDirectory.ToUpperInvariant();

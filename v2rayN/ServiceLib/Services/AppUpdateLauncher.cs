@@ -20,7 +20,7 @@ internal static class AppUpdateLauncher
             File.Copy(helper, worker);
             if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(worker, UnixFileMode.UserRead | UnixFileMode.UserExecute);
             using var parent = Process.GetCurrentProcess();
-            request = new AppUpgradeRequest(archive, executable, parent.Id, parent.StartTime.ToUniversalTime().Ticks,
+            request = new AppUpgradeRequest(archive, executable, parent.Id, AppUpgradeRequest.StartIdentity(parent),
                 operation.FullName, log, Path.Combine(configDirectory, "pending-app-update.json"), record.Sha256);
             process.StartInfo = new(worker) { WorkingDirectory = operation.FullName, UseShellExecute = false, CreateNoWindow = true };
             foreach (var argument in request.Arguments()) process.StartInfo.ArgumentList.Add(argument);
