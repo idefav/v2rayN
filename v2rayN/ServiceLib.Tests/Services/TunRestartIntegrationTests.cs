@@ -57,16 +57,16 @@ public class TunRestartIntegrationTests
         ProcessService? elevated = null;
         try
         {
-            if (preSocks)
-            {
-                plain = new ProcessService(binary, "", directory, true, false, null, null);
-                plain.SetArguments(["run", "-c", plainPath, "--disable-color"]);
-                await plain.StartAsync();
-                await CoreListenerCheck.WaitForReadyAsync(plain, CoreListenerCheck.Read(plainJson), deadline.Token);
-            }
             await CoreAdminManager.Instance.Init(new Config(), null);
             for (var round = 0; round < 3; round++)
             {
+                if (preSocks)
+                {
+                    plain = new ProcessService(binary, "", directory, true, false, null, null);
+                    plain.SetArguments(["run", "-c", plainPath, "--disable-color"]);
+                    await plain.StartAsync();
+                    await CoreListenerCheck.WaitForReadyAsync(plain, CoreListenerCheck.Read(plainJson), deadline.Token);
+                }
                 await CoreListenerCheck.EnsureAvailableAsync(CoreListenerCheck.Read(tun.ToJsonString()));
                 elevated = await CoreAdminManager.Instance.RunProcessAsLinuxSudo(binary,
                     CoreInfoManager.Instance.GetCoreInfo(ECoreType.sing_box)!, tunPath, p => elevated = p);
@@ -86,6 +86,13 @@ public class TunRestartIntegrationTests
                     throw new Exception("Root core still alive after stop");
                 await CoreListenerCheck.EnsureAvailableAsync(CoreListenerCheck.Read(tun.ToJsonString()));
                 elevated.Dispose(); elevated = null;
+                if (plain != null)
+                {
+                    var plainResult = await plain.StopAndWaitAsync();
+                    if (!plainResult.Success) throw new Exception(plainResult.Error);
+                    plain.Dispose(); plain = null;
+                    await CoreListenerCheck.EnsureAvailableAsync(CoreListenerCheck.Read(plainJson));
+                }
                 if (await Route(destination, deadline.Token) != routeBefore) throw new Exception("isolated TUN route was not restored");
             }
         }
@@ -93,7 +100,8 @@ public class TunRestartIntegrationTests
         {
             if (elevated != null) { await elevated.StopAsync(); elevated.Dispose(); }
             if (plain != null) { await plain.StopAsync(); plain.Dispose(); }
-            if (ProcessService.HasUnstoppedConfig(tunPath)) throw new Exception("Fixture stop failed; retained config: " + directory);
+            if (ProcessService.HasUnstoppedConfig(tunPath) || ProcessService.HasUnstoppedConfig(plainPath))
+                throw new Exception("Fixture stop failed; retained config: " + directory);
             Directory.Delete(directory, true);
             if (await Route("1.1.1.1", deadline.Token) != defaultBefore) throw new Exception("default route changed");
             if ((await Cli.Wrap("/usr/sbin/scutil").WithArguments(["--dns"]).ExecuteBufferedAsync(deadline.Token)).StandardOutput != dnsBefore)

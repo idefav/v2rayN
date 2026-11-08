@@ -83,6 +83,8 @@ public class AppUpgradeIntegrationTests
     [Arguments("rollback")]
     [Arguments("unsafe-zip")]
     [Arguments("parent-timeout")]
+    [Arguments("launch-failure")]
+    [Arguments("identity-mismatch")]
     public async Task PackagedHelperUsesStagingAndRestoresFailedReplacement(string scenario)
     {
         var helper = Environment.GetEnvironmentVariable("V2RAYN_TEST_BIND_HELPER");
@@ -96,7 +98,7 @@ public class AppUpgradeIntegrationTests
         var executable = Path.Combine(install, "v2rayN");
         var marker = Path.Combine(install, "started");
         var oldApp = "#!/bin/sh\nprintf old > started\n";
-        var newApp = "#!/bin/sh\nprintf new > started\n";
+        var newApp = scenario == "launch-failure" ? "invalid executable" : "#!/bin/sh\nprintf new > started\n";
         File.WriteAllText(executable, oldApp);
         File.SetUnixFileMode(executable, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         File.WriteAllText(Path.Combine(install, "AmazToolV2"), "old-helper");
@@ -120,7 +122,8 @@ public class AppUpgradeIntegrationTests
         File.SetUnixFileMode(worker, UnixFileMode.UserRead | UnixFileMode.UserExecute);
         var digestBefore = SHA256.HashData(File.ReadAllBytes(worker));
         using var parent = Process.Start(new ProcessStartInfo("/bin/sleep", "90") { UseShellExecute = false })!;
-        var request = new AppUpgradeRequest(zip, executable, parent.Id, parent.StartTime.ToUniversalTime().Ticks,
+        var request = new AppUpgradeRequest(zip, executable, parent.Id,
+            parent.StartTime.ToUniversalTime().Ticks + (scenario == "identity-mismatch" ? 1 : 0),
             operation, Path.Combine(root, "upgrade.log"), Path.Combine(install, "guiConfigs", "pending-app-update.json"),
             Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(newApp))));
         var start = new ProcessStartInfo(worker) { UseShellExecute = false };
@@ -131,7 +134,7 @@ public class AppUpgradeIntegrationTests
         {
             while (!File.Exists(request.ReadyPath) && !updater.HasExited)
                 await Task.Delay(50, deadline.Token);
-            if (scenario != "unsafe-zip")
+            if (scenario is not ("unsafe-zip" or "identity-mismatch"))
             {
                 Check(File.Exists(request.ReadyPath), "preparation failed");
                 Check(File.ReadAllText(executable) == oldApp, "installed before parent exit");
@@ -143,7 +146,7 @@ public class AppUpgradeIntegrationTests
             Check(digestBefore.SequenceEqual(SHA256.HashData(File.ReadAllBytes(worker))), "running helper overwritten");
             Check(File.ReadAllText(Path.Combine(install, "bin", "core")) == "existing-core", "existing core replaced");
             Check(File.ReadAllText(Path.Combine(install, "guiConfigs", "settings")) == "existing-settings", "settings replaced");
-            if (scenario == "success" || scenario == "rollback")
+            if (scenario is "success" or "rollback" or "launch-failure")
             {
                 while (!File.Exists(marker)) await Task.Delay(50, deadline.Token);
                 Check(File.ReadAllText(marker) == (scenario == "success" ? "new" : "old"), "wrong program restarted");

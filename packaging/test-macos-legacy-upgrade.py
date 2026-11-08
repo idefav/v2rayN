@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Run published legacy updaters and require automatic startup provenance in CI only."""
 import argparse
+import ctypes
 import hashlib
 import json
 import os
@@ -36,9 +37,19 @@ def extract(archive, destination):
 
 
 def processes(executable):
-    output = subprocess.check_output(['/bin/ps', '-axo', 'pid=,comm='], text=True)
-    return [int(row.split(None, 1)[0]) for row in output.splitlines()
-            if len(row.split(None, 1)) == 2 and row.split(None, 1)[1] == str(executable)]
+    # ps renders non-ASCII paths according to its locale and may abbreviate them.
+    # The fixture's own UID can read its exact executable through proc_pidpath.
+    libproc = ctypes.CDLL('/usr/lib/libproc.dylib')
+    libproc.proc_pidpath.argtypes = [ctypes.c_int, ctypes.c_void_p, ctypes.c_uint32]
+    output = subprocess.check_output(['/bin/ps', '-axo', 'pid='], text=True)
+    found = []
+    for row in output.split():
+        pid = int(row)
+        path = ctypes.create_string_buffer(4096)
+        if libproc.proc_pidpath(pid, path, len(path)) > 0:
+            if os.path.realpath(os.fsdecode(path.value)) == os.path.realpath(executable):
+                found.append(pid)
+    return found
 
 
 def main():

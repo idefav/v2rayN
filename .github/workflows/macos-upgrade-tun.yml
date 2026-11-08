@@ -41,11 +41,13 @@ jobs:
             (cd "legacy/$version" && grep 'v2rayN-macos-arm64.zip$' SHA256SUMS | shasum -a 256 -c -)
           done
       - uses: actions/download-artifact@v8
+        id: download
         if: inputs.candidate_artifact != ''
         with:
           name: ${{ inputs.candidate_artifact }}
           path: candidate
       - name: Build candidate for branch verification
+        id: build
         if: inputs.candidate_artifact == ''
         run: |
           set -euo pipefail
@@ -69,6 +71,7 @@ jobs:
           python3 packaging/test-macos-legacy-upgrade.py --candidate candidate/v2rayN-macos-arm64.zip \
             --results TestResults/upgrade-v2
       - name: Verify packaged updater rollback and both real root TUN topologies
+        if: ${{ !cancelled() && (steps.build.outcome == 'success' || steps.download.outcome == 'success') }}
         run: |
           set -euo pipefail
           unzip -q candidate/v2rayN-macos-arm64.zip -d actual
