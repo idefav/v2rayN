@@ -87,7 +87,7 @@ def main():
             'IndexId': '', 'IsFirstRun': False,
         }))
         record = {'SchemaVersion': 1, 'Repository': 'idefav/v2rayN', 'Tag': 'v7.25.6-ssh-preview.999',
-                  'Version': '7.25.6-ssh-preview.999', 'Sha256': expected, 'Executable': 'v2rayN'}
+                  'Version': 'v7.25.6-ssh-preview.999', 'Sha256': expected, 'Executable': 'v2rayN'}
         (configs / 'pending-app-update.json').write_text(json.dumps(record))
         candidate = root / '候选 package.zip'
         shutil.copyfile(args.candidate, candidate)
@@ -110,7 +110,9 @@ def main():
                 time.sleep(.2)
             assert installed.exists(), 'Legacy helper did not automatically start and confirm the candidate app'
             assert processes(executable), 'Candidate application is not running'
-            assert json.loads(installed.read_text()) == record
+            actual_record = json.loads(installed.read_text())
+            (args.results / 'installed-app-update.json').write_text(json.dumps(actual_record, indent=2))
+            assert actual_record == record, (actual_record, record)
             assert digest(executable) == expected
             assert digest(install / helper_name) == original_helper, 'Helper bytes did not match expected package'
             helper_process.wait(timeout=15)
@@ -128,6 +130,8 @@ def main():
             helper_process.wait(timeout=5)
         if (install / 'guiLogs').exists():
             shutil.copytree(install / 'guiLogs', args.results / 'app-logs', dirs_exist_ok=True)
+        for log in install.glob('*.log'):
+            shutil.copyfile(log, args.results / log.name)
         shutil.rmtree(root)
         assert subprocess.check_output(['/usr/sbin/scutil', '--proxy']) == before_proxy, 'System proxy changed'
 
