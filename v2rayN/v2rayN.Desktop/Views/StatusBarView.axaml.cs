@@ -163,7 +163,8 @@ public partial class StatusBarView : ReactiveUserControl<StatusBarViewModel>
             RecoveryState.Degraded => WorkspaceText.T("探测异常，已保留连接", "Probe unavailable; connection preserved"),
             _ => string.Empty,
         };
-        var connectionFailed = !string.IsNullOrWhiteSpace(ViewModel?.ConnectionError);
+        var connectionFailed = CoreManager.Instance.HandoffState != PortHandoffState.Waiting
+            && !string.IsNullOrWhiteSpace(ViewModel?.ConnectionError);
         if (connectionFailed) txtRecoveryState.Text = WorkspaceText.T("配置应用失败", "Configuration failed");
         txtRecoveryState.Classes.Set("error", connectionFailed || recovery?.State == RecoveryState.Failed);
         txtRecoveryState.IsVisible = !string.IsNullOrEmpty(txtRecoveryState.Text);

@@ -192,6 +192,7 @@ public class CoreManager
                 HandoffState = PortHandoffState.Waiting;
                 await PortHandoff.WaitAsync(handoff, token, elapsed =>
                     progress?.Invoke($"已停止 TUN，正在等待普通模式端口可用（{elapsed.TotalSeconds:F0}/90 秒） / Waiting for unprivileged port handoff"));
+                progress?.Invoke(string.Empty);
             }
             token.ThrowIfCancellationRequested();
             HandoffState = PortHandoffState.Starting;
