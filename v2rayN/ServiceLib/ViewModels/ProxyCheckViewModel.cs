@@ -82,7 +82,7 @@ public partial class ProxyCheckViewModel : MyReactiveObject, IDisposable
             EnvironmentText = await ProxyCheckService.DescribeEnvironmentAsync();
             var config = AppManager.Instance.Config;
             NodeName = (await AppManager.Instance.GetProfileItem(config.IndexId))?.Remarks ?? "—";
-            CoreName = ProxyCheckService.DescribeRunningCore();
+            CoreName = await ProxyCheckService.DescribeRunningCoreAsync();
             RoutingName = (await AppManager.Instance.GetRoutingItem(config.RoutingBasicItem.RoutingIndexId))?.Remarks ?? "—";
             CaptureMode = FormatCaptureMode(config.TunModeItem.EnableTun, config.SystemProxyItem.SysProxyType);
             LocalEntry = $"127.0.0.1:{AppManager.Instance.GetLocalPort(EInboundProtocol.socks)}";

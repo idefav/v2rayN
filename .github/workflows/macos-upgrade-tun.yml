@@ -29,6 +29,8 @@ jobs:
           test "$(uname -m)" = arm64
           test "$(id -u)" != 0
           sudo -n true
+      - name: Verify process health on the Avalonia UI dispatcher
+        run: dotnet run --project v2rayN/v2rayN.Desktop.Review -c Release -p:UsedAvaloniaProducts= -- --core-process-ui
       - name: Download and verify published legacy packages
         env:
           GH_TOKEN: ${{ github.token }}

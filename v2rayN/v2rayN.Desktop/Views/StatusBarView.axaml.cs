@@ -10,6 +10,9 @@ public partial class StatusBarView : ReactiveUserControl<StatusBarViewModel>
     private readonly Config _config;
     private readonly DispatcherTimer _coreTimer = new() { Interval = TimeSpan.FromSeconds(1) };
     private bool _reloading;
+    // Display-only snapshot; lifecycle decisions always await a fresh query.
+    private bool _coreRunning;
+    private bool _checkingCore;
     private string? _coreBrushKey;
     private IDisposable? _coreBrush;
     private string? _exitNode;
@@ -49,7 +52,7 @@ public partial class StatusBarView : ReactiveUserControl<StatusBarViewModel>
                 .ObserveOn(RxSchedulers.MainThreadScheduler)
                 .Subscribe(update =>
                 {
-                    if (!_config.GuiItem.DisplayRealTimeSpeed || !CoreManager.Instance.IsCoreRunning) return;
+                    if (!_config.GuiItem.DisplayRealTimeSpeed || !_coreRunning) return;
                     txtDownload.Text = "↓ " + Utils.HumanFy(update.ProxyDown) + "/s";
                     txtUpload.Text = "↑ " + Utils.HumanFy(update.ProxyUp) + "/s";
                 }).DisposeWith(disposables);
@@ -127,6 +130,25 @@ public partial class StatusBarView : ReactiveUserControl<StatusBarViewModel>
 
     private void UpdateCoreState()
     {
+        RenderCoreState();
+        _ = RefreshCoreStateAsync();
+    }
+
+    private async Task RefreshCoreStateAsync()
+    {
+        if (_checkingCore) return;
+        _checkingCore = true;
+        try
+        {
+            _coreRunning = await CoreManager.Instance.IsCoreRunningAsync();
+            RenderCoreState();
+        }
+        catch (Exception ex) { Logging.SaveLog("StatusBar process health", ex); }
+        finally { _checkingCore = false; }
+    }
+
+    private void RenderCoreState()
+    {
         var recovery = AppManager.Instance.ConnectionRecovery;
         txtRecoveryState.Text = recovery?.State switch
         {
@@ -147,7 +169,7 @@ public partial class StatusBarView : ReactiveUserControl<StatusBarViewModel>
                     "Local core and SOCKS are healthy; no automatic restart. Use Proxy Check to investigate.")
                 : recovery?.Error);
         UpdateExitSummary();
-        var running = CoreManager.Instance.IsCoreRunning;
+        var running = _coreRunning;
         var applying = _reloading || ViewModel?.IsChangingConnection == true;
         txtCoreState.Text = applying
             ? WorkspaceText.T("正在应用…", "Applying…") : running ? WorkspaceText.Running : WorkspaceText.Stopped;
@@ -166,7 +188,7 @@ public partial class StatusBarView : ReactiveUserControl<StatusBarViewModel>
     private void UpdateRuntimeMetadata()
     {
         var core = AppManager.Instance.RunningCoreType;
-        txtCoreName.Text = WorkspaceText.T("内核：", "Core: ") + (CoreManager.Instance.IsCoreRunning && Enum.IsDefined(core)
+        txtCoreName.Text = WorkspaceText.T("内核：", "Core: ") + (_coreRunning && Enum.IsDefined(core)
             ? core == ECoreType.sing_box ? "sing-box" : core.ToString() : WorkspaceText.T("未运行", "Stopped"));
         txtProxyMode.Text = WorkspaceText.T("系统代理：", "System proxy: ") + (_config.SystemProxyItem.SysProxyType switch
         {

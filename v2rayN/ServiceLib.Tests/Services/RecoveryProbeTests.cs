@@ -179,7 +179,7 @@ public class RecoveryProbeTests
         });
         var context = new RecoveryContext("fixture", ((IPEndPoint)listener.LocalEndpoint).Port, "https://fixture.invalid", 1);
         var result = await RecoveryProbe.LocalAsync(context, timeout.Token,
-            () => (running ? LocalHealth.Healthy : LocalHealth.Failed, LocalHealth.Healthy));
+            _ => Task.FromResult((running ? LocalHealth.Healthy : LocalHealth.Failed, LocalHealth.Healthy)));
         await server;
         if (result.Healthy || result.Main != LocalHealth.Failed || result.Socks != LocalHealth.Healthy)
             throw new Exception("process state sampled before the pending handshake");

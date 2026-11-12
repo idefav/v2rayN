@@ -805,7 +805,7 @@ public partial class MainWindowViewModel : MyReactiveObject
             }
 
             ReloadResult(showClashUI);
-            return proxyApplied && CoreManager.Instance.IsCoreRunning;
+            return proxyApplied && await CoreManager.Instance.IsCoreRunningAsync(token);
         }
         catch (OperationCanceledException) when (expected != null)
         {

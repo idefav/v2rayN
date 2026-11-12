@@ -65,6 +65,11 @@ internal static class Program
     {
         // Block all OS proxy mutations, including startup, exit, failure cleanup and interactive controls.
         SysProxyHandler.ChangesEnabled = false;
+        if (args.Contains("--core-process-ui"))
+        {
+            CoreProcessUiReview.Run();
+            return;
+        }
         Output = Path.GetFullPath(args.FirstOrDefault() ?? "ui-review");
         Directory.CreateDirectory(Output);
         foreach (var previous in new[] { "failure.txt", "manifest.json" })
@@ -919,7 +924,7 @@ public partial class ReviewApp : v2rayN.Desktop.App
         settings.DestOverride.Clear();
         Check(originalSniffing.SequenceEqual(AppManager.Instance.Config.Inbound[0].DestOverride ?? []), "sniffing draft does not mutate saved configuration");
         AppManager.Instance.RunningCoreType = ECoreType.Xray;
-        Check(!CoreManager.Instance.IsCoreRunning, "configured core is not reported as running");
+        Check(!await CoreManager.Instance.IsCoreRunningAsync(), "configured core is not reported as running");
         await _main.NavigateAsync("Servers");
         for (var index = 0; index < 1000; index++) _vm.ProfilesViewModel.ProfileItems.Add(new ProfileItemModel
         { IndexId = $"load-{index}", Remarks = $"节点 {index}", ConfigType = EConfigType.VLESS, Address = "example.com", Port = 443 });
@@ -1125,7 +1130,7 @@ public partial class ReviewApp : v2rayN.Desktop.App
         var expectedSidebar = Program.Width <= 900 ? 64 : 196 + Math.Max(0, Program.FontSize - 14) * 6;
         Check(_main.FindControl<Grid>("shellGrid")!.ColumnDefinitions[0].Width.Value == expectedSidebar,
             "Primer navigation uses the documented desktop and compact widths");
-        Check(!CoreManager.Instance.IsCoreRunning && status.FindControl<TextBlock>("txtCoreName")!.Text!.Contains(WorkspaceText.T("未运行", "Stopped")),
+        Check(!await CoreManager.Instance.IsCoreRunningAsync() && status.FindControl<TextBlock>("txtCoreName")!.Text!.Contains(WorkspaceText.T("未运行", "Stopped")),
             "configured profiles never masquerade as a running core in the summary");
         Check(table.SelectedItem == selected && active.IsActive && AppManager.Instance.Config.IndexId == activeId,
             "selecting another row leaves the active profile and runtime configuration unchanged");

@@ -28,10 +28,11 @@ public class ProcessService : IDisposable
     internal string RecentError => string.Join(Environment.NewLine, _recentErrors);
     public int Id => _process.Id;
     public IntPtr Handle => _process.Handle;
-    public bool HasExited => HasExitedAsync(CancellationToken.None).GetAwaiter().GetResult();
-
-    internal async Task<bool> HasExitedAsync(CancellationToken token)
+    // macOS elevated identity queries perform asynchronous I/O. Never expose a
+    // synchronous wrapper: command continuations may need the caller's dispatcher.
+    public async Task<bool> HasExitedAsync(CancellationToken token = default)
     {
+        token.ThrowIfCancellationRequested();
         if (!_started || _isDisposed || _stopConfirmed) return true;
         var identity = CoreIdentity;
         if (!IsElevated || identity == null) return _process.HasExited;

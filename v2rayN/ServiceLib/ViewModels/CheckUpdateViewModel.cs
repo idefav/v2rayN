@@ -200,7 +200,7 @@ public partial class CheckUpdateViewModel : MyReactiveObject
                 if (item.IsGeoFile)
                 {
                     await service.UpdateGeoFileAll(snapshot.CheckUpdateItem.UpdateViaProxy);
-                    if (CoreManager.Instance.IsCoreRunning && RestartCoreAsync != null
+                    if (await CoreManager.Instance.IsCoreRunningAsync() && RestartCoreAsync != null
                         && !await RestartCoreAsync("Geo／SRS 规则更新完成"))
                         throw new InvalidOperationException("Rules were downloaded, but the core could not reload");
                     continue;

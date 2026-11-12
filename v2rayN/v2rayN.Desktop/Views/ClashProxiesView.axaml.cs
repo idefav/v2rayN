@@ -9,6 +9,7 @@ public partial class ClashProxiesView : ReactiveUserControl<ClashProxiesViewMode
     public Func<string, Task>? EditServer { get; set; }
     private ProfileItem? _node;
     private bool _settingMode;
+    private int _overviewRevision;
 
     private static string ModeName(string? mode) => mode?.ToLowerInvariant() switch
     {
@@ -24,7 +25,11 @@ public partial class ClashProxiesView : ReactiveUserControl<ClashProxiesViewMode
     };
     private async Task RefreshOverview()
     {
-        _node = await AppManager.Instance.GetProfileItem(AppManager.Instance.Config.IndexId);
+        var revision = ++_overviewRevision;
+        var node = await AppManager.Instance.GetProfileItem(AppManager.Instance.Config.IndexId);
+        var running = await CoreManager.Instance.IsCoreRunningAsync();
+        if (revision != _overviewRevision) return;
+        _node = node;
         var grouped = _node?.ConfigType is EConfigType.PolicyGroup or EConfigType.Custom or EConfigType.Outbound;
         singleNode.IsVisible = !grouped;
         singleNode.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left;
@@ -39,7 +44,7 @@ public partial class ClashProxiesView : ReactiveUserControl<ClashProxiesViewMode
         proxyWorkspace.IsVisible = grouped && ViewModel?.LoadState == "ready";
         txtNodeName.Text = _node?.Remarks ?? WorkspaceText.T("尚未选择服务器", "No server selected");
         txtNodeProtocol.Text = _node?.ConfigType.ToString() ?? "—";
-        txtProxyState.Text = !CoreManager.Instance.IsCoreRunning ? WorkspaceText.T("内核未运行", "Core is not running")
+        txtProxyState.Text = !running ? WorkspaceText.T("内核未运行", "Core is not running")
             : !AppManager.Instance.IsRunningCore(ECoreType.sing_box) ? WorkspaceText.T("内核运行中 · 当前内核不提供策略组接口", "Core running · policy group API unavailable")
             : ViewModel?.LoadState switch { "loading" => WorkspaceText.T("正在读取内核状态…", "Loading core state…"), "ready" => WorkspaceText.T("内核运行中", "Core running"), _ => WorkspaceText.T("无法读取策略组状态，请刷新重试", "Policy group state unavailable; refresh to retry") };
         if (!string.IsNullOrEmpty(ViewModel?.LoadError)) txtProxyState.Text += " · " + ViewModel.LoadError;
@@ -89,20 +94,30 @@ public partial class ClashProxiesView : ReactiveUserControl<ClashProxiesViewMode
 
         this.WhenActivated(disposables =>
         {
-            var running = CoreManager.Instance.IsCoreRunning;
+            bool? running = null;
+            var refreshing = false;
+            var active = true;
             var activeId = AppManager.Instance.Config.IndexId;
             var core = AppManager.Instance.RunningCoreType;
             var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
             timer.Tick += async (_, _) =>
             {
-                if (running == CoreManager.Instance.IsCoreRunning && (activeId == AppManager.Instance.Config.IndexId || !running) && core == AppManager.Instance.RunningCoreType) return;
-                running = CoreManager.Instance.IsCoreRunning; activeId = AppManager.Instance.Config.IndexId; core = AppManager.Instance.RunningCoreType;
-                if (running && AppManager.Instance.IsRunningCore(ECoreType.sing_box)) await ViewModel!.ProxiesReload();
-                else { ViewModel!.LoadState = "unavailable"; ViewModel.ProxyGroups.Clear(); ViewModel.ProxyDetails.Clear(); ViewModel.ClashModes.Clear(); }
-                await RefreshOverview();
+                if (refreshing) return;
+                refreshing = true;
+                try
+                {
+                    var current = await CoreManager.Instance.IsCoreRunningAsync();
+                    if (!active || running == current && (activeId == AppManager.Instance.Config.IndexId || !current) && core == AppManager.Instance.RunningCoreType) return;
+                    running = current; activeId = AppManager.Instance.Config.IndexId; core = AppManager.Instance.RunningCoreType;
+                    if (current && AppManager.Instance.IsRunningCore(ECoreType.sing_box)) await ViewModel!.ProxiesReload();
+                    else { ViewModel!.LoadState = "unavailable"; ViewModel.ProxyGroups.Clear(); ViewModel.ProxyDetails.Clear(); ViewModel.ClashModes.Clear(); }
+                    if (active) await RefreshOverview();
+                }
+                catch (Exception ex) { Logging.SaveLog("Clash view process health", ex); }
+                finally { refreshing = false; }
             };
             timer.Start();
-            new ActionDisposable(timer.Stop).DisposeWith(disposables);
+            new ActionDisposable(() => { active = false; timer.Stop(); }).DisposeWith(disposables);
             void UpdateExit(string _) => Dispatcher.UIThread.Post(async () => await RefreshOverview());
             ExitInfoService.Instance.Changed += UpdateExit;
             new ActionDisposable(() => ExitInfoService.Instance.Changed -= UpdateExit).DisposeWith(disposables);

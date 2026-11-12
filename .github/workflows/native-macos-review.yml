@@ -19,6 +19,8 @@ jobs:
           dotnet-version: 10.0.1xx
       - name: Build isolated native review
         run: dotnet build v2rayN/v2rayN.Desktop.Review -c Release -p:UsedAvaloniaProducts=
+      - name: Verify process health does not block the UI dispatcher
+        run: dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll --core-process-ui
       - name: Check actual AppKit windows without Headless
         run: |
           dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/native-review/zh-light --primer-only --language=zh-Hans --theme=light --width=1440

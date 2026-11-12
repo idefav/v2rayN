@@ -152,14 +152,14 @@ internal static class RecoveryProbe
     };
 
     public static Task<LocalRecoveryResult> LocalAsync(RecoveryContext context, CancellationToken token)
-        => LocalAsync(context, token, CoreManager.Instance.GetRecoveryProcessHealth);
+        => LocalAsync(context, token, CoreManager.Instance.GetRecoveryProcessHealthAsync);
 
     internal static async Task<LocalRecoveryResult> LocalAsync(RecoveryContext context, CancellationToken token,
-        Func<(LocalHealth Main, LocalHealth Pre)> processHealth)
+        Func<CancellationToken, Task<(LocalHealth Main, LocalHealth Pre)>> processHealth)
     {
         var socks = await CheckSocksAsync(context.Port, token).ConfigureAwait(false);
         // A required process may exit while the handshake is pending.
-        var processes = processHealth();
+        var processes = await processHealth(token).ConfigureAwait(false);
         return new(processes.Main, processes.Pre, socks);
     }
 

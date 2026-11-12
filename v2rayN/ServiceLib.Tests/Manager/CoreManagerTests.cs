@@ -25,8 +25,8 @@ public class CoreManagerTests
                 // remains absent, just as it does after LoadCore returns Failed.
                 return false;
             }, _ => { }, clock, new() { StableDelay = TimeSpan.Zero, RetryDelay = TimeSpan.Zero },
-            localHealth: (_, _) => Task.FromResult(new LocalRecoveryResult(LocalHealth.Healthy,
-                manager.GetRecoveryProcessHealth().Pre, LocalHealth.Healthy)));
+            localHealth: async (_, token) => new LocalRecoveryResult(LocalHealth.Healthy,
+                (await manager.GetRecoveryProcessHealthAsync(token)).Pre, LocalHealth.Healthy));
         await recovery.CheckAsync("partial startup", CancellationToken.None);
         if (restarts != 1 || recovery.State != RecoveryState.Failed) throw new Exception("partial launch was not recoverable");
         await recovery.CheckAsync("cooldown", CancellationToken.None);
@@ -37,9 +37,9 @@ public class CoreManagerTests
         await recovery.CheckAsync("rolling limit", CancellationToken.None);
         if (restarts != 2) throw new Exception("pre-core recovery lost its requirement or ignored restart limit");
         await manager.CoreStop();
-        if (manager.GetRecoveryProcessHealth().Pre != LocalHealth.Unknown) throw new Exception("stop retained stale topology");
+        if ((await manager.GetRecoveryProcessHealthAsync()).Pre != LocalHealth.Unknown) throw new Exception("stop retained stale topology");
         requirements.SetValue(manager, new CoreProcessRequirements(PreRequired: false));
-        if (manager.GetRecoveryProcessHealth().Pre != LocalHealth.Healthy) throw new Exception("new topology retained an old pre-core requirement");
+        if ((await manager.GetRecoveryProcessHealthAsync()).Pre != LocalHealth.Healthy) throw new Exception("new topology retained an old pre-core requirement");
     }
 
     private sealed class RecoveryClock : TimeProvider

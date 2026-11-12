@@ -32,25 +32,28 @@ public class CoreManager
     // Startup requirements survive a partial launch; effective config is recorded only
     // after every required process starts successfully.
     private CoreProcessRequirements? _processRequirements;
-    internal (LocalHealth Main, LocalHealth Pre) GetRecoveryProcessHealth()
+    internal async Task<(LocalHealth Main, LocalHealth Pre)> GetRecoveryProcessHealthAsync(CancellationToken token = default)
     {
-        static LocalHealth Read(ProcessService? process)
+        static async Task<LocalHealth> ReadAsync(ProcessService? process, CancellationToken token)
         {
-            try { return process is { HasExited: false } ? LocalHealth.Healthy : LocalHealth.Failed; }
+            try { return process != null && !await process.HasExitedAsync(token).ConfigureAwait(false) ? LocalHealth.Healthy : LocalHealth.Failed; }
             catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception or ObjectDisposedException)
             { return LocalHealth.Unknown; }
         }
+        token.ThrowIfCancellationRequested();
         var requirements = _processRequirements;
-        return (Read(_processService), requirements == null ? LocalHealth.Unknown
-            : requirements.PreRequired ? Read(_processPreService) : LocalHealth.Healthy);
+        var main = _processService;
+        var pre = _processPreService;
+        return (await ReadAsync(main, token).ConfigureAwait(false), requirements == null ? LocalHealth.Unknown
+            : requirements.PreRequired ? await ReadAsync(pre, token).ConfigureAwait(false) : LocalHealth.Healthy);
     }
-    public bool IsCoreRunning
+    public Task<bool> IsCoreRunningAsync(CancellationToken token = default) => IsRunningAsync(_processService, token);
+
+    private static async Task<bool> IsRunningAsync(ProcessService? process, CancellationToken token = default)
     {
-        get
-        {
-            try { return _processService is { HasExited: false, IsReady: true }; }
-            catch (InvalidOperationException) { return false; }
-        }
+        token.ThrowIfCancellationRequested();
+        try { return process is { IsReady: true } && !await process.HasExitedAsync(token).ConfigureAwait(false); }
+        catch (InvalidOperationException) { return false; }
     }
     private Func<bool, string, Task>? _updateFunc;
     private const string _tag = "CoreHandler";
@@ -147,7 +150,7 @@ public class CoreManager
                 EffectiveCoreConfig.Fingerprint(await File.ReadAllTextAsync(fileName), node.ConfigType != EConfigType.Custom), mainContext.RunCoreType,
                 preContext == null ? null : EffectiveCoreConfig.Fingerprint(await File.ReadAllTextAsync(preFileName), preContext.Node.ConfigType != EConfigType.Custom),
                 preContext?.RunCoreType);
-            var changeReason = candidate.ReloadReason(_runningConfig, IsCoreRunning, _processPreService is { HasExited: false });
+            var changeReason = candidate.ReloadReason(_runningConfig, await IsCoreRunningAsync(), await IsRunningAsync(_processPreService));
             var nodeName = node.Remarks?.ReplaceLineEndings(" ").Replace('\t', ' ');
             var reloadLog = onlyIfChanged && changeReason == null
                 ? $"[主代理][节点：{nodeName}] {reason}：有效配置未变化，跳过重载，保留现有连接。"
@@ -180,7 +183,7 @@ public class CoreManager
             }
 
             await CoreStart(mainContext);
-            if (_processService is not { IsReady: true, HasExited: false })
+            if (!await IsCoreRunningAsync())
                 throw new IOException(LastError ?? ResUI.FailedToRunCore);
             await WaitForProxyPort(preContext);
             if (AppManager.Instance.IsExiting) throw new OperationCanceledException("应用正在退出，已取消启动 / Application is exiting.");
@@ -192,7 +195,7 @@ public class CoreManager
             {
                 await UpdateFunc(true, $"{node.GetSummary()}");
             }
-            if (!IsCoreRunning || preContext != null && _processPreService is not { HasExited: false, IsReady: true })
+            if (!await IsCoreRunningAsync() || preContext != null && !await IsRunningAsync(_processPreService))
                 throw new IOException(LastError ?? ResUI.FailedToRunCore);
             _runningConfig = candidate;
             return CoreLoadResult.Started;
@@ -314,7 +317,7 @@ public class CoreManager
 
     private async Task CoreStartPreService(CoreConfigContext? preContext)
     {
-        if (_processService is { HasExited: false } && preContext != null)
+        if (preContext != null && await IsCoreRunningAsync())
         {
             var preCoreType = preContext?.Node?.CoreType ?? ECoreType.sing_box;
             var coreInfo = CoreInfoManager.Instance.GetCoreInfo(preCoreType);

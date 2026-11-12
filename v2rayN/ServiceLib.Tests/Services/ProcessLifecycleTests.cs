@@ -57,7 +57,7 @@ public class ProcessLifecycleTests
             process.Remember([identity with { StartTime = "different-process" }]);
             Check(process.KnownProcesses.Single(p => p.Pid == process.Id) == identity, "later snapshot replaced an owned identity");
             process.IsElevated = true;
-            Check(!process.HasExited, "live native identity was compared against a different clock");
+            Check(!await process.HasExitedAsync(), "live native identity was compared against a different clock");
         }
         finally
         {
@@ -80,7 +80,7 @@ public class ProcessLifecycleTests
             await process.StartAsync();
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(3));
             await process.WaitForIdentityAsync(timeout.Token);
-            Check(process.CoreIdentity!.StartTime.StartsWith("linux:") && !process.HasExited, "launch marker did not report kernel identity");
+            Check(process.CoreIdentity!.StartTime.StartsWith("linux:") && !await process.HasExitedAsync(), "launch marker did not report kernel identity");
             Check(process.CoreIdentity.StartTime == process.KnownProcesses.Single(p => p.Pid == process.Id).StartTime,
                 "launch marker and snapshot use different clocks");
         }
@@ -207,10 +207,10 @@ public class ProcessLifecycleTests
             Check(await File.ReadAllTextAsync(config) == sentinel, "running config was overwritten");
             Check(ReferenceEquals(Field("_processService").GetValue(manager), main), "failed owner was forgotten");
             Check(Field("_processPreService").GetValue(manager) == null, "other core was not stopped");
-            Check(!main.HasExited, "identity mismatch killed an unverified process");
+            Check(!await main.HasExitedAsync(), "identity mismatch killed an unverified process");
             Check(manager.LastError?.Contains("identity", StringComparison.OrdinalIgnoreCase) == true, "missing stop error");
             main.Dispose();
-            Check(!main.HasExited, "Dispose silently terminated or forgot a live process");
+            Check(!await main.HasExitedAsync(), "Dispose silently terminated or forgot a live process");
         }
         finally
         {
@@ -235,7 +235,7 @@ public class ProcessLifecycleTests
             using var timeout = new CancellationTokenSource(TimeSpan.FromMilliseconds(250));
             var result = await UnixProcessControl.StopAsync(process, null, timeout.Token, helper);
             Check(result.Status == ProcessStopStatus.TimedOut && result.RemainingProcesses.Count > 0, "timeout lost identity");
-            Check(!process.HasExited, "cancelled stop killed fixture");
+            Check(!await process.HasExitedAsync(), "cancelled stop killed fixture");
         }
         finally
         {
@@ -254,7 +254,7 @@ public class ProcessLifecycleTests
         {
             var result = await UnixProcessControl.StopAsync(process, null, CancellationToken.None,
                 snapshotProvider: _ => throw new IOException("enumeration refused"));
-            Check(result.Status == ProcessStopStatus.Failed && !process.HasExited && result.RemainingProcesses.Count > 0,
+            Check(result.Status == ProcessStopStatus.Failed && !await process.HasExitedAsync() && result.RemainingProcesses.Count > 0,
                 "enumeration failure was mistaken for process exit");
         }
         finally { Check((await process.StopAndWaitAsync()).Success, "fixture cleanup failed"); }
@@ -269,7 +269,7 @@ public class ProcessLifecycleTests
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         // Inject a rejected elevation command at the executable boundary. No authentication attempt.
         var result = await UnixProcessControl.StopAsync(process, "", timeout.Token, "/usr/bin/false");
-        Check(!result.Success && result.RemainingProcesses.Count > 0 && !process.HasExited, "sudo failure forgot owner");
+        Check(!result.Success && result.RemainingProcesses.Count > 0 && !await process.HasExitedAsync(), "sudo failure forgot owner");
         process.IsElevated = false;
         Check((await process.StopAndWaitAsync()).Success, "normal retry failed");
     }
@@ -364,7 +364,7 @@ public class ProcessLifecycleTests
             {
                 Check(await manager.LoadCore(context, null) == CoreLoadResult.Started, manager.LastError ?? "real core failed to reload");
                 var process = (ProcessService)Field("_processService").GetValue(manager)!;
-                Check(!process.HasExited && process.IsReady && manager.IsCoreRunning, "new core not ready");
+                Check(!await process.HasExitedAsync() && process.IsReady && await manager.IsCoreRunningAsync(), "new core not ready");
                 if (oldPid.HasValue)
                 {
                     Check(process.Id != oldPid, "core was not replaced");

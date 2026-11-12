@@ -15,7 +15,7 @@ public partial class DNSSettingViewModel
     [Reactive] public partial string EgressError { get; set; } = "";
     public List<DnsNodeChoice> DnsNodes { get; } = [];
     public string NodeCapability { get; private set; } = "未验证 / Not verified";
-    public string RuntimeSummary => $"内核 / Core: {(CoreManager.Instance.IsCoreRunning ? AppManager.Instance.RunningCoreType.ToString() : "未运行 / Not running")}\nTUN 配置 / configured: {(_config.TunModeItem.EnableTun ? "开启 / On" : "关闭 / Off")}\n运行配置与检测结果请查看当前代理和代理检查。";
+    public string RuntimeSummary { get; private set; } = "检查中 / Checking…";
     private bool _fullTemplateEnabled;
     public bool IsManagedEgressEditable => !SBCustomDNSEnableCompatible && !_fullTemplateEnabled;
     public bool IsUdpPolicyEditable => !_fullTemplateEnabled;
@@ -42,6 +42,8 @@ public partial class DNSSettingViewModel
             ? (current.GetProtocolExtra().SshUdpForwarding == true ? (SshUdpPolicy.Mode(current.GetProtocolExtra()) == SshUdpPolicy.Tun2Proxy ? "SSH tun2proxy 网关已配置；UDP 数据及出口需实际验证。" : "SSH 自定义 UDP 扩展已配置；服务端与端到端能力未验证。") : "SSH UDP 未开启；代理 UDP 不可用。")
             : "UDP 能力未验证；以节点协议与端到端检测为准。";
         this.RaisePropertyChanged(nameof(NodeCapability));
+        var running = await CoreManager.Instance.IsCoreRunningAsync();
+        RuntimeSummary = $"内核 / Core: {(running ? AppManager.Instance.RunningCoreType.ToString() : "未运行 / Not running")}\nTUN 配置 / configured: {(_config.TunModeItem.EnableTun ? "开启 / On" : "关闭 / Off")}\n运行配置与检测结果请查看当前代理和代理检查。";
         this.RaisePropertyChanged(nameof(RuntimeSummary));
     }
 
