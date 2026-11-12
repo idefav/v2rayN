@@ -119,10 +119,11 @@ public class CoreListenerCheckTests
         reserved.Listen(1);
         try { await CoreListenerCheck.EnsureAvailableAsync([endpoint], (_, _) => { probes++; return Task.FromResult(SocketError.AddressAlreadyInUse); }); }
         catch (IOException) { }
-        Check(probes == 2, "a known listener was not checked with target credentials");
+        Check(probes >= 2, "a known listener was not checked with target credentials");
+        var previousProbes = probes;
         reserved.Close();
         await CoreListenerCheck.EnsureAvailableAsync([endpoint], (_, _) => { probes++; return Task.FromResult(SocketError.Success); });
-        Check(probes == 3, "an available port was not checked with target credentials");
+        Check(probes == previousProbes + 1, "an available port was not checked with target credentials");
     }
 
     [Test]

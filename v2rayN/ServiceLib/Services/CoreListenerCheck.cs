@@ -85,6 +85,14 @@ internal static class CoreListenerCheck
                 ? await elevatedProbe(endpoint, timeout.Token)
                 : ListenerBindProbe.Check(endpoint.Address, endpoint.Port, endpoint.Protocol);
             var error = await ProbeAsync();
+            // A just-closed async socket can remain visible until its native close
+            // completes. Preserve the short confirmation window for stale rows.
+            for (var attempt = 0; error == SocketError.AddressAlreadyInUse && overlapping.Length > 0 && attempt < 5; attempt++)
+            {
+                await Task.Delay(50, timeout.Token);
+                error = await ProbeAsync();
+                overlapping = ActiveListeners().Where(active => Overlaps(endpoint, active)).ToArray();
+            }
             // Closing a BSD socket with recently completed async IO can defer the
             // native close briefly. Poll the actual bind, never just sleep and
             // assume release, and keep the whole check within its shared budget.
