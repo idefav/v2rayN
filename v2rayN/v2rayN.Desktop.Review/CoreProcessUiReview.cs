@@ -42,6 +42,18 @@ internal static class CoreProcessUiReview
     {
         Check(SynchronizationContext.Current is AvaloniaSynchronizationContext, "real Avalonia UI context is missing");
         await VerifyWindowExitAsync();
+        using (var cancellation = new CancellationTokenSource())
+        {
+            var endpoint = new CoreListener(System.Net.IPAddress.Loopback, 34567, System.Net.Sockets.ProtocolType.Tcp);
+            var handoff = PortHandoff.WaitAsync([endpoint], cancellation.Token,
+                probe: _ => System.Net.Sockets.SocketError.AddressAlreadyInUse, listeners: () => []);
+            await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
+            Check(!handoff.IsCompleted, "handoff unexpectedly finished");
+            cancellation.Cancel();
+            try { await handoff; throw new Exception("handoff ignored cancellation"); }
+            catch (OperationCanceledException) { }
+            Console.WriteLine("PASS: port handoff preserves real UI heartbeat and cancels without waiting for deadline.");
+        }
         await VerifySavedTunAsync();
         using var process = new ProcessService("/bin/sleep", "15", Path.GetTempPath(), false, false, null, null);
         using var pre = new ProcessService("/bin/sleep", "15", Path.GetTempPath(), false, false, null, null);
