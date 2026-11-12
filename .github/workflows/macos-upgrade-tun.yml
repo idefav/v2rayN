@@ -82,6 +82,10 @@ jobs:
           export V2RAYN_TEST_BIND_HELPER="$root/AmazToolV2"
           export SSH_TEST_SINGBOX="$root/bin/sing_box/sing-box"
           export V2RAYN_TEST_BIND_SUDO=1 V2RAYN_TEST_TUN_RESTART=1
+          dotnet test --project v2rayN/ServiceLib.Tests -c Release --results-directory TestResults/listeners -- \
+            --treenode-filter '/*/*/CoreListenerCheckTests/*' --report-trx
+          dotnet test --project v2rayN/ServiceLib.Tests -c Release --results-directory TestResults/authorization -- \
+            --treenode-filter '/*/*/TunAuthorizationTests/*' --report-trx
           dotnet test --project v2rayN/ServiceLib.Tests -c Release --results-directory TestResults/updater -- \
             --treenode-filter '/*/*/AppUpgradeIntegrationTests/*' --report-trx
           dotnet test --project v2rayN/ServiceLib.Tests -c Release --results-directory TestResults/tun -- \

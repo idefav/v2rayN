@@ -81,14 +81,20 @@ internal static class CoreListenerCheck
             // An empty LISTEN table does not imply bind is possible: bound-only
             // sockets and cross-UID TCP remnants can still reserve the address.
             // Probing also resolves ambiguous IPv6-only versus dual-stack listeners.
-            var error = ListenerBindProbe.Check(endpoint.Address, endpoint.Port, endpoint.Protocol);
+            async Task<SocketError> ProbeAsync() => elevatedProbe != null
+                ? await elevatedProbe(endpoint, timeout.Token)
+                : ListenerBindProbe.Check(endpoint.Address, endpoint.Port, endpoint.Protocol);
+            var error = await ProbeAsync();
             // Closing a BSD socket with recently completed async IO can defer the
             // native close briefly. Poll the actual bind, never just sleep and
             // assume release, and keep the whole check within its shared budget.
-            for (var attempt = 0; error == SocketError.AddressAlreadyInUse && overlapping.Length > 0 && attempt < 5; attempt++)
+            var retryClock = Stopwatch.StartNew();
+            for (; error == SocketError.AddressAlreadyInUse && overlapping.Length == 0
+                && retryClock.Elapsed < TimeSpan.FromSeconds(2);)
             {
-                await Task.Delay(50, timeout.Token);
-                error = ListenerBindProbe.Check(endpoint.Address, endpoint.Port, endpoint.Protocol);
+                await Task.Delay(100, timeout.Token);
+                error = await ProbeAsync();
+                overlapping = ActiveListeners().Where(active => Overlaps(endpoint, active)).ToArray();
             }
             if (error != SocketError.Success)
                 overlapping = ActiveListeners().Where(active => Overlaps(endpoint, active)).ToArray();
@@ -96,8 +102,6 @@ internal static class CoreListenerCheck
             // non-sharing bind is authoritative; stale rows must not block restart.
             if (error != SocketError.Success && overlapping.Any(active => endpoint.Address.AddressFamily == active.Address.AddressFamily))
                 throw new IOException($"端口被占用，已中止启动 / Listener occupied: {endpoint}. " + await DescribeOwnerAsync(endpoint));
-            if (error != SocketError.Success && elevatedProbe != null)
-                error = await elevatedProbe(endpoint, timeout.Token);
             timeout.Token.ThrowIfCancellationRequested();
             if (error == SocketError.Success) continue;
             if (error == SocketError.AddressAlreadyInUse && overlapping.Length > 0)

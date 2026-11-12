@@ -92,6 +92,7 @@ public partial class StatusBarView : ReactiveUserControl<StatusBarViewModel>
                 CloseConnectionControls();
                 interaction.SetOutput(await PasswordInputAsync());
             }).DisposeWith(disposables);
+            ViewModel.MarkAuthorizationUiReady();
             ViewModel.DispatcherRefreshIconInteraction.RegisterHandler(interaction =>
             {
                 Dispatcher.UIThread.Post(RefreshIcon);
@@ -227,8 +228,6 @@ public partial class StatusBarView : ReactiveUserControl<StatusBarViewModel>
     {
         var obj = await DialogHost.Show(new SudoPasswordInputView());
         var password = obj?.ToString();
-        if (password.IsNullOrEmpty()) { togEnableTun.IsChecked = false; return password; }
-        AppManager.Instance.LinuxSudoPwd = password;
         return password;
     }
 }

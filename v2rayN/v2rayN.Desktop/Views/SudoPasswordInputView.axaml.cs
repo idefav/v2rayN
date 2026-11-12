@@ -64,14 +64,7 @@ public partial class SudoPasswordInputView : UserControl
     {
         try
         {
-            // Use sudo echo command to verify password
-            var arg = new List<string>() { "-c", "sudo -S echo SUDO_CHECK" };
-            var result = await CliWrap.Cli.Wrap(Global.LinuxBash)
-                .WithArguments(arg)
-                .WithStandardInputPipe(CliWrap.PipeSource.FromString(password))
-                .ExecuteBufferedAsync();
-
-            return result.ExitCode == 0;
+            return await CoreAdminManager.ValidateAuthorizationAsync(password, AppManager.Instance.ExitToken);
         }
         catch (Exception ex)
         {

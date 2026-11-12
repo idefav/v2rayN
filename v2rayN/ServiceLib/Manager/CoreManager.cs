@@ -113,6 +113,7 @@ public class CoreManager
     private async Task<CoreLoadResult> LoadCoreUnderLock(CoreConfigContext? mainContext, CoreConfigContext? preContext,
         bool onlyIfChanged, string reason)
     {
+        if (AppManager.Instance.IsExiting) return CoreLoadResult.Failed;
         LastError = null;
         if (mainContext == null)
         {
@@ -263,14 +264,17 @@ public class CoreManager
         return process;
     }
 
-    public async Task<ProcessStopResult> CoreStop()
+    internal IReadOnlyList<ProcessIdentity> RemainingProcesses => new[] { _processPreService, _processService }
+        .Where(p => p != null).SelectMany(p => p!.KnownProcesses).ToArray();
+
+    public async Task<ProcessStopResult> CoreStop(CancellationToken token = default)
     {
-        await _lifecycleGate.WaitAsync();
-        try { return await CoreStopUnderLock(); }
+        await _lifecycleGate.WaitAsync(token);
+        try { return await CoreStopUnderLock(token: token); }
         finally { _lifecycleGate.Release(); }
     }
 
-    private async Task<ProcessStopResult> CoreStopUnderLock(bool clearRequirements = true)
+    private async Task<ProcessStopResult> CoreStopUnderLock(bool clearRequirements = true, CancellationToken token = default)
     {
         _runningConfig = null;
         var results = new List<ProcessStopResult>();
@@ -279,7 +283,7 @@ public class CoreManager
             if (process == null) continue;
             try
             {
-                var result = await process.StopAndWaitAsync();
+                var result = await process.StopAndWaitAsync(token);
                 results.Add(result);
                 if (!result.Success) continue;
                 process.Dispose();
@@ -462,7 +466,7 @@ public class CoreManager
                 await CoreListenerCheck.EnsureAvailableAsync(listeners,
                     mayNeedSudo ? GetElevatedListenerProbe(isTunLaunch, coreInfo.CoreType) : null, startupTimeout.Token);
             startupTimeout.Token.ThrowIfCancellationRequested();
-            if (mayNeedSudo && AppManager.Instance.IsExiting) throw new OperationCanceledException("Application is exiting.");
+            if (AppManager.Instance.IsExiting) throw new OperationCanceledException("Application is exiting.");
             if (mayNeedSudo
                 && ShouldRunAsSudo(isTunLaunch, coreInfo.CoreType, Utils.IsNonWindows()))
             {

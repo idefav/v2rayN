@@ -95,7 +95,7 @@ public class CoreListenerCheckTests
     }
 
     [Test]
-    public async Task ElevatedCheckUsesLaunchCredentialsOnlyWhenLocalBindFails()
+    public async Task ElevatedCheckAlwaysUsesTargetLaunchCredentials()
     {
         using var reserved = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
         reserved.Bind(new IPEndPoint(IPAddress.Loopback, 0));
@@ -117,12 +117,12 @@ public class CoreListenerCheckTests
         catch (IOException ex) { denied = ex.Message.Contains("elevation refused"); }
         Check(denied, "elevation failure was treated as an available port");
         reserved.Listen(1);
-        try { await CoreListenerCheck.EnsureAvailableAsync([endpoint], (_, _) => { probes++; return Task.FromResult(SocketError.Success); }); }
+        try { await CoreListenerCheck.EnsureAvailableAsync([endpoint], (_, _) => { probes++; return Task.FromResult(SocketError.AddressAlreadyInUse); }); }
         catch (IOException) { }
-        Check(probes == 1, "a known listener was bypassed through elevation");
+        Check(probes == 2, "a known listener was not checked with target credentials");
         reserved.Close();
         await CoreListenerCheck.EnsureAvailableAsync([endpoint], (_, _) => { probes++; return Task.FromResult(SocketError.Success); });
-        Check(probes == 1, "an available port unnecessarily requested elevation");
+        Check(probes == 3, "an available port was not checked with target credentials");
     }
 
     [Test]

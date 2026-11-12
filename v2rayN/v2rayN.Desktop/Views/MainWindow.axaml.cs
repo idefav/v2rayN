@@ -12,7 +12,8 @@ public partial class MainWindow : WindowBase<MainWindowViewModel>
     private static Config _config;
     private readonly WindowNotificationManager? _manager;
     private CheckUpdateView? _checkUpdateView;
-    private bool _blCloseByUser = false;
+    private WindowExitCoordinator? _exit;
+    public bool AllowsShutdown => _exit?.AllowClose == true;
 
     public MainWindow()
     {
@@ -195,10 +196,11 @@ public partial class MainWindow : WindowBase<MainWindowViewModel>
         }
     }
 
-    protected override async void OnClosing(WindowClosingEventArgs e)
+    protected override void OnClosing(WindowClosingEventArgs e)
     {
-        if (_blCloseByUser)
+        if (AllowsShutdown)
         {
+            base.OnClosing(e);
             return;
         }
 
@@ -212,7 +214,8 @@ public partial class MainWindow : WindowBase<MainWindowViewModel>
                 break;
 
             case WindowCloseReason.ApplicationShutdown or WindowCloseReason.OSShutdown:
-                await AppManager.Instance.AppExitAsync(false);
+                // Closing is a synchronous notification. Cancel before the first await.
+                ExitCoordinator.Closing(e);
                 break;
         }
 
@@ -299,30 +302,33 @@ public partial class MainWindow : WindowBase<MainWindowViewModel>
                 return;
             }
 
-            _blCloseByUser = true;
-            if (!await PrepareExitAsync()) { _blCloseByUser = false; return; }
-            StorageUI();
-
-            await AppManager.Instance.AppExitAsync(true);
+            await RequestExitAsync();
         }
-        catch
+        catch (Exception ex)
         {
-            // Ignore
+            Logging.SaveLog("MenuClose", ex);
         }
     }
 
+    private WindowExitCoordinator ExitCoordinator => _exit ??= new(
+        async () => AppManager.Instance.IsExiting || await PrepareExitAsync(),
+        async () =>
+        {
+            try { StorageUI(); } catch (Exception ex) { Logging.SaveLog("Exit StorageUI", ex); }
+            await AppManager.Instance.AppExitAsync(false);
+        },
+        () =>
+        {
+            try { HotkeyManager.Instance.Dispose(); } catch (Exception ex) { Logging.SaveLog("Exit hotkeys", ex); }
+            if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop) desktop.Shutdown();
+        }, ex => Logging.SaveLog("ExitAndClose", ex));
+
+    public Task RequestExitAsync() => ExitCoordinator.RequestAsync();
+
     private void Shutdown(bool obj)
     {
-        if (obj is bool b && _blCloseByUser == false)
-        {
-            _blCloseByUser = b;
-        }
-        StorageUI();
-        if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
-        {
-            HotkeyManager.Instance.Dispose();
-            desktop.Shutdown();
-        }
+        // Includes upgrade and shared-library exit requests.
+        _ = RequestExitAsync();
     }
 
     #endregion Event

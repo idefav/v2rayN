@@ -372,6 +372,11 @@ public class ProcessLifecycleTests
                     catch (ArgumentException) { }
                 }
                 oldPid = process.Id;
+                // Exercise explicit exit cleanup between launches, not just reload replacement.
+                Check((await manager.CoreStop()).Success, "exit cleanup failed");
+                try { using var exited = Process.GetProcessById(oldPid.Value); Check(exited.HasExited, "old process survived exit cleanup"); }
+                catch (ArgumentException) { }
+                await CoreListenerCheck.EnsureAvailableAsync(listeners);
             }
             using var prePortReservation = new TcpListener(IPAddress.Loopback, 0); prePortReservation.Start();
             var prePort = ((IPEndPoint)prePortReservation.LocalEndpoint).Port; prePortReservation.Stop();

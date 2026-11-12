@@ -740,6 +740,10 @@ public partial class MainWindowViewModel : MyReactiveObject
                 NoticeManager.Instance.Enqueue(ResUI.CheckServerSettings);
                 return false;
             }
+            var authorizationRevision = Interlocked.Read(ref _connectionRevision);
+            if (!await StatusBarViewModel.EnsureTunAuthorizationAsync()) return false;
+            if (authorizationRevision != Interlocked.Read(ref _connectionRevision)) return false;
+            if (AppManager.Instance.IsExiting) return false;
             var allResult = await CoreConfigContextBuilder.BuildAll(_config, profileItem);
             if (NoticeManager.Instance.NotifyValidatorResult(allResult.CombinedValidatorResult) && !allResult.Success)
             {
