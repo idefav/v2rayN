@@ -28,6 +28,9 @@ public class CoreManager
     private ProcessService? _processPreService;
     private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
     public string? LastError { get; private set; }
+    private readonly List<CoreListener> _elevatedHandoff = [];
+    internal PortHandoffState HandoffState { get; private set; }
+    internal bool HandoffNeedsManualRetry => _elevatedHandoff.Count > 0 && HandoffState == PortHandoffState.Failed;
     private EffectiveCoreConfig? _runningConfig;
     // Startup requirements survive a partial launch; effective config is recorded only
     // after every required process starts successfully.
@@ -103,15 +106,17 @@ public class CoreManager
     /// <param name="mainContext">Resolved main context (with pre-socks ports already merged if applicable).</param>
     /// <param name="preContext">Optional pre-socks context passed to <see cref="CoreStartPreService"/>.</param>
     public async Task<CoreLoadResult> LoadCore(CoreConfigContext? mainContext, CoreConfigContext? preContext,
-        bool onlyIfChanged = false, string reason = "用户操作或配置变更")
+        bool onlyIfChanged = false, string reason = "用户操作或配置变更", CancellationToken token = default,
+        Action<string>? progress = null)
     {
-        await _lifecycleGate.WaitAsync();
-        try { return await LoadCoreUnderLock(mainContext, preContext, onlyIfChanged, reason); }
+        using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(token, AppManager.Instance.ExitToken);
+        await _lifecycleGate.WaitAsync(lifetime.Token);
+        try { return await LoadCoreUnderLock(mainContext, preContext, onlyIfChanged, reason, lifetime.Token, progress); }
         finally { _lifecycleGate.Release(); }
     }
 
     private async Task<CoreLoadResult> LoadCoreUnderLock(CoreConfigContext? mainContext, CoreConfigContext? preContext,
-        bool onlyIfChanged, string reason)
+        bool onlyIfChanged, string reason, CancellationToken token, Action<string>? progress)
     {
         if (AppManager.Instance.IsExiting) return CoreLoadResult.Failed;
         LastError = null;
@@ -163,14 +168,40 @@ public class CoreManager
             await UpdateFunc(false, $"{node.GetSummary()}");
             await UpdateFunc(false, $"{Utils.GetRuntimeInfo()}");
             await UpdateFunc(false, string.Format(ResUI.StartService, DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss")));
+            if (OperatingSystem.IsMacOS())
+            {
+                foreach (var old in new[] { _processService, _processPreService })
+                    if (old?.IsElevated == true && old.CoreIdentity != null && old.ConfigPath != null)
+                        _elevatedHandoff.AddRange(CoreListenerCheck.Read(await File.ReadAllTextAsync(old.ConfigPath, token)));
+            }
+            HandoffState = PortHandoffState.Stopping;
             var stopped = await CoreStopUnderLock();
             if (!stopped.Success) throw new IOException(stopped.Error);
+            token.ThrowIfCancellationRequested();
+            var handoff = new List<CoreListener>();
+            if (OperatingSystem.IsMacOS() && _elevatedHandoff.Count > 0)
+            {
+                if (mainContext.RunCoreType == ECoreType.sing_box && !mainContext.IsTunEnabled)
+                    handoff.AddRange(CoreListenerCheck.Read(await File.ReadAllTextAsync(fileName, token)));
+                if (preContext?.RunCoreType == ECoreType.sing_box && !preContext.IsTunEnabled)
+                    handoff.AddRange(CoreListenerCheck.Read(await File.ReadAllTextAsync(preFileName, token)));
+                handoff = handoff.Where(p => _elevatedHandoff.Any(old => CoreListenerCheck.Overlaps(p, old))).Distinct().ToList();
+            }
+            if (handoff.Count > 0)
+            {
+                HandoffState = PortHandoffState.Waiting;
+                await PortHandoff.WaitAsync(handoff, token, elapsed =>
+                    progress?.Invoke($"已停止 TUN，正在等待普通模式端口可用（{elapsed.TotalSeconds:F0}/90 秒） / Waiting for unprivileged port handoff"));
+            }
+            token.ThrowIfCancellationRequested();
+            HandoffState = PortHandoffState.Starting;
             if (mainContext.RunCoreType == ECoreType.sing_box)
                 await CoreListenerCheck.EnsureAvailableAsync(CoreListenerCheck.Read(await File.ReadAllTextAsync(fileName)),
-                    GetElevatedListenerProbe(mainContext.IsTunEnabled, mainContext.RunCoreType));
+                    GetElevatedListenerProbe(mainContext.IsTunEnabled, mainContext.RunCoreType), token);
             if (preContext?.RunCoreType == ECoreType.sing_box)
                 await CoreListenerCheck.EnsureAvailableAsync(CoreListenerCheck.Read(await File.ReadAllTextAsync(preFileName)),
-                    GetElevatedListenerProbe(preContext.IsTunEnabled, preContext.RunCoreType));
+                    GetElevatedListenerProbe(preContext.IsTunEnabled, preContext.RunCoreType), token);
+            token.ThrowIfCancellationRequested();
             if (AppManager.Instance.IsExiting) throw new OperationCanceledException("应用正在退出，已取消启动 / Application is exiting.");
             File.Move(fileName, Utils.GetBinConfigPath(Global.CoreConfigFileName), true);
             if (preContext != null) File.Move(preFileName, Utils.GetBinConfigPath(Global.CorePreConfigFileName), true);
@@ -199,10 +230,13 @@ public class CoreManager
             if (!await IsCoreRunningAsync() || preContext != null && !await IsRunningAsync(_processPreService))
                 throw new IOException(LastError ?? ResUI.FailedToRunCore);
             _runningConfig = candidate;
+            _elevatedHandoff.Clear();
+            HandoffState = PortHandoffState.Completed;
             return CoreLoadResult.Started;
         }
         catch (Exception ex)
         {
+            HandoffState = ex is OperationCanceledException ? PortHandoffState.Cancelled : PortHandoffState.Failed;
             LastError = ex.Message;
             if (startingNewProcesses)
             {
@@ -210,7 +244,7 @@ public class CoreManager
                 if (!cleanup.Success) LastError += Environment.NewLine + cleanup.Error;
             }
             Logging.SaveLog(_tag + ": " + LastError);
-            await UpdateFunc(true, LastError);
+            if (ex is not OperationCanceledException) await UpdateFunc(true, LastError);
             return CoreLoadResult.Failed;
         }
         finally

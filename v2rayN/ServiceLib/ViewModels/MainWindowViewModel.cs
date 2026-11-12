@@ -684,7 +684,7 @@ public partial class MainWindowViewModel : MyReactiveObject
 
     internal RecoveryContext? GetRecoveryContext()
     {
-        if (DesignMode || AppManager.Instance.IsExiting || Volatile.Read(ref _manualReloads) > 0
+        if (DesignMode || AppManager.Instance.IsExiting || CoreManager.Instance.HandoffNeedsManualRetry || Volatile.Read(ref _manualReloads) > 0
             || StatusBarViewModel.IsChangingConnection || !SysProxyHandler.ChangesEnabled
             || _config.TunModeItem.EnableTun || _config.SystemProxyItem.SysProxyType != ESysProxyType.ForcedChange
             || _config.SystemProxyItem.CustomSystemProxyScriptPath.IsNotEmpty() || _config.IndexId.IsNullOrEmpty()) return null;
@@ -695,12 +695,28 @@ public partial class MainWindowViewModel : MyReactiveObject
     public async Task Reload(string reason = "用户操作或配置变更", bool onlyIfChanged = false)
         => await ReloadWithResultAsync(reason, onlyIfChanged);
 
-    public async Task<bool> ReloadWithResultAsync(string reason, bool onlyIfChanged = true)
+    private CancellationTokenSource? _switchCancellation;
+    private Task<bool>? _switchTask;
+    private string? _switchKey;
+
+    public Task<bool> ReloadWithResultAsync(string reason, bool onlyIfChanged = true)
+    {
+        var key = JsonUtils.Serialize(_config);
+        if (_switchTask is { IsCompleted: false } && key == _switchKey) return _switchTask;
+        _switchCancellation?.Cancel();
+        var cancellation = CancellationTokenSource.CreateLinkedTokenSource(AppManager.Instance.ExitToken);
+        _switchCancellation = cancellation;
+        _switchKey = key;
+        return _switchTask = ReloadSwitchAsync(reason, onlyIfChanged, cancellation);
+    }
+
+    private async Task<bool> ReloadSwitchAsync(string reason, bool onlyIfChanged, CancellationTokenSource cancellation)
     {
         Interlocked.Increment(ref _manualReloads);
         Interlocked.Increment(ref _connectionRevision);
         AppManager.Instance.ConnectionRecovery?.RequestCheck("configuration changed");
-        try { return await ReloadCoreAsync(null, CancellationToken.None, reason, onlyIfChanged); }
+        try { return await ReloadCoreAsync(null, cancellation.Token, reason, onlyIfChanged); }
+        catch (OperationCanceledException) { return false; }
         finally
         {
             Interlocked.Decrement(ref _manualReloads);
@@ -766,7 +782,8 @@ public partial class MainWindowViewModel : MyReactiveObject
             await Task.Run(async () =>
             {
                 loadResult = await CoreManager.Instance.LoadCore(allResult.MainResult.Context,
-                    allResult.PreSocksResult?.Context, onlyIfChanged, reason);
+                    allResult.PreSocksResult?.Context, onlyIfChanged, reason, token,
+                    message => RxSchedulers.MainThreadScheduler.Schedule(() => StatusBarViewModel.ConnectionError = message));
                 if (loadResult != CoreLoadResult.Started) return;
                 proxyApplied = await SysProxyHandler.UpdateSysProxy(_config, false, error => StatusBarViewModel.ConnectionError = error);
                 await Task.Delay(1000);

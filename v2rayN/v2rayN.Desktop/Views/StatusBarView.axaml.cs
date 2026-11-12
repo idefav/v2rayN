@@ -115,7 +115,8 @@ public partial class StatusBarView : ReactiveUserControl<StatusBarViewModel>
 
     private void UpdateControls()
     {
-        connectionFields.IsEnabled = !_reloading && ViewModel?.IsChangingConnection != true;
+        connectionFields.IsEnabled = (!_reloading || CoreManager.Instance.HandoffState == PortHandoffState.Waiting)
+            && ViewModel?.IsChangingConnection != true;
         txtConnectionError.Text = ViewModel?.ConnectionError;
         txtConnectionError.IsVisible = !string.IsNullOrWhiteSpace(txtConnectionError.Text);
         UpdateCoreState();
@@ -150,6 +151,7 @@ public partial class StatusBarView : ReactiveUserControl<StatusBarViewModel>
 
     private void RenderCoreState()
     {
+        UpdateControls();
         var recovery = AppManager.Instance.ConnectionRecovery;
         txtRecoveryState.Text = recovery?.State switch
         {
