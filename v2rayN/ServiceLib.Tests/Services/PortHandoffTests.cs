@@ -27,6 +27,9 @@ public class PortHandoffTests
     {
         using var reserved = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
         reserved.Bind(new IPEndPoint(IPAddress.Loopback, 0));
+        // .NET's Unix Bind enables SO_REUSEADDR. Disable it after binding so
+        // this fixture genuinely reserves the port without listening on Linux.
+        reserved.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, false);
         var endpoint = new CoreListener(IPAddress.Loopback, ((IPEndPoint)reserved.LocalEndPoint!).Port, ProtocolType.Tcp);
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         var progress = 0;
