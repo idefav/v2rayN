@@ -214,10 +214,12 @@ public class CoreManager
                 await WindowsUtils.RemoveTunDevice();
             }
 
+            token.ThrowIfCancellationRequested();
             await CoreStart(mainContext);
             if (!await IsCoreRunningAsync())
                 throw new IOException(LastError ?? ResUI.FailedToRunCore);
             await WaitForProxyPort(preContext);
+            token.ThrowIfCancellationRequested();
             if (AppManager.Instance.IsExiting) throw new OperationCanceledException("应用正在退出，已取消启动 / Application is exiting.");
             await CoreStartPreService(preContext);
 
@@ -229,6 +231,7 @@ public class CoreManager
             }
             if (!await IsCoreRunningAsync() || preContext != null && !await IsRunningAsync(_processPreService))
                 throw new IOException(LastError ?? ResUI.FailedToRunCore);
+            token.ThrowIfCancellationRequested();
             _runningConfig = candidate;
             _elevatedHandoff.Clear();
             HandoffState = PortHandoffState.Completed;
