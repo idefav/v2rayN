@@ -990,7 +990,7 @@ public partial class ReviewApp : v2rayN.Desktop.App
         await ShowAsync("24", "节点选择", new ProfilesSelectViewModel { MultiSelect = true });
         await _main.NavigateAsync("Routing");
         var routings = _main.WorkspaceWindow.GetLogicalDescendants().OfType<RoutingSettingWindow>().Single().FindControl<DataGrid>("lstRoutings")!;
-        await Task.Delay(100);
+        await WaitForUiAsync(() => routings.ItemsSource != null, "routing table completes activation before selection");
         routings.SelectedItem = routings.ItemsSource.Cast<object>().FirstOrDefault();
         await CaptureAsync("25", "路由规则集", _main);
         var exampleRouting = new RoutingItem { Remarks = "示例规则集" };
@@ -1455,6 +1455,8 @@ public partial class ReviewApp : v2rayN.Desktop.App
         await _main.NavigateAsync("Servers");
         var profiles = _main.WorkspaceWindow.GetLogicalDescendants().OfType<ProfilesView>().Single();
         var table = profiles.FindControl<DataGrid>("lstProfiles")!;
+        await WaitForUiAsync(() => table.ItemsSource?.Cast<object>().Any() == true,
+            "server management table completes activation before filtering");
         var groupFilter = profiles.FindControl<ComboBox>("cmbGroupFilter")!;
         Check(groupFilter.IsVisible && !_main.FindControl<Menu>("legacyMenu")!.IsVisible,
             "group selector remains visible at full width and duplicated header menu is removed");
@@ -1528,6 +1530,8 @@ public partial class ReviewApp : v2rayN.Desktop.App
         var subscriptions = _main.WorkspaceWindow.GetLogicalDescendants().OfType<SubSettingWindow>().Single();
         await subscriptions.ViewModel!.RefreshSubItems();
         var groups = subscriptions.FindControl<DataGrid>("lstSubscription")!;
+        await WaitForUiAsync(() => groups.ItemsSource?.Cast<object>().Any() == true,
+            "subscription management table completes activation before filtering");
         Check(subscriptions.IsEmbedded && !subscriptions.FindControl<Button>("menuClose")!.IsVisible
             && ReferenceEquals(subscriptions.UpdateSubscriptionAsync?.Target, _vm),
             "embedded subscription page omits close and uses the existing main update workflow");
