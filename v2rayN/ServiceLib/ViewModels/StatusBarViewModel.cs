@@ -2,6 +2,18 @@ namespace ServiceLib.ViewModels;
 
 public partial class StatusBarViewModel : MyReactiveObject
 {
+    [Reactive]
+    public partial ConnectionTransition? Transition { get; set; }
+
+    internal void ReportTransition(ConnectionTransition transition)
+        => RxSchedulers.MainThreadScheduler.Schedule(() =>
+        {
+            if (Transition is { } current && transition.OperationId > 0 && current.OperationId > 0
+                && (transition.OperationId < current.OperationId
+                    || transition.OperationId == current.OperationId && current.IsTerminal)) return;
+            Transition = transition;
+        });
+
     public Interaction<string, RxVoid> SetClipboardDataInteraction { get; } = new();
     public Interaction<RxVoid, string?> PasswordInputInteraction { get; } = new();
     public Interaction<RxVoid, RxVoid> DispatcherRefreshIconInteraction { get; } = new();
@@ -104,6 +116,9 @@ public partial class StatusBarViewModel : MyReactiveObject
 
     [Reactive]
     public partial bool EnableTun { get; set; }
+
+    [Reactive]
+    public partial bool HasPendingChanges { get; set; }
 
     [Reactive]
     public partial bool BlIsNonWindows { get; set; }
@@ -405,7 +420,22 @@ public partial class StatusBarViewModel : MyReactiveObject
 
     public async Task ChangeSystemProxyAsync(ESysProxyType type, bool blChange)
     {
-        await SysProxyHandler.UpdateSysProxy(_config, false, error => ConnectionError = error);
+        var operationId = blChange ? ConnectionTransition.NewOperationId() : 0;
+        if (blChange)
+        {
+            ConnectionError = null;
+            ReportTransition(new(ConnectionStage.ApplyingProxy, EnableTun, UpdatingProxy: true) { OperationId = operationId });
+        }
+        bool applied;
+        try { applied = await SysProxyHandler.UpdateSysProxy(_config, false, error => ConnectionError = error); }
+        catch (Exception ex)
+        {
+            ConnectionError = ex.Message;
+            if (blChange) ReportTransition(new(ConnectionStage.Failed, EnableTun, ex.Message, UpdatingProxy: true) { OperationId = operationId });
+            throw;
+        }
+        if (blChange) ReportTransition(new(applied ? ConnectionStage.Completed : ConnectionStage.Failed,
+            EnableTun, ConnectionError, UpdatingProxy: true) { OperationId = operationId });
 
         BlSystemProxyClear = type == ESysProxyType.ForcedClear;
         BlSystemProxySet = type == ESysProxyType.ForcedChange;

@@ -44,6 +44,14 @@ internal static class Program
     public static string Output = "";
     public static bool Headless;
     public static bool ScreensOnly;
+    public static bool ConnectionHomeOnly;
+    public static bool WorkspaceV3Only;
+    public static bool WorkspaceV4Only;
+    public static bool WorkspaceV5Only;
+    public static bool WorkspaceV6Only;
+    public static bool WorkspaceV7Only;
+    public static bool StartupOnly;
+    public static bool WorkspaceParityOnly;
     public static bool Interactive;
     public static bool WorkflowOnly;
     public static bool RecoveryOnly;
@@ -55,6 +63,8 @@ internal static class Program
     public static bool TunSettingsOnly;
     public static bool RoutingProtocolsOnly;
     public static bool LegacyColumns;
+    public static bool VerifyFailureExit;
+    public static int ReviewExitCode;
     public static string Language = "zh-Hans";
     public static string Theme = "Light";
     public static int FontSize = 14;
@@ -65,6 +75,7 @@ internal static class Program
     {
         // Block all OS proxy mutations, including startup, exit, failure cleanup and interactive controls.
         SysProxyHandler.ChangesEnabled = false;
+        AutoStartupHandler.ChangesEnabled = false;
         if (args.Contains("--core-process-ui"))
         {
             CoreProcessUiReview.Run();
@@ -76,6 +87,14 @@ internal static class Program
             if (File.Exists(Path.Combine(Output, previous))) File.Delete(Path.Combine(Output, previous));
         Headless = args.Contains("--headless");
         ScreensOnly = args.Contains("--screens-only");
+        ConnectionHomeOnly = args.Contains("--connection-home-only");
+        WorkspaceV3Only = args.Contains("--workspace-v3-only");
+        WorkspaceV4Only = args.Contains("--workspace-v4-only");
+        WorkspaceV5Only = args.Contains("--workspace-v5-only");
+        WorkspaceV6Only = args.Contains("--workspace-v6-only");
+        WorkspaceV7Only = args.Contains("--workspace-v7-only");
+        StartupOnly = args.Contains("--startup-only");
+        WorkspaceParityOnly = args.Contains("--workspace-parity-only");
         Interactive = args.Contains("--interactive");
         WorkflowOnly = args.Contains("--workflow-only");
         RecoveryOnly = args.Contains("--recovery-only");
@@ -87,6 +106,7 @@ internal static class Program
         TunSettingsOnly = args.Contains("--tun-settings-only");
         RoutingProtocolsOnly = args.Contains("--routing-protocols-only");
         LegacyColumns = args.Contains("--legacy-columns");
+        VerifyFailureExit = args.Contains("--verify-failure-exit");
         foreach (var argument in args.Skip(1))
         {
             var option = argument.Split('=', 2);
@@ -132,7 +152,19 @@ internal static class Program
         }
         var builder = AppBuilder.Configure<ReviewApp>();
         builder = Headless ? builder.UseSkia().UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }) : builder.UsePlatformDetect();
-        builder.WithFontByDefault().UseReactiveUI(_ => { }).StartWithClassicDesktopLifetime(args);
+        try
+        {
+            builder.WithFontByDefault().UseReactiveUI(_ => { }).StartWithClassicDesktopLifetime(args);
+        }
+        catch (Exception ex)
+        {
+            File.WriteAllText(Path.Combine(Output, "failure.txt"), ex.ToString());
+            Console.Error.WriteLine(ex);
+            ReviewExitCode = 1;
+        }
+        // MainWindow's asynchronous close coordinator can finish with Shutdown(0).
+        // Keep the review outcome independent of the application's closing result.
+        Environment.ExitCode = ReviewExitCode;
     }
 }
 
@@ -143,8 +175,12 @@ public partial class ReviewApp : v2rayN.Desktop.App
     private readonly List<object> _shots = [];
     private readonly List<string> _checks = [];
     private readonly List<object> _layouts = [];
+    private NativeMenu? _startupTrayMenu;
+
     public override void OnFrameworkInitializationCompleted()
     {
+        if (TrayIcon.GetIcons(this) is { } icons)
+            foreach (var icon in icons) icon.IsVisible = false;
         // This executable owns a separate output directory and never launches a core.
         if (!AppManager.Instance.InitApp()) throw new InvalidOperationException("Review config initialization failed");
         AppManager.Instance.InitComponents();
@@ -153,6 +189,7 @@ public partial class ReviewApp : v2rayN.Desktop.App
         AppManager.Instance.Config.UiItem.CurrentTheme = Program.Theme;
         AppManager.Instance.Config.UiItem.CurrentFontSize = Program.FontSize;
         AppManager.Instance.Config.UiItem.CurrentLanguage = Program.Language;
+        AppManager.Instance.Config.UiItem.ConnectionFavorites = [];
         AppManager.Instance.Config.UiItem.MainColumnItem.Clear();
         if (Program.LegacyColumns)
         {
@@ -163,10 +200,32 @@ public partial class ReviewApp : v2rayN.Desktop.App
         AppManager.Instance.Config.WebDavItem = new WebDavItem();
         CultureInfo.CurrentUICulture = new CultureInfo(Program.Language);
         ResUI.Culture = CultureInfo.CurrentUICulture;
-        DataTemplates.Add(SimpleViewLocator.Instance);
-        _vm = new MainWindowViewModel(true);
-        _main = new MainWindow { ViewModel = _vm, Width = Program.Width };
-        ((IClassicDesktopStyleApplicationLifetime)ApplicationLifetime!).MainWindow = _main;
+        if (Program.StartupOnly)
+        {
+            // The database above is a fresh fixture with no servers. Exercise the
+            // real model initialization too, with all OS mutations blocked.
+            AppManager.Instance.Config.IndexId = string.Empty;
+            AppManager.Instance.Config.TunModeItem.EnableTun = false;
+            AppManager.Instance.Config.SystemProxyItem.SysProxyType = ESysProxyType.Unchanged;
+            AppManager.Instance.Config.GuiItem.AutoUpdateInterval = 0;
+            AppManager.Instance.Config.GuiItem.EnableStatistics = false;
+            AppManager.Instance.Config.GuiItem.DisplayRealTimeSpeed = false;
+            _startupTrayMenu = TrayIcon.GetIcons(this)!.Single().Menu;
+            // Do not reconstruct the tray in the test: run the production startup
+            // against the native menu that App.axaml has already exported.
+            base.OnFrameworkInitializationCompleted();
+            _main = (MainWindow)((IClassicDesktopStyleApplicationLifetime)ApplicationLifetime!).MainWindow!;
+            _vm = _main.ViewModel!;
+        }
+        else
+        {
+            DataTemplates.Add(SimpleViewLocator.Instance);
+            _vm = new MainWindowViewModel(true);
+            _main = new MainWindow { ViewModel = _vm, Width = Program.Width };
+            Program.Width = Math.Max(Program.Width, (int)_main.MinWidth);
+            _main.WorkspaceWindow.Width = Program.Width;
+            ((IClassicDesktopStyleApplicationLifetime)ApplicationLifetime!).MainWindow = _main;
+        }
         if (Program.Interactive)
         {
             void RecordWindow(string kind) => File.AppendAllText(Path.Combine(Program.Output, "native-window-events.jsonl"),
@@ -184,16 +243,24 @@ public partial class ReviewApp : v2rayN.Desktop.App
             _main.AddHandler(InputElement.PointerPressedEvent, (_, e) => RecordPointer("pressed", e), RoutingStrategies.Tunnel, true);
             _main.AddHandler(InputElement.PointerReleasedEvent, (_, e) => RecordPointer("released", e), RoutingStrategies.Tunnel, true);
         }
+        var reviewStarted = false;
         _main.Opened += async (_, _) =>
         {
-            try { await ReviewAsync().WaitAsync(TimeSpan.FromMinutes(3)); }
+            if (reviewStarted) return;
+            reviewStarted = true;
+            try
+            {
+                await Task.Yield(); // Let the lifetime finish opening before a review can close it.
+                if (Program.VerifyFailureExit) throw new InvalidOperationException("Expected review failure for exit-code regression.");
+                await (Program.StartupOnly ? ReviewStartupAsync() : ReviewAsync()).WaitAsync(TimeSpan.FromMinutes(3));
+            }
             catch (Exception ex)
             {
                 File.WriteAllText(Path.Combine(Program.Output, "failure.txt"), ex.ToString());
                 Console.Error.WriteLine(ex);
-                Environment.ExitCode = 1;
+                Program.ReviewExitCode = Environment.ExitCode = 1;
             }
-            finally { if (!Program.Interactive || Environment.ExitCode != 0) ((IClassicDesktopStyleApplicationLifetime)ApplicationLifetime!).Shutdown(Environment.ExitCode); }
+            finally { if (!Program.Interactive || Program.ReviewExitCode != 0) ((IClassicDesktopStyleApplicationLifetime)ApplicationLifetime!).Shutdown(Program.ReviewExitCode); }
         };
     }
 
@@ -213,12 +280,13 @@ public partial class ReviewApp : v2rayN.Desktop.App
 
     private async Task CheckRecoveryStatesAsync()
     {
-        var bar = _main.GetLogicalDescendants().OfType<StatusBarView>().Single();
+        await _main.NavigateAsync("Home");
+        var bar = (StatusBarView)_main.FindControl<ContentControl>("contentStatusBarView")!.Content!;
         var label = bar.FindControl<TextBlock>("txtRecoveryState")!;
         foreach (var width in new[] { 700, 1100 })
         foreach (var state in new[] { RecoveryState.Checking, RecoveryState.Recovering, RecoveryState.Offline, RecoveryState.Failed, RecoveryState.Degraded, RecoveryState.Idle })
         {
-            _main.Width = width;
+            _main.WorkspaceWindow.Width = width;
             using var cancel = new CancellationTokenSource();
             var recovery = new ConnectionRecoveryService(() => new("fixture", 10808, "https://fixture.invalid", 1),
                 _ => Task.FromResult<string?>(state == RecoveryState.Offline ? null : "fixture"),
@@ -242,7 +310,7 @@ public partial class ReviewApp : v2rayN.Desktop.App
                     $"external probe degradation has a localized explanation at width {width}");
             }
             if (label.IsEffectivelyVisible)
-                Check(label.Bounds.Width > 0 && label.TranslatePoint(default, _main) is { X: >= 0 } point && point.X + label.Bounds.Width <= _main.ClientSize.Width,
+                Check(label.Bounds.Width > 0 && label.TranslatePoint(default, _main.WorkspaceWindow) is { X: >= 0 } point && point.X + label.Bounds.Width <= _main.WorkspaceWindow.ClientSize.Width,
                     $"recovery label fits width {width}");
             await CaptureAsync($"recovery-{state}-{width}", state + " · fixture", _main);
             cancel.Cancel();
@@ -256,7 +324,7 @@ public partial class ReviewApp : v2rayN.Desktop.App
     {
         await _main.NavigateAsync("ProxyCheck");
         await Task.Delay(250);
-        var page = _main.GetLogicalDescendants().OfType<ProxyCheckView>().Single();
+        var page = _main.WorkspaceWindow.GetLogicalDescendants().OfType<ProxyCheckView>().Single();
         var model = page.Model;
         if (!Program.ProxyCheckLive)
         {
@@ -345,8 +413,8 @@ public partial class ReviewApp : v2rayN.Desktop.App
                 header.Focus();
                 if (Program.Headless)
                 {
-                    _main.KeyPressQwerty(PhysicalKey.Space, RawInputModifiers.None);
-                    _main.KeyReleaseQwerty(PhysicalKey.Space, RawInputModifiers.None);
+                    _main.WorkspaceWindow.KeyPressQwerty(PhysicalKey.Space, RawInputModifiers.None);
+                    _main.WorkspaceWindow.KeyReleaseQwerty(PhysicalKey.Space, RawInputModifiers.None);
                 }
                 else header.IsChecked = true;
                 await Task.Delay(100);
@@ -428,8 +496,8 @@ public partial class ReviewApp : v2rayN.Desktop.App
             "baseline flyout inherits the check model and command availability");
         baselineButton.Flyout.Hide();
 
-        var normalHeight = _main.Height;
-        _main.Height = Math.Max(_main.MinHeight, 600);
+        var normalHeight = _main.WorkspaceWindow.Height;
+        _main.WorkspaceWindow.Height = Math.Max(_main.MinHeight, 600);
         await Task.Delay(100);
         var pageScroll = page.FindControl<ScrollViewer>("pageScroll")!;
         var pageOffset = pageScroll.Offset;
@@ -472,7 +540,7 @@ public partial class ReviewApp : v2rayN.Desktop.App
         Check(!desktop.Windows.Any(window => window.Name == "proxyCheckOptionsWindow")
             && ReferenceEquals(page.FindControl<Border>("advanced")!.Parent, page.FindControl<Grid>("optionsStore")),
             "closing check options returns controls to hidden storage for reuse");
-        _main.Height = normalHeight;
+        _main.WorkspaceWindow.Height = normalHeight;
         page.FindControl<Button>("settingsButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         await Task.Delay(100);
         optionsWindow = OptionsWindow();
@@ -503,6 +571,109 @@ public partial class ReviewApp : v2rayN.Desktop.App
         Check(ReferenceEquals(page.FindControl<Border>("observerSection")!.Parent, page.FindControl<Grid>("optionsStore"))
             && !page.FindControl<Grid>("optionsStore")!.IsVisible && model.ObserverPairingCode == "fixture-only-not-a-real-pairing",
             "closing observer configuration preserves memory-only input and does not reveal an inline editor");
+    }
+
+    private async Task CheckConnectionHomeAsync()
+    {
+        await _main.NavigateAsync("Home");
+        _vm.StatusBarViewModel.RunningServerDisplay = "新加坡 · SSH";
+        _vm.BlReloadEnabled = true;
+        var status = (StatusBarView)_main.FindControl<ContentControl>("contentStatusBarView")!.Content!;
+        var picker = status.FindControl<Border>("serverPicker")!;
+        var speed = status.FindControl<ToggleSwitch>("togRealTimeSpeed")!;
+        var originalSpeedAction = status.SpeedDisplayChanged;
+        var speedChanges = 0;
+        status.SpeedDisplayChanged = enabled =>
+        {
+            speedChanges++;
+            AppManager.Instance.Config.GuiItem.DisplayRealTimeSpeed = enabled;
+            return Task.CompletedTask;
+        };
+        speed.IsChecked = false;
+        await Task.Delay(50);
+        Check(!status.FindControl<TextBlock>("txtDownload")!.IsVisible, "disabled speed display hides empty placeholders");
+        speedChanges = 0;
+        speed.IsChecked = true;
+        await Task.Delay(50);
+        Check(speedChanges == 1 && AppManager.Instance.Config.GuiItem.DisplayRealTimeSpeed
+            && status.FindControl<TextBlock>("txtDownload")!.IsVisible,
+            "inline speed toggle updates preference once and reveals readout");
+        status.SetCompact(true);
+        Check(status.FindControl<StackPanel>("transferSummary")!.IsVisible, "compact layout keeps speed toggle accessible");
+        speed.IsChecked = false;
+        await Task.Delay(50);
+        Check(status.FindControl<TextBlock>("txtSpeedHint")!.Text == "实时速度未开启", "off state explains missing speed data");
+        status.SpeedDisplayChanged = originalSpeedAction;
+        Check(!picker.IsVisible && status.FindControl<Expander>("connectionSettings") == null, "home hides server list and has no advanced settings form");
+        Check(_main.FindControl<ContentControl>("pageContent")!.Content == null, "server management is absent from connection home");
+        foreach (var width in new[] { 1000, 1400 })
+        {
+            _main.WorkspaceWindow.Width = width;
+            await Task.Delay(100);
+            await CaptureAsync("connection-home-" + width, "Connection home · isolated fixture", _main);
+            Check(status.Bounds.Width > 500 && status.Bounds.Width <= width, "home remains within window at " + width);
+        }
+        status.FindControl<Button>("btnConnectionControls")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        for (var i = 0; i < 50 && status.FindControl<StackPanel>("serverChoices")!.Children.Count == 0; i++) await Task.Delay(20);
+        Check(picker.IsVisible && status.FindControl<Button>("btnConnectionControls")!.Flyout == null, "server picker opens inline without flyout");
+        status.FindControl<TextBox>("txtServerSearch")!.Text = "jp.example.com";
+        await Task.Delay(50);
+        Check(status.FindControl<StackPanel>("serverChoices")!.Children.Count == 1, "inline search filters isolated server fixtures");
+        await CaptureAsync("connection-picker", "Inline server selection", _main);
+        Check(status.CloseConnectionControls(), "server picker accepts an independent close");
+        await WaitForDrawerAsync();
+        Check(!picker.IsVisible, "server picker closes independently after its exit animation");
+        var operationId = ConnectionTransition.NewOperationId();
+        _vm.StatusBarViewModel.Transition = new(ConnectionStage.Waiting, false, WaitSeconds: 11) { OperationId = operationId };
+        await Task.Delay(550);
+        var dialog = _main.ConnectionFeedback!;
+        Check(dialog.NoticeVisible, "production transition displays in-window feedback without a modal window");
+        Check(!dialog.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Classes.Contains("error")), "port handoff waiting is not an error");
+        var heartbeat = false;
+        Dispatcher.UIThread.Post(() => heartbeat = true);
+        await Task.Delay(40);
+        Check(heartbeat, "UI heartbeat continues during handoff display");
+        dialog.Dismiss();
+        Check(!dialog.NoticeVisible && !dialog.State.CancelRequested, "dismissing feedback does not cancel lifecycle cleanup");
+        dialog.GetVisualDescendants().OfType<Button>().Single(b => b.Name == "feedbackReopen").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        await CaptureAsync("connection-progress", "Real transition presentation · fixture event", _main);
+        var cancel = dialog.GetVisualDescendants().OfType<Button>().Single(b => b.Content?.ToString() == "取消切换");
+        using var activeCancellation = new CancellationTokenSource();
+        var activeField = typeof(MainWindowViewModel).GetField("_activeTransitionCancellation", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        activeField.SetValue(_vm, activeCancellation);
+        cancel.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        Check(!cancel.IsEnabled && activeCancellation.IsCancellationRequested
+            && (bool)typeof(MainWindowViewModel).GetField("_connectionPaused", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(_vm)!,
+            "cancel is single-shot, cancels active transaction and inhibits automatic recovery");
+        activeField.SetValue(_vm, null);
+        _vm.StatusBarViewModel.Transition = new(ConnectionStage.Cancelled, false) { OperationId = operationId };
+        await Task.Delay(50);
+        dialog.Dismiss();
+        Check(!dialog.NoticeVisible, "terminal cancellation allows dismissing feedback");
+        operationId = ConnectionTransition.NewOperationId();
+        _vm.StatusBarViewModel.Transition = new(ConnectionStage.Starting, false) { OperationId = operationId };
+        await Task.Delay(550);
+        Check(!dialog.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text?.Contains("等待端口") == true), "ordinary switching omits the TUN handoff step");
+        _vm.StatusBarViewModel.Transition = new(ConnectionStage.Failed, false, "Fixture: port handoff timed out") { OperationId = operationId };
+        await Task.Delay(50);
+        Check(dialog.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Classes.Contains("error")), "failure renders separate actionable error");
+        await CaptureAsync("connection-failed", "Failure and manual retry", _main);
+        var retried = 0;
+        dialog.RetryRequested += () => { retried++; return Task.CompletedTask; };
+        dialog.GetVisualDescendants().OfType<Button>().Single(b => b.Content?.ToString() == "重试")
+            .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        Check(retried == 1 && !dialog.NoticeVisible, "manual retry dismisses previous result and dispatches once");
+        operationId = ConnectionTransition.NewOperationId();
+        _vm.StatusBarViewModel.Transition = new(ConnectionStage.ApplyingProxy, false, UpdatingProxy: true) { OperationId = operationId };
+        await Task.Delay(50);
+        _vm.StatusBarViewModel.Transition = new(ConnectionStage.Completed, false, UpdatingProxy: true) { OperationId = operationId };
+        await Task.Delay(50);
+        Check(dialog.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == "系统代理已更新"), "proxy completion does not falsely claim core connection");
+        dialog.Dismiss();
+        await _main.NavigateAsync("Servers");
+        Check(_main.WorkspaceWindow.GetLogicalDescendants().OfType<ServerWorkspaceView>().Any(), "full server management remains accessible");
+        await _main.NavigateAsync("Home");
+        Check(!picker.IsVisible, "returning home keeps server list hidden");
     }
 
     private async Task ReviewAsync()
@@ -556,9 +727,33 @@ public partial class ReviewApp : v2rayN.Desktop.App
         // fixture omits that deliberate guard error; the guard itself remains enabled.
         _vm.StatusBarViewModel.ConnectionError = null;
         _vm.ProfilesViewModel.SelectedProfile = _vm.ProfilesViewModel.ProfileItems[0];
+        await _main.NavigateAsync("Servers");
         _vm.ProfilesViewModel.SelectedProfiles = [_vm.ProfilesViewModel.SelectedProfile];
-        _main.GetLogicalDescendants().OfType<ProfilesView>().Single().RefreshServersBiz();
+        await Task.Delay(100);
+        _main.WorkspaceWindow.GetLogicalDescendants().OfType<ProfilesView>().Single().RefreshServersBiz();
         AppEvents.SendMsgViewRequested.Publish("[UI review] Isolated fixture configuration loaded.\n[UI review] Core launch disabled; network status remains untested.\n");
+        if (Program.WorkspaceV3Only || Program.WorkspaceV4Only || Program.WorkspaceV5Only || Program.WorkspaceV6Only || Program.WorkspaceV7Only || Program.WorkspaceParityOnly)
+        {
+            if (Program.WorkspaceV7Only) await ReviewWorkspaceV7Async();
+            else if (Program.WorkspaceV6Only) await ReviewWorkspaceV6Async();
+            else if (Program.WorkspaceV5Only) await ReviewWorkspaceV5Async();
+            else if (Program.WorkspaceV4Only) await ReviewWorkspaceV4Async();
+            else if (Program.WorkspaceParityOnly) await CheckWorkspaceFeatureParityAsync();
+            else await ReviewWorkspaceV3Async();
+            File.WriteAllText(Path.Combine(Program.Output, "manifest.json"), JsonSerializer.Serialize(new { fixtureData = true,
+                renderer = Program.Headless ? "Avalonia.Headless + Skia" : "native", Program.Language, Program.Theme,
+                screenshots = _shots, checks = _checks }, new JsonSerializerOptions { WriteIndented = true }));
+                Console.WriteLine($"PASS: {_checks.Count} workspace checks; {_shots.Count} screenshots.");
+            return;
+        }
+        if (Program.ConnectionHomeOnly)
+        {
+            await CheckConnectionHomeAsync();
+            File.WriteAllText(Path.Combine(Program.Output, "manifest.json"), JsonSerializer.Serialize(new { fixtureData = true,
+                screenshots = _shots, checks = _checks }, new JsonSerializerOptions { WriteIndented = true }));
+            Console.WriteLine($"PASS: {_checks.Count} connection home checks; {_shots.Count} screenshots.");
+            return;
+        }
         if (Environment.GetEnvironmentVariable("DNS_EGRESS_REVIEW") == "1")
         {
             await CheckDnsEgressAsync();
@@ -583,7 +778,7 @@ public partial class ReviewApp : v2rayN.Desktop.App
             File.WriteAllText(Path.Combine(Program.Output, "manifest.json"), JsonSerializer.Serialize(new
             {
                 fixtureData = true, renderer = Program.Headless ? "Avalonia.Headless + Skia" : "native",
-                actualTheme = _main.ActualThemeVariant.ToString(), actualWidth = _main.ClientSize.Width, actualHeight = _main.ClientSize.Height,
+                actualTheme = _main.ActualThemeVariant.ToString(), actualWidth = _main.WorkspaceWindow.ClientSize.Width, actualHeight = _main.WorkspaceWindow.ClientSize.Height,
                 Program.Language, Program.Theme, Program.Width, screenshots = _shots, checks = _checks
             }, new JsonSerializerOptions { WriteIndented = true }));
             Console.WriteLine($"Reviewed {_shots.Count} TUN screens; {_checks.Count} scenarios passed.");
@@ -593,7 +788,7 @@ public partial class ReviewApp : v2rayN.Desktop.App
         {
             await _main.OpenSettingsAsync("Sources");
             await Task.Delay(250);
-            var page = _main.GetLogicalDescendants().OfType<OptionSettingWindow>().Single();
+            var page = _main.WorkspaceWindow.GetLogicalDescendants().OfType<OptionSettingWindow>().Single();
             var settings = page.ViewModel!;
             await settings.Initialization;
             Check(settings.Sources.Count == 7, "seven update sources visible in shared settings");
@@ -698,7 +893,7 @@ public partial class ReviewApp : v2rayN.Desktop.App
         {
             await CheckPrimerWorkspaceAsync();
             await CheckProxyPageAsync();
-            File.WriteAllText(Path.Combine(Program.Output, "manifest.json"), JsonSerializer.Serialize(new { fixtureData = true, actualTheme = _main.ActualThemeVariant.ToString(), actualWidth = _main.ClientSize.Width, actualHeight = _main.ClientSize.Height, renderer = Program.Headless ? "Avalonia.Headless + Skia" : "native", Program.Language, Program.Theme, Program.Width, Program.FontSize, screenshots = _shots, checks = _checks }, new JsonSerializerOptions { WriteIndented = true }));
+            File.WriteAllText(Path.Combine(Program.Output, "manifest.json"), JsonSerializer.Serialize(new { fixtureData = true, actualTheme = _main.ActualThemeVariant.ToString(), actualWidth = _main.WorkspaceWindow.ClientSize.Width, actualHeight = _main.WorkspaceWindow.ClientSize.Height, renderer = Program.Headless ? "Avalonia.Headless + Skia" : "native", Program.Language, Program.Theme, Program.Width, Program.FontSize, screenshots = _shots, checks = _checks }, new JsonSerializerOptions { WriteIndented = true }));
             Console.WriteLine($"Reviewed {_shots.Count} Primer screens; {_checks.Count} scenarios passed.");
             return;
         }
@@ -715,8 +910,8 @@ public partial class ReviewApp : v2rayN.Desktop.App
         await CaptureAsync("00", "服务器主界面", _main);
         await _main.NavigateAsync("Subscriptions");
         await Task.Delay(300);
-        await _main.GetLogicalDescendants().OfType<SubSettingWindow>().Single().ViewModel!.RefreshSubItems();
-        var subscriptions = _main.GetLogicalDescendants().OfType<SubSettingWindow>().Single().FindControl<DataGrid>("lstSubscription")!;
+        await _main.WorkspaceWindow.GetLogicalDescendants().OfType<SubSettingWindow>().Single().ViewModel!.RefreshSubItems();
+        var subscriptions = _main.WorkspaceWindow.GetLogicalDescendants().OfType<SubSettingWindow>().Single().FindControl<DataGrid>("lstSubscription")!;
         subscriptions.SelectedItem = subscriptions.ItemsSource.Cast<object>().First();
         await CaptureAsync("01", "订阅管理", _main);
         await ShowAsync("02", "编辑订阅", new SubEditViewModel(new SubItem { Remarks = "机场订阅", Url = "https://subscription.example.com/list" }));
@@ -733,7 +928,7 @@ public partial class ReviewApp : v2rayN.Desktop.App
             _vm.ClashConnectionsViewModel.ConnectionItems.Add(new ClashConnectionModel { Id = host, Host = host + ":443", Network = "tcp", Type = "HTTP", Chain = "自动选择 → 日本 · 东京", Elapsed = "12s", ProcessPath = "browser" });
         await _main.NavigateAsync("Proxies");
         await Task.Delay(100);
-        var proxyView = _main.GetLogicalDescendants().OfType<ClashProxiesView>().Single();
+        var proxyView = _main.WorkspaceWindow.GetLogicalDescendants().OfType<ClashProxiesView>().Single();
         var ruleMode = proxyView.FindControl<ComboBox>("cmbRulemode")!;
         Check(!string.IsNullOrWhiteSpace(_vm.ClashProxiesViewModel.RuleModeSelected)
             && ruleMode.SelectedItem?.ToString() == _vm.ClashProxiesViewModel.RuleModeSelected,
@@ -743,12 +938,12 @@ public partial class ReviewApp : v2rayN.Desktop.App
         await CaptureAsync("03", "当前代理", _main);
         await _main.NavigateAsync("Connections");
         await Task.Delay(300);
-        _main.GetLogicalDescendants().OfType<ClashConnectionsView>().Single().FindControl<DataGrid>("lstConnections")!.SelectedItem =
+        _main.WorkspaceWindow.GetLogicalDescendants().OfType<ClashConnectionsView>().Single().FindControl<DataGrid>("lstConnections")!.SelectedItem =
             _vm.ClashConnectionsViewModel.ConnectionItems.First();
         await CaptureAsync("04", "当前连接", _main);
         await _main.NavigateAsync("Logs");
         await Task.Delay(1100); // Drain initialization messages before making shareable fixture screenshots.
-        _main.GetLogicalDescendants().OfType<MsgView>().Single().ClearMsg();
+        _main.WorkspaceWindow.GetLogicalDescendants().OfType<MsgView>().Single().ClearMsg();
         AppEvents.SendMsgViewRequested.Publish("[INFO] Fixture log view ready.\n[WARN] Core launch disabled in UI review.\n[ERROR] Example diagnostic only; no network request was made.\n");
         await Task.Delay(1100);
         await CaptureAsync("05", "运行日志", _main);
@@ -787,7 +982,7 @@ public partial class ReviewApp : v2rayN.Desktop.App
         }
         await ShowAsync("24", "节点选择", new ProfilesSelectViewModel { MultiSelect = true });
         await _main.NavigateAsync("Routing");
-        var routings = _main.GetLogicalDescendants().OfType<RoutingSettingWindow>().Single().FindControl<DataGrid>("lstRoutings")!;
+        var routings = _main.WorkspaceWindow.GetLogicalDescendants().OfType<RoutingSettingWindow>().Single().FindControl<DataGrid>("lstRoutings")!;
         await Task.Delay(100);
         routings.SelectedItem = routings.ItemsSource.Cast<object>().FirstOrDefault();
         await CaptureAsync("25", "路由规则集", _main);
@@ -803,9 +998,9 @@ public partial class ReviewApp : v2rayN.Desktop.App
         for (var index = 0; index < 4; index++)
         {
             await _main.OpenSettingsAsync("DNS");
-            var tabs = _main.GetLogicalDescendants().OfType<DNSSettingWindow>().Single().GetLogicalDescendants().OfType<TabControl>().First();
+            var tabs = _main.WorkspaceWindow.GetLogicalDescendants().OfType<DNSSettingWindow>().Single().GetLogicalDescendants().OfType<TabControl>().First();
             tabs.SelectedIndex = index;
-            var dns = _main.GetLogicalDescendants().OfType<DNSSettingWindow>().Single().ViewModel!;
+            var dns = _main.WorkspaceWindow.GetLogicalDescendants().OfType<DNSSettingWindow>().Single().ViewModel!;
             dns.NormalDNSCompatible = "{\n  \"servers\": [\"https://dns.example.com/dns-query\"]\n}";
             dns.TunDNSCompatible = dns.NormalDNSCompatible;
             dns.NormalDNS2Compatible = "{\n  \"servers\": [{\"tag\": \"remote\", \"type\": \"https\", \"server\": \"dns.example.com\"}]\n}";
@@ -833,7 +1028,7 @@ public partial class ReviewApp : v2rayN.Desktop.App
             await _main.OpenSettingsAsync(settings[index]);
             if (index is 5 or 6)
             {
-                var templates = _main.GetLogicalDescendants().OfType<FullConfigTemplateWindow>().Single();
+                var templates = _main.WorkspaceWindow.GetLogicalDescendants().OfType<FullConfigTemplateWindow>().Single();
                 await templates.ViewModel!.Initialization;
                 templates.ViewModel.FullConfigTemplate4Ray = "{\n  \"routing\": { \"rules\": [] },\n  \"outbounds\": []\n}";
                 templates.ViewModel.FullTunConfigTemplate4Ray = templates.ViewModel.FullConfigTemplate4Ray;
@@ -844,7 +1039,7 @@ public partial class ReviewApp : v2rayN.Desktop.App
             await CaptureAsync((32 + index).ToString("00"), settings[index], _main);
             if (index < 5 && settings[index] != "Tun")
             {
-                var tabs = _main.GetLogicalDescendants().OfType<OptionSettingWindow>().Single().FindControl<TabControl>("pageTabs")!;
+                var tabs = _main.WorkspaceWindow.GetLogicalDescendants().OfType<OptionSettingWindow>().Single().FindControl<TabControl>("pageTabs")!;
                 var selected = (TabItem)tabs.Items[index]!;
                 if (tabs.SelectedIndex != index || !ReferenceEquals(tabs.SelectedContent, selected.Content)
                     || !tabs.GetVisualDescendants().Contains((Control)selected.Content!))
@@ -862,7 +1057,7 @@ public partial class ReviewApp : v2rayN.Desktop.App
         await CheckPolishAsync();
         if (!Program.WorkflowOnly) await CheckSecurityVariantsAsync();
         if (!Program.ScreensOnly && !Program.WorkflowOnly) await CheckScenariosAsync();
-        File.WriteAllText(Path.Combine(Program.Output, "manifest.json"), JsonSerializer.Serialize(new { fixtureData = true, actualTheme = _main.ActualThemeVariant.ToString(), actualWidth = _main.ClientSize.Width, actualHeight = _main.ClientSize.Height, renderer = Program.Headless ? "Avalonia.Headless + Skia" : "native", Program.Language, Program.Theme, Program.FontSize, Program.Scale, screenshots = _shots, checks = _checks }, new JsonSerializerOptions { WriteIndented = true }));
+        File.WriteAllText(Path.Combine(Program.Output, "manifest.json"), JsonSerializer.Serialize(new { fixtureData = true, actualTheme = _main.ActualThemeVariant.ToString(), actualWidth = _main.WorkspaceWindow.ClientSize.Width, actualHeight = _main.WorkspaceWindow.ClientSize.Height, renderer = Program.Headless ? "Avalonia.Headless + Skia" : "native", Program.Language, Program.Theme, Program.FontSize, Program.Scale, screenshots = _shots, checks = _checks }, new JsonSerializerOptions { WriteIndented = true }));
         File.WriteAllText(Path.Combine(Program.Output, "layout.json"), JsonSerializer.Serialize(_layouts, new JsonSerializerOptions { WriteIndented = true }));
         var gallery = string.Join("", _shots.Select(s => { var value = JsonSerializer.SerializeToElement(s); return $"<article><h2>{value.GetProperty("id")} · {value.GetProperty("title")}</h2><img src='{value.GetProperty("file")}'></article>"; }));
         File.WriteAllText(Path.Combine(Program.Output, "index.html"), "<!doctype html><meta charset='utf-8'><title>v2rayN UI review</title><style>body{font:16px system-ui;background:#eef2f7;margin:32px}article{background:white;padding:20px;margin:24px 0;border-radius:12px}img{width:100%;height:auto}</style><h1>v2rayN 实际界面截图</h1><p>测试进程使用独立配置和示例数据；截图来自实际 Avalonia 控件。网络状态并非生产检测结果。</p>" + gallery);
@@ -929,10 +1124,10 @@ public partial class ReviewApp : v2rayN.Desktop.App
         for (var index = 0; index < 1000; index++) _vm.ProfilesViewModel.ProfileItems.Add(new ProfileItemModel
         { IndexId = $"load-{index}", Remarks = $"节点 {index}", ConfigType = EConfigType.VLESS, Address = "example.com", Port = 443 });
         await Task.Delay(200);
-        var table = _main.GetLogicalDescendants().OfType<ProfilesView>().Single().FindControl<DataGrid>("lstProfiles")!;
+        var table = _main.WorkspaceWindow.GetLogicalDescendants().OfType<ProfilesView>().Single().FindControl<DataGrid>("lstProfiles")!;
         var realizedRows = table.GetVisualDescendants().OfType<DataGridRow>().Count();
         Check(realizedRows is > 0 and < 100, "1000 nodes retain row virtualization");
-        var profiles = _main.GetLogicalDescendants().OfType<ProfilesView>().Single();
+        var profiles = _main.WorkspaceWindow.GetLogicalDescendants().OfType<ProfilesView>().Single();
         var search = profiles.FindControl<TextBox>("txtServerFilter")!;
         search.Text = "东京";
         await Task.Delay(100);
@@ -949,11 +1144,10 @@ public partial class ReviewApp : v2rayN.Desktop.App
         table.SelectedItems.Add(_vm.ProfilesViewModel.ProfileItems[1]);
         profiles.RefreshServersBiz();
         Check(table.SelectedItems.Count == 2, "multi-selection survives table refresh");
-        _main.FindControl<Button>("btnDiagnosticLogs")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-        var originalLog = _main.GetLogicalDescendants().OfType<MsgView>().Single();
-        await _main.NavigateAsync("Logs"); await _main.NavigateAsync("Servers");
-        _main.FindControl<Button>("btnDiagnosticLogs")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-        Check(ReferenceEquals(originalLog, _main.GetLogicalDescendants().OfType<MsgView>().Single()), "log drawer and page share one view");
+        await _main.NavigateAsync("Logs");
+        var originalLog = _main.WorkspaceWindow.GetLogicalDescendants().OfType<MsgView>().Single();
+        await _main.NavigateAsync("Servers"); await _main.NavigateAsync("Logs");
+        Check(ReferenceEquals(originalLog, _main.WorkspaceWindow.GetLogicalDescendants().OfType<MsgView>().Single()), "returning to logs preserves the same view");
         ConfigHandler.SaveWindowSizeItem(AppManager.Instance.Config, nameof(SubSettingWindow), 850, 700);
         var legacyDialog = AppManager.Instance.WindowDialog.ShowDialogAsync(new SubSettingViewModel());
         await Task.Delay(250);
@@ -964,20 +1158,20 @@ public partial class ReviewApp : v2rayN.Desktop.App
         await legacyDialog;
         Check(legacySizeRestored, "embedded page window preserves its legacy size preference");
         await Task.Delay(6000); // Let validation notices expire before visual acceptance shots.
-        foreach (var (width, theme, file) in new[] { (600, ThemeVariant.Light, "checks-small"), (1100, ThemeVariant.Light, "checks-medium"), (1440, ThemeVariant.Dark, "checks-dark") })
+        foreach (var (width, theme, file) in new[] { (800, ThemeVariant.Light, "checks-small"), (1100, ThemeVariant.Light, "checks-medium"), (1440, ThemeVariant.Dark, "checks-dark") })
         {
-            _main.Width = width; RequestedThemeVariant = theme;
+            _main.WorkspaceWindow.Width = width; RequestedThemeVariant = theme;
             await CaptureAsync(file, file, _main);
         }
-        Check(_main.MinWidth == 600, "minimum window width preserved");
-        _main.Width = 600;
+        Check(_main.MinWidth == 360 && _main.SettingsWindow!.MinWidth == 800, "connection and settings retain separate supported minimum widths");
+        _main.WorkspaceWindow.Width = 800;
         await Task.Delay(250);
-        _main.UpdateLayout();
-        _main.FindControl<Button>("btnDiagnosticLogs")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-        await CaptureAsync("checks-small-logs", "Narrow log drawer", _main);
-        Check(_main.FindControl<ContentControl>("drawerLogs")!.Bounds.Height > 0, "log drawer can expand in narrow windows");
-        _main.FindControl<Button>("btnToggleLogs")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-        _main.Width = 1440;
+        _main.WorkspaceWindow.UpdateLayout();
+        await _main.NavigateAsync("Logs");
+        await CaptureAsync("checks-small-logs", "Narrow log settings", _main);
+        Check(_main.WorkspaceWindow.GetVisualDescendants().OfType<MsgView>().Single().Bounds.Height > 0, "logs remain accessible in narrow settings windows");
+        await _main.NavigateAsync("Servers");
+        _main.WorkspaceWindow.Width = 1440;
         RequestedThemeVariant = ThemeVariant.Light;
         foreach (var theme in new[] { SemiTheme.Aquatic, SemiTheme.Desert, SemiTheme.Dusk, SemiTheme.NightSky })
         {
@@ -1012,7 +1206,7 @@ public partial class ReviewApp : v2rayN.Desktop.App
             index++;
         }
         await CaptureAsync("exit-servers", "出口地区与固定操作列", _main);
-        var profiles = _main.GetLogicalDescendants().OfType<ProfilesView>().Single();
+        var profiles = _main.WorkspaceWindow.GetLogicalDescendants().OfType<ProfilesView>().Single();
         var table = profiles.FindControl<DataGrid>("lstProfiles")!;
         var active = _vm.ProfilesViewModel.ProfileItems.First();
         var originalActive = active.IsActive;
@@ -1029,21 +1223,29 @@ public partial class ReviewApp : v2rayN.Desktop.App
         await Task.Delay(100);
         Check(!activeRow.Classes.Contains("activeServer"), "deactivation removes the active row highlight");
         active.IsActive = originalActive;
-        var summary = _main.GetLogicalDescendants().OfType<StatusBarView>().Single().FindControl<ContentControl>("exitSummary")!;
+        // V3 keeps exit information in server management, not in the minimal connection card.
+        Control ExitCell() => table.GetVisualDescendants().OfType<DataGridRow>()
+            .Single(row => ReferenceEquals(row.DataContext, active)).GetVisualDescendants().OfType<Grid>()
+            .Single(cell => ToolTip.GetTip(cell)?.ToString() == ExitPresentation.Details(active.ExitInfo));
         var summaryId = AppManager.Instance.Config.IndexId;
         var originalResult = cache[summaryId];
-        Check(ToolTip.GetTip(summary)?.ToString()?.Contains(originalResult.Ip!) == true, "summary follows active configuration rather than table selection");
+        table.SelectedItem = _vm.ProfilesViewModel.ProfileItems[1];
+        Check(ToolTip.GetTip(ExitCell())?.ToString()?.Contains(originalResult.Ip!) == true, "exit information belongs to its server rather than the selected row");
         cache[summaryId] = new ExitInfoItem { IndexId = summaryId, Ip = originalResult.Ip, CountryCode = "SG", State = "failed", Error = "Fixture timeout", CheckedAt = DateTime.UtcNow.AddDays(-2) };
+        active.ExitInfo = cache[summaryId];
         await Task.Delay(1100);
-        await CaptureAsync("active-summary-stale", "顶部出口旧结果", _main);
-        Check(ToolTip.GetTip(summary)?.ToString()?.Contains("Fixture timeout") == true, "summary refreshes failed cached results and error details");
+        await CaptureAsync("active-summary-stale", "服务器出口旧结果", _main);
+        Check(ToolTip.GetTip(ExitCell())?.ToString()?.Contains("Fixture timeout") == true, "server exit refreshes failed cached results and error details");
         cache[summaryId] = new ExitInfoItem { IndexId = summaryId, State = "checking" };
+        active.ExitInfo = cache[summaryId];
         await Task.Delay(1100);
-        Check(summary.GetLogicalDescendants().OfType<TextBlock>().Any(t => t.Text == ExitPresentation.State(cache[summaryId])), "summary shows in-progress state without an IP");
+        Check(ExitCell().GetLogicalDescendants().OfType<TextBlock>().Any(t => t.Text == ExitPresentation.State(cache[summaryId])), "server exit shows in-progress state without an IP");
         cache.TryRemove(summaryId, out _);
+        active.ExitInfo = null;
         await Task.Delay(1100);
-        Check(summary.GetLogicalDescendants().OfType<TextBlock>().Any(t => t.Text == ExitPresentation.State(null)), "summary shows missing results without retaining another node's exit");
+        Check(ExitCell().GetLogicalDescendants().OfType<TextBlock>().Any(t => t.Text == ExitPresentation.State(null)), "server exit shows missing results without retaining another node's exit");
         cache[summaryId] = originalResult;
+        active.ExitInfo = originalResult;
         await Task.Delay(1100);
         var test = profiles.FindControl<Button>("btnTestScope")!;
         test.Flyout!.ShowAt(test);
@@ -1051,7 +1253,7 @@ public partial class ReviewApp : v2rayN.Desktop.App
         test.Flyout.Hide();
         await _main.NavigateAsync("Proxies");
         await CaptureAsync("exit-single", "单节点代理状态", _main);
-        var view = _main.GetLogicalDescendants().OfType<ClashProxiesView>().Single();
+        var view = _main.WorkspaceWindow.GetLogicalDescendants().OfType<ClashProxiesView>().Single();
         Check(view.FindControl<Border>("singleNode")!.IsVisible && !view.FindControl<Grid>("proxyWorkspace")!.IsVisible,
             "single-node proxy page hides synthetic internal groups");
         var activeId = AppManager.Instance.Config.IndexId;
@@ -1084,9 +1286,9 @@ public partial class ReviewApp : v2rayN.Desktop.App
     private async Task CheckPrimerWorkspaceAsync()
     {
         await _main.NavigateAsync("Servers");
-        var workspace = _main.GetLogicalDescendants().OfType<ServerWorkspaceView>().Single();
-        var profiles = _main.GetLogicalDescendants().OfType<ProfilesView>().Single();
-        var status = _main.GetLogicalDescendants().OfType<StatusBarView>().Single();
+        var workspace = _main.WorkspaceWindow.GetLogicalDescendants().OfType<ServerWorkspaceView>().Single();
+        var profiles = _main.WorkspaceWindow.GetLogicalDescendants().OfType<ProfilesView>().Single();
+        var status = (StatusBarView)_main.FindControl<ContentControl>("contentStatusBarView")!.Content!;
         var table = profiles.FindControl<DataGrid>("lstProfiles")!;
         var activeId = AppManager.Instance.Config.IndexId;
         var active = _vm.ProfilesViewModel.ProfileItems.Single(node => node.IndexId == activeId);
@@ -1106,59 +1308,85 @@ public partial class ReviewApp : v2rayN.Desktop.App
             Check(_main.ActualThemeVariant == (Program.Theme == nameof(ETheme.Dark) ? ThemeVariant.Dark : ThemeVariant.Light),
                 "the rendered theme matches the requested Light or Dark variant");
         await CaptureAsync("primer-main", "Primer · isolated fixture · no core launched", _main);
-        var appearanceButton = _main.FindControl<Button>("btnAppearance")!;
-        appearanceButton.Flyout!.ShowAt(appearanceButton);
+        await _main.OpenSettingsAsync("Appearance");
         await Task.Delay(100);
-        Check(appearanceButton.Flyout.IsOpen && ((MenuFlyout)appearanceButton.Flyout).Items.OfType<MenuItem>().Count() == 4,
-            "the title bar exposes light, dark, system theme and appearance settings");
-        appearanceButton.Flyout.Hide();
-        var about = (Window)typeof(MainWindow).GetMethod("CreateAboutWindow", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(_main, null)!;
+        Check(_main.WorkspaceWindow.GetVisualDescendants().OfType<ThemeSettingView>().Single().IsEffectivelyVisible,
+            "appearance controls are reachable in the same settings window");
+        await _main.OpenSettingsAsync("Help");
+        var about = _main.WorkspaceWindow.GetVisualDescendants().OfType<ContentControl>().Single(control => control.Name == "settingsBody");
+        var aboutFont = about.FontSize;
+        var windowHeight = _main.WorkspaceWindow.Height;
         about.FontSize = 24;
-        about.Width = 420;
-        about.Height = 240;
-        var aboutClosed = about.ShowDialog(_main);
+        _main.WorkspaceWindow.Height = 520;
         await Task.Delay(150);
-        var aboutClose = about.GetLogicalDescendants().OfType<Button>().Single(control => control.Name == "btnAboutClose");
-        var closePosition = aboutClose.TranslatePoint(default, about)!.Value;
-        Check(aboutClose.IsEffectivelyVisible && closePosition.Y >= 0 && closePosition.Y + aboutClose.Bounds.Height <= about.ClientSize.Height + 1,
-            "the about dialog keeps Close visible at minimum height with enlarged text");
-        Check(about.GetLogicalDescendants().OfType<ScrollViewer>().Any(view => view.Extent.Height > view.Viewport.Height),
-            "long about information scrolls independently of the fixed Close action");
-        await CaptureAsync("primer-about-large-text", "About · 24px text · minimum height", about);
-        aboutClose.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-        await aboutClosed;
-        var expectedSidebar = Program.Width <= 900 ? 64 : 196 + Math.Max(0, Program.FontSize - 14) * 6;
-        Check(_main.FindControl<Grid>("shellGrid")!.ColumnDefinitions[0].Width.Value == expectedSidebar,
-            "Primer navigation uses the documented desktop and compact widths");
-        Check(!await CoreManager.Instance.IsCoreRunningAsync() && status.FindControl<TextBlock>("txtCoreName")!.Text!.Contains(WorkspaceText.T("未运行", "Stopped")),
-            "configured profiles never masquerade as a running core in the summary");
+        var aboutBack = _main.FindControl<Button>("btnReturnConnection")!;
+        var backPosition = aboutBack.TranslatePoint(default, _main.WorkspaceWindow)!.Value;
+        Check(aboutBack.IsEffectivelyVisible && backPosition.Y >= 0 && backPosition.Y + aboutBack.Bounds.Height <= _main.WorkspaceWindow.ClientSize.Height + 1,
+            "about settings keep Back to connection visible with enlarged text");
+        Check(about.GetVisualDescendants().OfType<ScrollViewer>().Any(view => view.Extent.Height > view.Viewport.Height),
+            "long about information scrolls independently of the fixed Back action");
+        Check(about.GetVisualDescendants().OfType<SelectableTextBlock>().Any(text => text.Text == Utils.GetVersion()),
+            "about settings display the actual application version");
+        await CaptureAsync("primer-about-large-text", "About settings · 24px text · short window", _main);
+        aboutBack.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        await Task.Delay(100);
+        Check(_main.IsVisible && _main.SettingsWindow!.IsVisible && _main.CurrentWorkspacePage == "Help", "connection shortcut activates the small window without closing settings");
+        about.FontSize = aboutFont;
+        _main.WorkspaceWindow.Height = windowHeight;
+        await _main.NavigateAsync("Servers");
+        Check(_main.FindControl<Control>("sidebar") == null
+            && _main.WorkspaceWindow.GetVisualDescendants().OfType<Button>().Any(button => button.Name == "navServers" && button.IsEffectivelyVisible),
+            "server management uses grouped settings navigation without the legacy sidebar");
+        await _main.OpenSettingsAsync("Core");
+        var listenerStatus = _main.WorkspaceWindow.GetVisualDescendants().OfType<Expander>()
+            .Single(control => control.Header?.ToString() == WorkspaceText.T("实际监听与检测状态", "Actual listeners and checks"));
+        listenerStatus.IsExpanded = true;
+        await Task.Delay(100);
+        Check(!await CoreManager.Instance.IsCoreRunningAsync()
+            && _main.WorkspaceWindow.GetVisualDescendants().OfType<TextBlock>().Any(text => text.IsEffectivelyVisible && text.Text == WorkspaceText.T("内核：未运行", "Core: Stopped")),
+            "configured profiles never masquerade as a running core in connection settings");
+        listenerStatus.IsExpanded = false;
+        await _main.OpenSettingsAsync("SystemProxy");
+        await Task.Delay(100);
+        Check(_main.WorkspaceWindow.GetVisualDescendants().OfType<TextBlock>().Any(text => text.IsEffectivelyVisible
+                && text.Text?.StartsWith(WorkspaceText.T("系统代理：", "System proxy: ")) == true && !text.Text.Contains("Forced")),
+            "system proxy settings use localized modes rather than enum identifiers");
+        await _main.NavigateAsync("Servers");
+        // Returning from settings refreshes the table's saved profile objects.
+        // Test selection and formatting on the current rows, not detached fixtures.
+        _main.WorkspaceWindow.UpdateLayout();
+        await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
+        active = _vm.ProfilesViewModel.ProfileItems.Single(node => node.IndexId == activeId);
+        selected = _vm.ProfilesViewModel.ProfileItems.First(node => node.IndexId != activeId);
+        active.SpeedVal = "18.6"; selected.SpeedVal = "8.4";
+        table.SelectedItem = selected;
+        await Task.Delay(100);
         Check(table.SelectedItem == selected && active.IsActive && AppManager.Instance.Config.IndexId == activeId,
-            "selecting another row leaves the active profile and runtime configuration unchanged");
+            $"selecting another row leaves the active profile and runtime configuration unchanged (selected={(table.SelectedItem as ProfileItemModel)?.IndexId}, expected={selected.IndexId}, same={ReferenceEquals(table.SelectedItem, selected)}, active={active.IsActive}, configured={AppManager.Instance.Config.IndexId}, expectedActive={activeId})");
         Check(active.SpeedVal == "18.6" && selected.SpeedVal == "8.4",
             "formatting read-only speed cells never writes a converted value back into the model");
         Check(table.GetVisualDescendants().OfType<DataGridColumnHeader>()
             .SelectMany(header => header.GetVisualDescendants().OfType<TextBlock>()).Any(text => text.Text == WorkspaceText.Node && text.IsEffectivelyVisible && text.Bounds.Width > 0),
             "the server-name header is rendered after adaptive column reflow");
         File.WriteAllText(Path.Combine(Program.Output, "header-layout.json"), JsonSerializer.Serialize(table.GetVisualDescendants().OfType<DataGridColumnHeader>()
-            .SelectMany(header => header.GetVisualDescendants().OfType<TextBlock>().Select(text => new { header = header.Content?.ToString(), text.Text, foreground = text.Foreground?.ToString(), text.Opacity, text.Bounds, position = text.TranslatePoint(default, _main), text.IsEffectivelyVisible })), new JsonSerializerOptions { WriteIndented = true }));
-        Check(status.FindControl<TextBlock>("txtProxyMode")!.Text!.Contains(WorkspaceText.T("系统代理", "System proxy"))
-            && !status.FindControl<TextBlock>("txtProxyMode")!.Text!.Contains("Forced"),
-            "runtime metadata uses localized proxy modes rather than enum identifiers");
+            .SelectMany(header => header.GetVisualDescendants().OfType<TextBlock>().Select(text => new { header = header.Content?.ToString(), text.Text, foreground = text.Foreground?.ToString(), text.Opacity, text.Bounds, position = text.TranslatePoint(default, _main.WorkspaceWindow), text.IsEffectivelyVisible })), new JsonSerializerOptions { WriteIndented = true }));
         Check(!table.Columns.Single(column => column.Tag?.ToString() == "ExitLocation").IsVisible
             || profiles.GetVisualDescendants().OfType<TextBlock>().Any(text => text.IsEffectivelyVisible && text.Text?.StartsWith(WorkspaceText.T("缓存 · ", "Cached · ")) == true),
             "visible node exit information carries a cache timestamp");
-        foreach (var control in new Control[] { status.FindControl<Border>("summaryCard")!, profiles.FindControl<WrapPanel>("filterToolbar")!, profiles.FindControl<WrapPanel>("nodeToolbar")!, _main.FindControl<Button>("btnDiagnosticLogs")! })
+        foreach (var control in new Control[] { profiles.FindControl<WrapPanel>("filterToolbar")!, profiles.FindControl<WrapPanel>("nodeToolbar")!, _main.FindControl<Button>("btnReturnConnection")! })
         {
-            var origin = control.TranslatePoint(default, _main)!.Value;
-            Check(origin.X >= -1 && origin.X + control.Bounds.Width <= _main.ClientSize.Width + 1 && origin.Y + control.Bounds.Height <= _main.ClientSize.Height + 1,
+            var origin = control.TranslatePoint(default, _main.WorkspaceWindow)!.Value;
+            Check(origin.X >= -1 && origin.X + control.Bounds.Width <= _main.WorkspaceWindow.ClientSize.Width + 1 && origin.Y + control.Bounds.Height <= _main.WorkspaceWindow.ClientSize.Height + 1,
                 $"Primer {control.Name} remains inside the {Program.Width}px window");
         }
+        await _main.NavigateAsync("Home");
         status.SetReloading(true);
         Check(!status.FindControl<StackPanel>("connectionFields")!.IsEnabled
-            && status.FindControl<TextBlock>("txtCoreState")!.Text == WorkspaceText.T("正在应用…", "Applying…"),
+            && status.FindControl<TextBlock>("txtCoreState")!.Text == WorkspaceText.T("正在切换…", "Switching…"),
             "application progress disables duplicate connection actions and has explicit feedback");
         await CaptureAsync("primer-applying", "Applying · UI fixture only", _main);
         status.SetReloading(false);
+        await _main.NavigateAsync("Servers");
         workspace.OpenDetails();
         await CaptureAsync("primer-details", "Selected profile details · isolated fixture", _main);
         Check(workspace.IsDetailsOpen && AppManager.Instance.Config.IndexId == activeId
@@ -1171,7 +1399,7 @@ public partial class ReviewApp : v2rayN.Desktop.App
             && applyOrigin.Y + apply.Bounds.Height <= inspector.Bounds.Height + 1,
             "the selected-profile apply action fits the responsive detail panel");
         workspace.CloseDetails();
-        table.SelectedItem = active;
+        table.SelectedItem = _vm.ProfilesViewModel.ProfileItems.Single(node => node.IndexId == activeId);
         workspace.OpenDetails();
         await Task.Delay(150);
         Check(workspace.FindControl<StackPanel>("sshDetails")!.IsVisible
@@ -1181,19 +1409,21 @@ public partial class ReviewApp : v2rayN.Desktop.App
         _vm.StatusBarViewModel.ConnectionError = "Fixture: application failed; previous configuration retained";
         await Task.Delay(100);
         var button = status.FindControl<Button>("btnConnectionControls")!;
-        button.Flyout!.ShowAt(button);
+        await _main.NavigateAsync("Home");
         await CaptureAsync("primer-connection-error", "Connection controls · failure fixture", _main);
         Check(status.FindControl<TextBlock>("txtConnectionError")!.IsEffectivelyVisible
             && status.FindControl<StackPanel>("connectionFields")!.IsEnabled
             && status.FindControl<TextBlock>("txtRecoveryState")!.Text == WorkspaceText.T("配置应用失败", "Configuration failed"),
             "connection failures retain a visible explanation and allow retry");
         status.CloseConnectionControls();
+        status.FindControl<Button>("btnConnectionDiagnostics")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        await Task.Delay(100);
+        await CaptureAsync("primer-logs", "Diagnostic log settings · isolated fixture", _main);
+        Check(_main.CurrentWorkspacePage == "Logs" && _main.WorkspaceWindow.GetVisualDescendants().OfType<MsgView>().Single().IsEffectivelyVisible
+            && !_main.WorkspaceWindow.GetVisualDescendants().OfType<ServerWorkspaceView>().Any(),
+            "connection diagnostics navigate to logs without overlaying server details");
         _vm.StatusBarViewModel.ConnectionError = null;
-        _main.FindControl<Button>("btnDiagnosticLogs")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-        await CaptureAsync("primer-logs", "Diagnostic log drawer · isolated fixture", _main);
-        Check(_main.FindControl<Border>("logDrawer")!.IsEffectivelyVisible && !workspace.IsDetailsOpen,
-            "diagnostics use the existing log drawer without covering node details");
-        _main.FindControl<Button>("btnToggleLogs")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        await _main.NavigateAsync("Servers");
         var nodes = _vm.ProfilesViewModel.ProfileItems.ToArray();
         _vm.ProfilesViewModel.ProfileItems.Clear(); profiles.RefreshServersBiz();
         await CaptureAsync("primer-empty", "No saved profiles · isolated fixture", _main);
@@ -1204,7 +1434,7 @@ public partial class ReviewApp : v2rayN.Desktop.App
     private async Task CheckPrimaryWorkflowAsync()
     {
         await _main.NavigateAsync("Servers");
-        var profiles = _main.GetLogicalDescendants().OfType<ProfilesView>().Single();
+        var profiles = _main.WorkspaceWindow.GetLogicalDescendants().OfType<ProfilesView>().Single();
         var table = profiles.FindControl<DataGrid>("lstProfiles")!;
         var groupFilter = profiles.FindControl<ComboBox>("cmbGroupFilter")!;
         Check(groupFilter.IsVisible && !_main.FindControl<Menu>("legacyMenu")!.IsVisible,
@@ -1246,7 +1476,7 @@ public partial class ReviewApp : v2rayN.Desktop.App
         _vm.ProfilesViewModel.SelectedProfile = savedSelection;
         profiles.RefreshServersBiz();
         await Task.Delay(100);
-        _main.UpdateLayout();
+        _main.WorkspaceWindow.UpdateLayout();
         if (Program.Headless) AvaloniaHeadlessPlatform.ForceRenderTimerTick(2);
         var row = table.GetVisualDescendants().OfType<DataGridRow>().First(item => item.IsVisible && item.DataContext is ProfileItemModel model && model.IndexId == fixtureNodes[0].IndexId);
         var badge = row.GetVisualDescendants().OfType<Label>().Single(label => label.Name is "activeBadge" or "activeStatusBadge" && label.IsVisible);
@@ -1260,7 +1490,7 @@ public partial class ReviewApp : v2rayN.Desktop.App
         Check(actionOrigin.X + rowEdit.Bounds.Width <= profiles.Bounds.Width + 1,
             "default and adaptive tables keep complete row actions inside the visible viewport");
         details.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-        var workspace = _main.GetLogicalDescendants().OfType<ServerWorkspaceView>().Single();
+        var workspace = _main.WorkspaceWindow.GetLogicalDescendants().OfType<ServerWorkspaceView>().Single();
         Check(workspace.IsDetailsOpen && _vm.ProfilesViewModel.SelectedProfile.IndexId == fixtureNodes[0].IndexId,
             "row details opens the clicked server rather than a previously selected row");
         workspace.CloseDetails();
@@ -1276,7 +1506,7 @@ public partial class ReviewApp : v2rayN.Desktop.App
 
         await _main.NavigateAsync("Subscriptions");
         await Task.Delay(120);
-        var subscriptions = _main.GetLogicalDescendants().OfType<SubSettingWindow>().Single();
+        var subscriptions = _main.WorkspaceWindow.GetLogicalDescendants().OfType<SubSettingWindow>().Single();
         await subscriptions.ViewModel!.RefreshSubItems();
         var groups = subscriptions.FindControl<DataGrid>("lstSubscription")!;
         Check(subscriptions.IsEmbedded && !subscriptions.FindControl<Button>("menuClose")!.IsVisible
@@ -1331,7 +1561,7 @@ public partial class ReviewApp : v2rayN.Desktop.App
         subscriptions.FindControl<TextBlock>("txtSubscriptionStatus")!.IsVisible = false;
         await CaptureAsync("workflow-subscriptions", "分组与订阅的行操作", _main);
         await _main.OpenSettingsAsync("Utilities");
-        Check(_main.GetLogicalDescendants().OfType<Button>().Any(button => button.Content?.ToString() == ResUI.menuOpenTheFileLocation && button.IsVisible),
+        Check(_main.WorkspaceWindow.GetLogicalDescendants().OfType<Button>().Any(button => button.Content?.ToString() == ResUI.menuOpenTheFileLocation && button.IsVisible),
             "unique application tools remain reachable after removing the header menu");
         await CaptureAsync("workflow-utilities", "应用工具入口", _main);
     }
@@ -1376,8 +1606,8 @@ public partial class ReviewApp : v2rayN.Desktop.App
         using (var pixels = new Bitmap(Path.Combine(Program.Output, "fixed-actions-end.png")))
         {
             var centerY = firstRow.TranslatePoint(new Point(0, firstRow.Bounds.Height / 2), table)!.Value.Y;
-            var dataPixel = table.TranslatePoint(new Point(table.Bounds.Width - 32, centerY), _main)!.Value;
-            var actionPixel = pinned.TranslatePoint(new Point(pinned.Bounds.Width - 6, centerY), _main)!.Value;
+            var dataPixel = table.TranslatePoint(new Point(table.Bounds.Width - 32, centerY), _main.WorkspaceWindow)!.Value;
+            var actionPixel = pinned.TranslatePoint(new Point(pinned.Bounds.Width - 6, centerY), _main.WorkspaceWindow)!.Value;
             var left = ReadPixel(pixels, dataPixel * Program.Scale);
             var right = ReadPixel(pixels, actionPixel * Program.Scale);
             Check(left.Zip(right).All(pair => Math.Abs(pair.First - pair.Second) <= 1),
@@ -1397,7 +1627,7 @@ public partial class ReviewApp : v2rayN.Desktop.App
             "horizontal and vertical scrolling preserve the table's multi-selection");
         var lastDetails = buttons.Single(control => control.DataContext == last);
         lastDetails.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-        var workspace = _main.GetLogicalDescendants().OfType<ServerWorkspaceView>().Single();
+        var workspace = _main.WorkspaceWindow.GetLogicalDescendants().OfType<ServerWorkspaceView>().Single();
         Check(workspace.IsDetailsOpen && ReferenceEquals(_vm.ProfilesViewModel.SelectedProfile, last),
             "recycled fixed actions open the current row after scrolling to the 1000th server");
         workspace.CloseDetails();
@@ -1407,8 +1637,8 @@ public partial class ReviewApp : v2rayN.Desktop.App
             var vertical = table.GetVisualDescendants().OfType<Avalonia.Controls.Primitives.ScrollBar>()
                 .Single(bar => bar.Orientation == Avalonia.Layout.Orientation.Vertical);
             var offset = vertical.Value;
-            var point = pinned.TranslatePoint(new Point(pinned.Bounds.Width / 2, pinned.Bounds.Height / 2), _main)!.Value;
-            _main.MouseWheel(point, new Vector(0, 3));
+            var point = pinned.TranslatePoint(new Point(pinned.Bounds.Width / 2, pinned.Bounds.Height / 2), _main.WorkspaceWindow)!.Value;
+            _main.WorkspaceWindow.MouseWheel(point, new Vector(0, 3));
             await Task.Delay(150);
             Check(vertical.Value < offset, "wheel input over the fixed actions scrolls the original DataGrid viewport");
         }
@@ -1416,14 +1646,14 @@ public partial class ReviewApp : v2rayN.Desktop.App
         // ordering used by the application's auto-width command).
         table.ScrollIntoView(last, table.Columns.First(column => column.DisplayIndex == 0));
         await Task.Delay(150);
-        _main.UpdateLayout();
+        _main.WorkspaceWindow.UpdateLayout();
         _vm.ProfilesViewModel.ProfileItems.ReplaceRange(nodes);
         foreach (var (column, state) in columns) { column.Width = state.Width; column.IsVisible = state.IsVisible; }
         table.SelectedItems.Clear();
         table.SelectedItem = current;
         foreach (var node in selected) if (!table.SelectedItems.Contains(node)) table.SelectedItems.Add(node);
         await Task.Delay(150);
-        _main.UpdateLayout();
+        _main.WorkspaceWindow.UpdateLayout();
         table.ScrollIntoView(first, table.Columns.First(column => column.DisplayIndex == 0));
         await Task.Delay(150);
     }
@@ -1432,20 +1662,20 @@ public partial class ReviewApp : v2rayN.Desktop.App
     {
         await CheckPrimaryWorkflowAsync();
         await _main.OpenSettingsAsync("Updates");
-        var updates = _main.GetLogicalDescendants().OfType<CheckUpdateView>().Single();
-        Check(_main.FindControl<TextBlock>("txtPageTitle")!.Text == ResUI.menuCheckUpdate,
+        var updates = _main.WorkspaceWindow.GetLogicalDescendants().OfType<CheckUpdateView>().Single();
+        Check(_main.FindControl<TextBlock>("txtPageTitle")!.Text == WorkspacePages.Available.Single(page => page.Key == "Updates").Title,
             "settings update navigation displays the update page and matching title");
         if (!Utils.IsWindows())
         {
             await _main.OpenSettingsAsync("Hotkeys");
-            Check(ReferenceEquals(updates, _main.GetLogicalDescendants().OfType<CheckUpdateView>().Single())
-                && !_main.GetLogicalDescendants().OfType<GlobalHotkeySettingWindow>().Any()
-                && _main.FindControl<TextBlock>("txtPageTitle")!.Text == ResUI.menuCheckUpdate,
+            Check(ReferenceEquals(updates, _main.WorkspaceWindow.GetLogicalDescendants().OfType<CheckUpdateView>().Single())
+                && !_main.WorkspaceWindow.GetLogicalDescendants().OfType<GlobalHotkeySettingWindow>().Any()
+                && _main.FindControl<TextBlock>("txtPageTitle")!.Text == WorkspacePages.Available.Single(page => page.Key == "Updates").Title,
                 "unsupported hotkey navigation cannot replace macOS or Linux update content");
         }
         await _main.NavigateAsync("Servers");
-        var servers = _main.GetLogicalDescendants().OfType<ServerWorkspaceView>().Single();
-        var profiles = _main.GetLogicalDescendants().OfType<ProfilesView>().Single();
+        var servers = _main.WorkspaceWindow.GetLogicalDescendants().OfType<ServerWorkspaceView>().Single();
+        var profiles = _main.WorkspaceWindow.GetLogicalDescendants().OfType<ProfilesView>().Single();
         var table = profiles.FindControl<DataGrid>("lstProfiles")!;
         table.SelectedItems.Clear();
         await Task.Delay(100);
@@ -1464,14 +1694,15 @@ public partial class ReviewApp : v2rayN.Desktop.App
         profiles.FindControl<Button>("btnClearSelection")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         Check(table.SelectedItems.Count == 0, "clear selection exits the batch toolbar");
         table.SelectedItem = _vm.ProfilesViewModel.ProfileItems[0];
-        Check(!servers.IsDetailsOpen && !_main.FindControl<Border>("logDrawer")!.IsVisible, "home starts with detail and log panels closed");
-        Check(table.Bounds.Height >= _main.ClientSize.Height * .5 || Program.Width < 1000 || Program.FontSize > 14, "home table retains at least half the window height alongside the runtime summary and toolbars");
+        Check(!servers.IsDetailsOpen && !_main.WorkspaceWindow.GetVisualDescendants().OfType<MsgView>().Any(view => view.IsEffectivelyVisible),
+            "server management starts with details closed and without overlaying logs");
+        Check(table.Bounds.Height >= _main.WorkspaceWindow.ClientSize.Height * .5 || Program.Width < 1000 || Program.FontSize > 14, "home table retains at least half the window height alongside the runtime summary and toolbars");
         Check(ReferenceEquals(profiles.FindControl<Button>("menuMixedTestServer")!.Command, _vm.ProfilesViewModel.RealPingServerCmd), "toolbar testing uses selected servers, not the full group");
         Check(profiles.FindControl<Button>("btnAddServers")!.Flyout is MenuFlyout { Items.Count: > 10 }, "add-server menu preserves protocol and advanced commands");
         var addFlyout = (MenuFlyout)profiles.FindControl<Button>("btnAddServers")!.Flyout!;
         ((Avalonia.Automation.Provider.IInvokeProvider)new Avalonia.Automation.Peers.ButtonAutomationPeer(profiles.FindControl<Button>("btnAddServers")!)).Invoke();
         await Task.Delay(100);
-        Check(addFlyout.IsOpen && ReferenceEquals(TopLevel.GetTopLevel(addFlyout.Popup.Child!), _main), "add menu opens inside the window through button activation");
+        Check(addFlyout.IsOpen && ReferenceEquals(TopLevel.GetTopLevel(addFlyout.Popup.Child!), _main.WorkspaceWindow), "add menu opens inside the window through button activation");
         await CaptureAsync("checks-add-menu", "添加服务器菜单", _main);
         var addSsh = addFlyout.Items.OfType<MenuItem>().Single(item => item.Header?.ToString() == SshStrings.Title);
         addFlyout.Hide();
@@ -1482,15 +1713,19 @@ public partial class ReviewApp : v2rayN.Desktop.App
         Check(addedEditor.Title == SshStrings.Title, "toolbar add menu opens a real SSH add editor");
         addedEditor.Close();
         _vm.BlReloadEnabled = true;
-        var status = _main.GetLogicalDescendants().OfType<StatusBarView>().Single();
-        var connectionButton = status.FindControl<Button>("btnConnectionControls")!;
-        connectionButton.Flyout!.ShowAt(connectionButton);
+        var status = (StatusBarView)_main.FindControl<ContentControl>("contentStatusBarView")!.Content!;
+        await _main.NavigateAsync("Home");
         await Task.Delay(100);
-        var routing = status.FindControl<ComboBox>("cmbRoutings2")!;
-        Check(routing.SelectedItem is RoutingItem selectedRouting && selectedRouting.IsActive
-            && routing.GetVisualDescendants().OfType<TextBlock>().Any(text => text.Text == selectedRouting.Remarks),
-            "connection routing paints the actual active rule-set name");
-        await CaptureAsync("48", "连接控制浮层", _main);
+        Check(_vm.StatusBarViewModel.SelectedRouting is { IsActive: true } selectedRouting
+            && status.FindControl<TextBlock>("txtRoutingMode")!.Text!.Contains(selectedRouting.Remarks),
+            "connection routing summary paints the selected rule-set name");
+        status.FindControl<Button>("btnRouting")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        await Task.Delay(100);
+        Check(_main.CurrentWorkspacePage == "Routing"
+            && _main.WorkspaceWindow.GetVisualDescendants().OfType<RoutingSettingWindow>().Any(page => page.IsEffectivelyVisible),
+            "connection routing summary opens the complete routing editor in settings");
+        await CaptureAsync("48", "路由设置", _main);
+        await _main.NavigateAsync("Servers");
         status.CloseConnectionControls();
         var metricProfile = _vm.ProfilesViewModel.SelectedProfile;
         var savedDelay = metricProfile.DelayVal;
@@ -1509,10 +1744,14 @@ public partial class ReviewApp : v2rayN.Desktop.App
         await CaptureAsync("49", "节点详情抽屉", _main);
         var inspector = servers.FindControl<Border>("inspector")!;
         Check(inspector.Bounds.Width <= 360 && inspector.Bounds.Width <= servers.Bounds.Width, "detail drawer stays inside workspace");
-        _main.FindControl<Button>("btnDiagnosticLogs")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-        Check(!servers.IsDetailsOpen, "opening diagnostics closes server details");
+        await _main.NavigateAsync("Logs");
+        await Task.Delay(100);
+        Check(!_main.WorkspaceWindow.GetVisualDescendants().OfType<ServerWorkspaceView>().Any()
+            && _main.WorkspaceWindow.GetVisualDescendants().OfType<MsgView>().Single().IsEffectivelyVisible,
+            "opening diagnostics replaces the server management page");
+        await _main.NavigateAsync("Servers");
         servers.OpenDetails();
-        Check(!_main.FindControl<Border>("logDrawer")!.IsVisible, "opening details closes diagnostics");
+        Check(!_main.WorkspaceWindow.GetVisualDescendants().OfType<MsgView>().Any(view => view.IsEffectivelyVisible), "server details do not overlay diagnostics");
         servers.CloseDetails();
         table.SelectedItems.Clear();
         table.SelectedItems.Add(_vm.ProfilesViewModel.ProfileItems[0]);
@@ -1520,11 +1759,11 @@ public partial class ReviewApp : v2rayN.Desktop.App
         await CaptureAsync("50", "多选批量操作", _main);
         Check(profiles.FindControl<Button>("btnBatchRemove")!.IsVisible && !profiles.FindControl<Button>("btnAddServers")!.IsVisible, "multiple selection switches to batch toolbar");
         table.SelectedItems.Clear(); table.SelectedItem = _vm.ProfilesViewModel.ProfileItems[0];
-        var width = _main.Width;
-        _main.Width = 600;
-        await CaptureAsync("51", "600 宽窗口", _main);
+        var width = _main.WorkspaceWindow.Width;
+        _main.WorkspaceWindow.Width = 800;
+        await CaptureAsync("51", "800 宽窗口", _main);
         Check(profiles.FindControl<ComboBox>("cmbGroupFilter")!.IsVisible, "narrow navigation exposes a group selector");
-        _main.Width = width;
+        _main.WorkspaceWindow.Width = width;
         var fixtureNodes = _vm.ProfilesViewModel.ProfileItems.ToArray();
         _vm.ProfilesViewModel.ProfileItems.Clear(); profiles.RefreshServersBiz();
         await CaptureAsync("52", "空节点列表", _main);
@@ -1572,21 +1811,22 @@ public partial class ReviewApp : v2rayN.Desktop.App
     {
         await _main.OpenSettingsAsync("Core");
         await Task.Delay(100);
-        var options = _main.GetLogicalDescendants().OfType<OptionSettingWindow>().Single().ViewModel!;
+        var options = _main.WorkspaceWindow.GetLogicalDescendants().OfType<OptionSettingWindow>().Single().ViewModel!;
         var port = options.LocalPort;
         options.LocalPort = port + 1;
-        await _main.OpenSettingsAsync("DNS");
-        await _main.OpenSettingsAsync("Core");
-        Check(options.LocalPort == port + 1, "draft survives settings subpage navigation");
+        var subpage = _main.OpenSettingsAsync("DNS");
+        await ChooseDraftAsync(WorkspaceText.Stay);
+        await subpage;
+        Check(options.LocalPort == port + 1 && _main.CurrentWorkspacePage == "Core", "settings subpage navigation requires resolving the current draft");
         var leaving = _main.NavigateAsync("Servers");
         await ChooseDraftAsync(WorkspaceText.Stay);
         await leaving;
-        Check(_main.GetLogicalDescendants().OfType<OptionSettingWindow>().Any(), "keep editing cancels navigation");
+        Check(_main.WorkspaceWindow.GetLogicalDescendants().OfType<OptionSettingWindow>().Any(), "keep editing cancels navigation");
         leaving = _main.NavigateAsync("Servers");
         await ChooseDraftAsync(WorkspaceText.Discard);
         await leaving;
         await _main.OpenSettingsAsync("Core");
-        options = _main.GetLogicalDescendants().OfType<OptionSettingWindow>().Single().ViewModel!;
+        options = _main.WorkspaceWindow.GetLogicalDescendants().OfType<OptionSettingWindow>().Single().ViewModel!;
         await options.Initialization;
         Check(options.LocalPort == port, $"discard restores saved settings (expected {port}, draft {options.LocalPort}, saved {AppManager.Instance.Config.Inbound[0].LocalPort})");
         options.LocalPort = port + 2;
@@ -1595,17 +1835,17 @@ public partial class ReviewApp : v2rayN.Desktop.App
         await leaving;
         Check(AppManager.Instance.Config.Inbound[0].LocalPort == port + 2, "save commits draft before navigation");
         await _main.OpenSettingsAsync("Core");
-        options = _main.GetLogicalDescendants().OfType<OptionSettingWindow>().Single().ViewModel!;
+        options = _main.WorkspaceWindow.GetLogicalDescendants().OfType<OptionSettingWindow>().Single().ViewModel!;
         options.LocalPort = 0;
         leaving = _main.NavigateAsync("Servers");
         await ChooseDraftAsync(WorkspaceText.Save);
         await leaving;
-        Check(_main.GetLogicalDescendants().OfType<OptionSettingWindow>().Any(), "invalid settings prevent save and navigation");
+        Check(_main.WorkspaceWindow.GetLogicalDescendants().OfType<OptionSettingWindow>().Any(), "invalid settings prevent save and navigation");
         Check(AppManager.Instance.Config.Inbound[0].LocalPort == port + 2, "invalid settings leave saved port unchanged");
         options.LocalPort = port + 2;
         await _main.NavigateAsync("Servers");
         await _main.OpenSettingsAsync("Backup");
-        var backup = _main.GetLogicalDescendants().OfType<BackupAndRestoreView>().Single().ViewModel!;
+        var backup = _main.WorkspaceWindow.GetLogicalDescendants().OfType<BackupAndRestoreView>().Single().ViewModel!;
         var url = AppManager.Instance.Config.WebDavItem.Url;
         backup.SelectedSource.Url = "https://webdav.example.com/ui-review";
         Check(AppManager.Instance.Config.WebDavItem.Url == url, "WebDAV draft leaves saved configuration unchanged");
@@ -1674,7 +1914,7 @@ public partial class ReviewApp : v2rayN.Desktop.App
 
     private async Task CheckCustomConfigurationAsync()
     {
-        var file = Path.Combine(AppContext.BaseDirectory, "review-config.json");
+        var file = Utils.GetConfigPath("review-config.json");
         var originalText = await File.ReadAllTextAsync(file);
         var source = Profile(EConfigType.Outbound);
         source.IndexId = "review-custom-draft";
@@ -1712,11 +1952,11 @@ public partial class ReviewApp : v2rayN.Desktop.App
     {
         if (Program.Headless)
         {
-            _main.UpdateLayout();
+            _main.WorkspaceWindow.UpdateLayout();
             AvaloniaHeadlessPlatform.ForceRenderTimerTick(2);
-            var point = check.TranslatePoint(new Point(check.Bounds.Width / 2, check.Bounds.Height / 2), _main)!.Value;
-            _main.MouseDown(point, MouseButton.Left);
-            _main.MouseUp(point, MouseButton.Left);
+            var point = check.TranslatePoint(new Point(check.Bounds.Width / 2, check.Bounds.Height / 2), _main.WorkspaceWindow)!.Value;
+            _main.WorkspaceWindow.MouseDown(point, MouseButton.Left);
+            _main.WorkspaceWindow.MouseUp(point, MouseButton.Left);
         }
         else
         {
@@ -1726,6 +1966,11 @@ public partial class ReviewApp : v2rayN.Desktop.App
     }
 
     private void Check(bool passed, string message) { if (!passed) throw new InvalidOperationException(message); _checks.Add(message); }
+    private async Task WaitForDrawerAsync()
+    {
+        for (var i = 0; i < 100 && _main.ServerDrawer?.IsAnimating == true; i++) await Task.Delay(10);
+        Check(_main.ServerDrawer?.IsAnimating != true, "drawer reaches its requested state within one second");
+    }
     private static byte[] ReadPixel(Bitmap bitmap, Point point)
     {
         var buffer = System.Runtime.InteropServices.Marshal.AllocHGlobal(4);
@@ -1794,6 +2039,7 @@ public partial class ReviewApp : v2rayN.Desktop.App
     }
     private async Task CaptureAsync(string id, string title, Window window, double scale = 1)
     {
+        if (ReferenceEquals(window, _main) && !Program.WorkspaceV4Only && !Program.WorkspaceV5Only && !Program.WorkspaceV6Only && !Program.WorkspaceV7Only) window = _main.WorkspaceWindow;
         if (Program.Width < 1000 && window != _main && window.Width > Program.Width)
             window.Width = Math.Max(window.MinWidth, Program.Width);
         await Task.Delay(250);

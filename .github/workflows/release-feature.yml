@@ -106,16 +106,24 @@ jobs:
       - name: Review desktop controls with Skia
         run: |
           dotnet build v2rayN/v2rayN.Desktop.Review -c Release -p:UsedAvaloniaProducts=
+          dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/preview-ui/workspace-v3 --workspace-v3-only --headless
           dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/preview-ui/zh-light --primer-only --headless --language=zh-Hans --theme=light --width=1440
-          dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/preview-ui/en-dark --primer-only --headless --language=en --theme=dark --width=600
+          dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/preview-ui/en-dark --primer-only --headless --language=en --theme=dark --width=800
           dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/preview-ui/sources-zh --update-sources-only --headless --language=zh-Hans --theme=light --width=1200
           dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/preview-ui/sources-en --update-sources-only --headless --language=en --theme=dark --width=980
           dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/preview-ui/egress-zh --proxy-check-only --headless --language=zh-Hans --theme=light --width=1440
-          dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/preview-ui/egress-en --proxy-check-only --headless --language=en --theme=dark --width=600
+          dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/preview-ui/egress-en --proxy-check-only --headless --language=en --theme=dark --width=800
           dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/preview-ui/tun-zh --tun-settings-only --headless --language=zh-Hans --theme=light --width=1440
           dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/preview-ui/tun-en --tun-settings-only --headless --language=en --theme=dark --width=600
           dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/preview-ui/ssh-udp-zh --ssh-udp-only --headless --language=zh-Hans --theme=light --width=1000
           dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/preview-ui/ssh-udp-en --ssh-udp-only --headless --language=en --theme=dark --width=1000
+      - name: Verify review failures return a failing exit code
+        shell: bash
+        run: |
+          result=0
+          dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/preview-ui/expected-failure --headless --verify-failure-exit || result=$?
+          test "$result" -eq 1
+          test -f artifacts/preview-ui/expected-failure/failure.txt
       - uses: actions/upload-artifact@v7
         if: always()
         with:

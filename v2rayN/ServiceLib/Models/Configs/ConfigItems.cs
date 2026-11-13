@@ -104,6 +104,7 @@ public class UIItem
     public List<ColumnItem> MainColumnItem { get; set; }
     public List<WindowSizeItem> WindowSizeItem { get; set; }
     public bool HideColumnIpInfo { get; set; }
+    public List<string> ConnectionFavorites { get; set; } = [];
 }
 
 [Serializable]

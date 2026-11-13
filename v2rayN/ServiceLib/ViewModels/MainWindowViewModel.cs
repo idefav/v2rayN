@@ -286,13 +286,13 @@ public partial class MainWindowViewModel : MyReactiveObject
             CheckUpdateViewModel.ReloadRequested.AsObservable(),
         };
 
-        CheckUpdateViewModel.RestartCoreAsync = reason => ReloadCoreAsync(null, CancellationToken.None, reason);
+        CheckUpdateViewModel.PrepareCoreRestartAsync = PrepareUpdateRestartAsync;
 
         foreach (var reloadRequested in vmReloadRequestedList)
         {
             reloadRequested
                 .ObserveOn(RxSchedulers.MainThreadScheduler)
-                .SubscribeAsync(async _ => await Reload());
+                .SubscribeAsync(async _ => await ReloadSelectedConfigurationAsync());
         }
 
         StatusBarViewModel.AddServerViaScanRequested
@@ -381,7 +381,7 @@ public partial class MainWindowViewModel : MyReactiveObject
             await RefreshServersDispatcherAsync();
             // Compare the whole effective config, including chains and routing-referenced nodes,
             // rather than using the selected subscription group as a reload heuristic.
-            await Reload(subscriptionUpdate ? "订阅更新完成" : "资源更新完成", onlyIfChanged: subscriptionUpdate);
+            await ReloadSelectedConfigurationAsync(subscriptionUpdate ? "订阅更新完成" : "资源更新完成", onlyIfChanged: subscriptionUpdate);
 
             if (_config.UiItem.EnableAutoAdjustMainLvColWidth)
             {
@@ -398,6 +398,19 @@ public partial class MainWindowViewModel : MyReactiveObject
         }
         AppEvents.DispatcherStatisticsRequested.Publish(update);
         await Task.CompletedTask;
+    }
+
+    public async Task SetRealTimeSpeedAsync(bool enabled)
+    {
+        if (DesignMode || AppManager.Instance.IsExiting) return;
+        var previous = _config.GuiItem.DisplayRealTimeSpeed;
+        _config.GuiItem.DisplayRealTimeSpeed = enabled;
+        if (await ConfigHandler.SaveConfig(_config) != 0)
+        {
+            _config.GuiItem.DisplayRealTimeSpeed = previous;
+            throw new IOException("实时速度设置保存失败 / Could not save live speed setting.");
+        }
+        if (enabled) await StatisticsManager.Instance.Init(_config, UpdateStatisticsHandler);
     }
 
     #endregion Actions
@@ -484,7 +497,7 @@ public partial class MainWindowViewModel : MyReactiveObject
             await RefreshServersDispatcherAsync();
             if (item.IndexId == _config.IndexId)
             {
-                await Reload();
+                await ReloadSelectedConfigurationAsync();
             }
         }
     }
@@ -628,7 +641,35 @@ public partial class MainWindowViewModel : MyReactiveObject
         }
     }
 
-    public async Task ApplySettingsChangesAsync(string section)
+    /// <summary>Desktop V3 keeps disconnected choices and saved drafts separate from explicit connection.</summary>
+    public bool UseConnectionWorkspace { get; set; }
+
+    private async Task<Func<string, Task<bool>>> PrepareUpdateRestartAsync()
+    {
+        var revision = Interlocked.Read(ref _connectionRevision);
+        var wasRunning = !_connectionPaused && !AppManager.Instance.IsExiting
+            && await CoreManager.Instance.IsCoreRunningAsync();
+        var session = new CoreUpdateRestartSession(
+            () => wasRunning && !_connectionPaused && !AppManager.Instance.IsExiting
+                && revision == Interlocked.Read(ref _connectionRevision),
+            (reason, isCurrent) => ReloadCoreAsync(null, CancellationToken.None, reason, updateIsCurrent: isCurrent),
+            () => RxSchedulers.MainThreadScheduler.Schedule(() => StatusBarViewModel.HasPendingChanges = true));
+        return session.RestartAsync;
+    }
+
+    internal async Task ReloadSelectedConfigurationAsync(string reason = "用户操作或配置变更", bool onlyIfChanged = false)
+    {
+        if (UseConnectionWorkspace && (CoreManager.Instance.HasUnconfirmedProcesses
+            || _connectionPaused || _switchTask is not { IsCompleted: false } && !await CoreManager.Instance.IsCoreRunningAsync()))
+        {
+            StatusBarViewModel.HasPendingChanges = true;
+            await StatusBarViewModel.RefreshServersBiz();
+            return;
+        }
+        await Reload(reason, onlyIfChanged);
+    }
+
+    public async Task ApplySettingsChangesAsync(string section, bool applyConnection = true)
     {
         if (DesignMode) return;
         if (section == "Subscriptions")
@@ -647,7 +688,12 @@ public partial class MainWindowViewModel : MyReactiveObject
             await StatusBarViewModel.RefreshRoutingsMenu();
         }
         if (section is "Hotkeys" or "Backup") return;
-        await Reload($"设置已修改：{section}", onlyIfChanged: section == "DNS");
+        if (!applyConnection)
+        {
+            StatusBarViewModel.HasPendingChanges = true;
+            return;
+        }
+        await ReloadSelectedConfigurationAsync($"设置已修改：{section}", onlyIfChanged: section == "DNS");
     }
 
     private async Task ClearServerStatistics()
@@ -681,10 +727,69 @@ public partial class MainWindowViewModel : MyReactiveObject
     private readonly ConnectionReloadCoordinator _reloadCoordinator = new();
     private long _connectionRevision;
     private int _manualReloads;
+    private volatile bool _connectionPaused;
+    private Task? _disconnectTask;
+    private CancellationTokenSource? _activeTransitionCancellation;
+
+    public void CancelConnectionTransition()
+    {
+        _connectionPaused = true;
+        Interlocked.Increment(ref _connectionRevision);
+        _switchCancellation?.Cancel();
+        try { _activeTransitionCancellation?.Cancel(); }
+        catch (ObjectDisposedException) { /* The transaction completed concurrently. */ }
+    }
+
+    private void ReportTransition(ConnectionTransition transition)
+        => StatusBarViewModel.ReportTransition(transition);
+
+    public Task DisconnectAsync() => _disconnectTask is { IsCompleted: false } ? _disconnectTask : _disconnectTask = DisconnectCoreAsync();
+
+    private async Task DisconnectCoreAsync()
+    {
+        long operationId = 0;
+        CancelConnectionTransition();
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(AppManager.Instance.ExitToken);
+        deadline.CancelAfter(TimeSpan.FromSeconds(30));
+        try
+        {
+            await _reloadCoordinator.RunAsync(() => !AppManager.Instance.IsExiting, async () =>
+            {
+                SetReloadEnabled(false);
+                operationId = ConnectionTransition.NewOperationId();
+                ReportTransition(new(ConnectionStage.Stopping, _config.TunModeItem.EnableTun, Disconnecting: true) { OperationId = operationId });
+                var errors = new List<string>();
+                try
+                {
+                    try
+                    {
+                        if (!await SysProxyHandler.UpdateSysProxy(_config, true, error => errors.Add(error), deadline.Token))
+                            errors.Add("系统代理清理失败 / System proxy cleanup failed");
+                    }
+                    catch (Exception ex) { errors.Add(ex.Message); }
+                    var result = await CoreManager.Instance.CoreStop(deadline.Token);
+                    if (!result.Success) errors.Add(result.Error ?? ResUI.FailedToRunCore);
+                    var error = errors.Count == 0 ? null : string.Join(Environment.NewLine, errors);
+                    StatusBarViewModel.ConnectionError = error;
+                    ReportTransition(new(error == null ? ConnectionStage.Completed : ConnectionStage.Failed,
+                        _config.TunModeItem.EnableTun, error, Disconnecting: true) { OperationId = operationId });
+                    return error == null;
+                }
+                finally { SetReloadEnabled(true); }
+            }, deadline.Token);
+        }
+        catch (Exception ex)
+        {
+            Logging.SaveLog("Disconnect", ex);
+            StatusBarViewModel.ConnectionError = ex.Message;
+            ReportTransition(new(ConnectionStage.Failed, _config.TunModeItem.EnableTun, ex.Message, Disconnecting: true)
+                { OperationId = operationId == 0 ? ConnectionTransition.NewOperationId() : operationId });
+        }
+    }
 
     internal RecoveryContext? GetRecoveryContext()
     {
-        if (DesignMode || AppManager.Instance.IsExiting || CoreManager.Instance.HandoffNeedsManualRetry || Volatile.Read(ref _manualReloads) > 0
+        if (_connectionPaused || DesignMode || AppManager.Instance.IsExiting || CoreManager.Instance.HandoffNeedsManualRetry || Volatile.Read(ref _manualReloads) > 0
             || StatusBarViewModel.IsChangingConnection || !SysProxyHandler.ChangesEnabled
             || _config.TunModeItem.EnableTun || _config.SystemProxyItem.SysProxyType != ESysProxyType.ForcedChange
             || _config.SystemProxyItem.CustomSystemProxyScriptPath.IsNotEmpty() || _config.IndexId.IsNullOrEmpty()) return null;
@@ -701,8 +806,10 @@ public partial class MainWindowViewModel : MyReactiveObject
 
     public Task<bool> ReloadWithResultAsync(string reason, bool onlyIfChanged = true)
     {
+        _connectionPaused = false;
         var key = JsonUtils.Serialize(_config);
-        if (_switchTask is { IsCompleted: false } && key == _switchKey) return _switchTask;
+        if (_switchTask is { IsCompleted: false } && key == _switchKey
+            && _switchCancellation?.IsCancellationRequested != true) return _switchTask;
         _switchCancellation?.Cancel();
         var cancellation = CancellationTokenSource.CreateLinkedTokenSource(AppManager.Instance.ExitToken);
         _switchCancellation = cancellation;
@@ -732,15 +839,27 @@ public partial class MainWindowViewModel : MyReactiveObject
     }
 
     private async Task<bool> ReloadCoreAsync(RecoveryContext? expected, CancellationToken token,
-        string reason, bool onlyIfChanged = false, Func<CancellationToken, Task<bool>>? recoveryConfirm = null)
+        string reason, bool onlyIfChanged = false, Func<CancellationToken, Task<bool>>? recoveryConfirm = null,
+        Func<bool>? updateIsCurrent = null)
     {
         return await _reloadCoordinator.RunAsync(
             () => !DesignMode && !AppManager.Instance.IsExiting && (expected == null || GetRecoveryContext() == expected), async () =>
         {
+        if (updateIsCurrent?.Invoke() == false) return true;
+        using var transitionCancellation = CancellationTokenSource.CreateLinkedTokenSource(token, AppManager.Instance.ExitToken);
+        token = transitionCancellation.Token;
+        _activeTransitionCancellation = transitionCancellation;
+        var targetTun = _config.TunModeItem.EnableTun;
+        var success = false;
+        var transitionStarted = false;
+        long operationId = 0;
+        void ReportOperation(ConnectionTransition transition) => ReportTransition(transition with
+            { OperationId = operationId, IsBackground = expected != null });
         try
         {
             SetReloadEnabled(false);
             StatusBarViewModel.ConnectionError = null;
+            StatusBarViewModel.HasPendingChanges = true;
 
             RxSchedulers.MainThreadScheduler.Schedule(() =>
             {
@@ -758,8 +877,12 @@ public partial class MainWindowViewModel : MyReactiveObject
             }
             var authorizationRevision = Interlocked.Read(ref _connectionRevision);
             if (!await StatusBarViewModel.EnsureTunAuthorizationAsync()) return false;
+            token.ThrowIfCancellationRequested();
             if (authorizationRevision != Interlocked.Read(ref _connectionRevision)) return false;
             if (AppManager.Instance.IsExiting) return false;
+            transitionStarted = true;
+            operationId = ConnectionTransition.NewOperationId();
+            ReportOperation(new(ConnectionStage.Preparing, targetTun));
             var allResult = await CoreConfigContextBuilder.BuildAll(_config, profileItem);
             if (NoticeManager.Instance.NotifyValidatorResult(allResult.CombinedValidatorResult) && !allResult.Success)
             {
@@ -781,16 +904,24 @@ public partial class MainWindowViewModel : MyReactiveObject
             var loadResult = CoreLoadResult.Failed;
             await Task.Run(async () =>
             {
+                token.ThrowIfCancellationRequested();
+                if (updateIsCurrent?.Invoke() == false) return;
                 loadResult = await CoreManager.Instance.LoadCore(allResult.MainResult.Context,
                     allResult.PreSocksResult?.Context, onlyIfChanged, reason, token,
-                    message => RxSchedulers.MainThreadScheduler.Schedule(() => StatusBarViewModel.ConnectionError = message));
+                    stageChanged: (stage, seconds) => ReportOperation(new(stage, targetTun, WaitSeconds: seconds)));
                 if (loadResult != CoreLoadResult.Started) return;
                 proxyApplied = await SysProxyHandler.UpdateSysProxy(_config, false, error => StatusBarViewModel.ConnectionError = error);
                 await Task.Delay(1000);
             });
-            if (loadResult == CoreLoadResult.Unchanged) return true;
+            if (loadResult == CoreLoadResult.Unchanged)
+            {
+                StatusBarViewModel.HasPendingChanges = false;
+                return success = true;
+            }
             if (loadResult == CoreLoadResult.Failed)
             {
+                token.ThrowIfCancellationRequested();
+                if (updateIsCurrent?.Invoke() == false) return false;
                 StatusBarViewModel.ConnectionError = CoreManager.Instance.LastError ?? ResUI.FailedToRunCore;
                 return false;
             }
@@ -826,9 +957,11 @@ public partial class MainWindowViewModel : MyReactiveObject
             }
 
             ReloadResult(showClashUI);
-            return proxyApplied && await CoreManager.Instance.IsCoreRunningAsync(token);
+            success = proxyApplied && await CoreManager.Instance.IsCoreRunningAsync(token);
+            if (success) StatusBarViewModel.HasPendingChanges = false;
+            return success;
         }
-        catch (OperationCanceledException) when (expected != null)
+        catch (OperationCanceledException)
         {
             // Superseded recovery checks are not configuration failures.
             throw;
@@ -842,6 +975,11 @@ public partial class MainWindowViewModel : MyReactiveObject
         }
         finally
         {
+            _activeTransitionCancellation = null;
+            if (transitionStarted)
+                ReportOperation(new(token.IsCancellationRequested ? ConnectionStage.Cancelled
+                    : success ? ConnectionStage.Completed : ConnectionStage.Failed,
+                    targetTun, token.IsCancellationRequested ? null : StatusBarViewModel.ConnectionError));
             SetReloadEnabled(true);
         }
         }, token);

@@ -43,7 +43,8 @@ public class StatisticsXrayService
         {
             try
             {
-                if (AppManager.Instance.RunningCoreType != ECoreType.Xray)
+                if ((!_config.GuiItem.EnableStatistics && !_config.GuiItem.DisplayRealTimeSpeed)
+                    || AppManager.Instance.RunningCoreType != ECoreType.Xray)
                 {
                     continue;
                 }

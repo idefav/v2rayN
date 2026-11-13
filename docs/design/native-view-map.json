@@ -34,7 +34,7 @@
     "JsonEditor.axaml": "page-designs.html#template"
   },
   "dynamicPages": {
-    "CreateAboutWindow": "page-designs.html#about",
+    "BuildHelpPage": "page-designs.html#about",
     "BuildApplicationTools": "page-designs.html#application-tools"
   }
 }

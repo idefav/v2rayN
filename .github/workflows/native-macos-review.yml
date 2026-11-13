@@ -9,7 +9,7 @@ permissions:
 jobs:
   native:
     runs-on: macos-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
         with:
@@ -24,9 +24,15 @@ jobs:
       - name: Check actual AppKit windows without Headless
         run: |
           dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/native-review/zh-light --primer-only --language=zh-Hans --theme=light --width=1440
-          dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/native-review/en-dark --primer-only --language=en --theme=dark --width=600
+          dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/native-review/en-dark --primer-only --language=en --theme=dark --width=800
           dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/native-review/tun-zh-light --tun-settings-only --language=zh-Hans --theme=light --width=1440
           dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/native-review/tun-en-dark --tun-settings-only --language=en --theme=dark --width=600
+      - name: Check production startup, server selection and compact connection window
+        run: |
+          dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/native-review/startup --startup-only
+          dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/native-review/workspace-v5 --workspace-v5-only
+          dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/native-review/workspace-v6 --workspace-v6-only
+          dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/native-review/workspace-v7 --workspace-v7-only
       - name: Verify native evidence
         run: |
           python3 - <<'PY'

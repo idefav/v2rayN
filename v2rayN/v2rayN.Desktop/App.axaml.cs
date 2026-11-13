@@ -7,6 +7,7 @@ namespace v2rayN.Desktop;
 
 public partial class App : Application
 {
+    internal WorkspaceTray? MenuBar { get; private set; }
     public override void Initialize()
     {
         AvaloniaXamlLoader.Load(this);
@@ -32,6 +33,12 @@ public partial class App : Application
             var mainWindow = (MainWindow)viewLocator.Build(mainWindowViewModel);
             mainWindow.ViewModel = mainWindowViewModel;
             desktop.MainWindow = mainWindow;
+            if (TrayIcon.GetIcons(this)?.FirstOrDefault() is { } tray)
+            {
+                var menu = WorkspaceTray.Attach(tray, mainWindow);
+                MenuBar = menu;
+                desktop.Exit += (_, _) => menu.Dispose();
+            }
             desktop.ShutdownRequested += (_, e) =>
             {
                 if (mainWindow.AllowsShutdown) return;

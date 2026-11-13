@@ -4,6 +4,30 @@ namespace ServiceLib.Tests.Services;
 public class ProcessLifecycleTests
 {
     [Test]
+    public async Task DisconnectRemembersOwnedElevatedEndpointsForLaterOrdinaryConnection()
+    {
+        if (!OperatingSystem.IsMacOS()) { Skip.Test("macOS cross-user handoff metadata"); return; }
+        using var process = await Sleep();
+        using (var child = Process.GetProcessById(process.Id))
+        { child.Kill(); await child.WaitForExitAsync(); }
+        // Only our exited ordinary child is marked elevated; no sudo or root process is used.
+        process.IsElevated = true;
+        var config = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".json");
+        process.ConfigPath = config;
+        var manager = new CoreManager(_ => throw new InvalidOperationException("Disconnect must never launch"));
+        Field("_processService").SetValue(manager, process);
+        try
+        {
+            await File.WriteAllTextAsync(config, """{"inbounds":[{"type":"mixed","listen":"127.0.0.1","listen_port":34567}]}""");
+            Check((await manager.CoreStop()).Success, "owned exited child did not clean up");
+            var endpoints = (List<CoreListener>)Field("_elevatedHandoff").GetValue(manager)!;
+            Check(endpoints.Any(p => p.Port == 34567), "disconnect lost endpoint evidence for the next ordinary-mode connection");
+            Check(manager.RunningTunEnabled == null, "disconnected core was reported as running TUN");
+        }
+        finally { File.Delete(config); }
+    }
+
+    [Test]
     public void MacTargetedQueryDistinguishesExitFromQueryFailure()
     {
         var row = UnixProcessControl.ParseMacProcessResult(123, 0,

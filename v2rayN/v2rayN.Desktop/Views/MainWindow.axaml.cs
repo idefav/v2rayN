@@ -13,11 +13,14 @@ public partial class MainWindow : WindowBase<MainWindowViewModel>
     private readonly WindowNotificationManager? _manager;
     private CheckUpdateView? _checkUpdateView;
     private WindowExitCoordinator? _exit;
+    private ConnectionDrawer? _serverDrawer;
+    internal ConnectionDrawer? ServerDrawer => _serverDrawer;
     public bool AllowsShutdown => _exit?.AllowClose == true;
 
     public MainWindow()
     {
         InitializeComponent();
+        WindowSizeKey = "ConnectionWindow";
 
         _config = AppManager.Instance.Config;
         _manager = new WindowNotificationManager(TopLevel.GetTopLevel(this)) { MaxItems = 3, Position = NotificationPosition.TopRight };
@@ -37,10 +40,9 @@ public partial class MainWindow : WindowBase<MainWindowViewModel>
         menuFullConfigTemplate.Click += async (_, _) => await OpenSettingsAsync("Templates");
         menuGlobalHotkeySetting.Click += async (_, _) => await OpenSettingsAsync("Hotkeys");
         btnSettings.Click += async (_, _) => await NavigateAsync("Settings");
-        btnHelp.Click += (_, _) => ShowHelpMenu();
-        btnClearLogs.Click += (_, _) => _logs?.ClearMsg();
-        btnToggleLogs.Click += (_, _) => ToggleLogDrawer();
+        btnReturnConnection.Click += (_, _) => ShowHideWindow(true);
         SizeChanged += (_, _) => ResizeWorkspace();
+        Activated += (_, _) => HotkeyManager.Instance.IsPause = false;
         PropertyChanged += (_, args) => { if (args.Property == FontSizeProperty) ResizeWorkspace(); };
 
         this.WhenActivated(disposables =>
@@ -87,6 +89,8 @@ public partial class MainWindow : WindowBase<MainWindowViewModel>
 
 
             InitializeWorkspace();
+            this.WhenAnyValue(v => v.ViewModel.StatusBarViewModel.Transition)
+                .ObserveOn(RxSchedulers.MainThreadScheduler).Subscribe(ShowConnectionProgress).DisposeWith(disposables);
             this.WhenAnyValue(v => v.ViewModel.BlReloadEnabled).ObserveOn(RxSchedulers.MainThreadScheduler)
                 .Subscribe(enabled => (contentStatusBarView.Content as StatusBarView)?.SetReloading(!enabled)).DisposeWith(disposables);
             this.WhenAnyValue(v => v.ViewModel.ShowClashUI)
@@ -175,7 +179,8 @@ public partial class MainWindow : WindowBase<MainWindowViewModel>
 
     private async Task DelegateSnackMsg(string content)
     {
-        _manager?.Show(new Avalonia.Controls.Notifications.Notification(null, content, NotificationType.Information));
+        var manager = _settingsWindow?.IsActive == true ? _settingsNotifications : _manager;
+        manager?.Show(new Avalonia.Controls.Notifications.Notification(null, content, NotificationType.Information));
         await Task.CompletedTask;
     }
 
@@ -224,6 +229,14 @@ public partial class MainWindow : WindowBase<MainWindowViewModel>
 
     private async void MainWindow_KeyDown(object? sender, KeyEventArgs e)
     {
+        if (e.Handled) return;
+        var inSettings = ReferenceEquals(sender, _settingsWindow);
+        if (inSettings && _settingsKey != "Servers" && e.KeyModifiers is KeyModifiers.Control or KeyModifiers.Meta)
+        {
+            if (e.Key == Key.S) { e.Handled = true; await SaveActiveDraftAsync(); }
+            // Server import/screen capture shortcuts must not run from a settings editor.
+            if (e.Key is Key.S or Key.V) return;
+        }
         if (e.Source is TextBox || (e.Source is Visual visual && visual.GetVisualAncestors().Any(v => v is TextBox or AvaloniaEdit.TextEditor))) return;
         if (e.KeyModifiers is KeyModifiers.Control or KeyModifiers.Meta)
         {
@@ -240,9 +253,11 @@ public partial class MainWindow : WindowBase<MainWindowViewModel>
         }
         else
         {
-            if (e.Key == Key.F5)
+            if (e.Key == Key.F5 && e.KeyModifiers == KeyModifiers.None)
             {
-                ViewModel?.Reload();
+                // Settings pages own their refresh keys; only connection home can restart.
+                e.Handled = true;
+                if (!inSettings && ViewModel != null) await ViewModel.Reload();
             }
         }
     }
@@ -353,6 +368,7 @@ public partial class MainWindow : WindowBase<MainWindowViewModel>
         }
         else
         {
+            _serverDrawer?.Reset();
             if (Utils.IsLinux() && _config.UiItem.Hide2TrayWhenClose == false)
             {
                 WindowState = WindowState.Minimized;
@@ -381,7 +397,16 @@ public partial class MainWindow : WindowBase<MainWindowViewModel>
 
     private void StorageUI()
     {
-        ConfigHandler.SaveWindowSizeItem(_config, GetType().Name, Width, Height);
+        ConfigHandler.SaveWindowSizeItem(_config, WindowSizeKey!, _serverDrawer?.CollapsedWidth ?? Width, Height);
+        StoreSettingsWindowSize();
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        _connectionFeedback?.Dispose();
+        _settingsFeedback?.Dispose();
+        _serverDrawer?.Dispose();
+        base.OnClosed(e);
     }
 
     private void AddHelpMenuItem()

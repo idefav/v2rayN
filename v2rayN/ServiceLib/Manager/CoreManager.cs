@@ -30,6 +30,9 @@ public class CoreManager
     public string? LastError { get; private set; }
     private readonly List<CoreListener> _elevatedHandoff = [];
     internal PortHandoffState HandoffState { get; private set; }
+    public bool? RunningTunEnabled { get; private set; }
+    public CoreRuntimeSummary? RuntimeSummary { get; private set; }
+    public bool HasUnconfirmedProcesses => _runningConfig == null && (_processService != null || _processPreService != null);
     internal bool HandoffNeedsManualRetry => _elevatedHandoff.Count > 0 && HandoffState == PortHandoffState.Failed;
     private EffectiveCoreConfig? _runningConfig;
     // Startup requirements survive a partial launch; effective config is recorded only
@@ -107,16 +110,16 @@ public class CoreManager
     /// <param name="preContext">Optional pre-socks context passed to <see cref="CoreStartPreService"/>.</param>
     public async Task<CoreLoadResult> LoadCore(CoreConfigContext? mainContext, CoreConfigContext? preContext,
         bool onlyIfChanged = false, string reason = "用户操作或配置变更", CancellationToken token = default,
-        Action<string>? progress = null)
+        Action<string>? progress = null, Action<ConnectionStage, int>? stageChanged = null)
     {
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(token, AppManager.Instance.ExitToken);
         await _lifecycleGate.WaitAsync(lifetime.Token);
-        try { return await LoadCoreUnderLock(mainContext, preContext, onlyIfChanged, reason, lifetime.Token, progress); }
+        try { return await LoadCoreUnderLock(mainContext, preContext, onlyIfChanged, reason, lifetime.Token, progress, stageChanged); }
         finally { _lifecycleGate.Release(); }
     }
 
     private async Task<CoreLoadResult> LoadCoreUnderLock(CoreConfigContext? mainContext, CoreConfigContext? preContext,
-        bool onlyIfChanged, string reason, CancellationToken token, Action<string>? progress)
+        bool onlyIfChanged, string reason, CancellationToken token, Action<string>? progress, Action<ConnectionStage, int>? stageChanged)
     {
         if (AppManager.Instance.IsExiting) return CoreLoadResult.Failed;
         LastError = null;
@@ -175,6 +178,7 @@ public class CoreManager
                         _elevatedHandoff.AddRange(CoreListenerCheck.Read(await File.ReadAllTextAsync(old.ConfigPath, token)));
             }
             HandoffState = PortHandoffState.Stopping;
+            stageChanged?.Invoke(ConnectionStage.Stopping, 0);
             var stopped = await CoreStopUnderLock();
             if (!stopped.Success) throw new IOException(stopped.Error);
             token.ThrowIfCancellationRequested();
@@ -191,11 +195,15 @@ public class CoreManager
             {
                 HandoffState = PortHandoffState.Waiting;
                 await PortHandoff.WaitAsync(handoff, token, elapsed =>
-                    progress?.Invoke($"已停止 TUN，正在等待普通模式端口可用（{elapsed.TotalSeconds:F0}/90 秒） / Waiting for unprivileged port handoff"));
+                {
+                    stageChanged?.Invoke(ConnectionStage.Waiting, (int)elapsed.TotalSeconds);
+                    progress?.Invoke($"已停止 TUN，正在等待普通模式端口可用（{elapsed.TotalSeconds:F0}/90 秒） / Waiting for unprivileged port handoff");
+                });
                 progress?.Invoke(string.Empty);
             }
             token.ThrowIfCancellationRequested();
             HandoffState = PortHandoffState.Starting;
+            stageChanged?.Invoke(ConnectionStage.Starting, 0);
             if (mainContext.RunCoreType == ECoreType.sing_box)
                 await CoreListenerCheck.EnsureAvailableAsync(CoreListenerCheck.Read(await File.ReadAllTextAsync(fileName)),
                     GetElevatedListenerProbe(mainContext.IsTunEnabled, mainContext.RunCoreType), token);
@@ -223,6 +231,7 @@ public class CoreManager
             token.ThrowIfCancellationRequested();
             if (AppManager.Instance.IsExiting) throw new OperationCanceledException("应用正在退出，已取消启动 / Application is exiting.");
             await CoreStartPreService(preContext);
+            stageChanged?.Invoke(ConnectionStage.Verifying, 0);
 
             AppManager.Instance.RunningCoreType = preContext?.RunCoreType ?? mainContext.RunCoreType;
 
@@ -236,6 +245,9 @@ public class CoreManager
             _runningConfig = candidate;
             _elevatedHandoff.Clear();
             HandoffState = PortHandoffState.Completed;
+            RunningTunEnabled = mainContext.IsTunEnabled || preContext?.IsTunEnabled == true;
+            RuntimeSummary = new(mainContext.SourceNodeId ?? node.IndexId, node.GetSummary(),
+                mainContext.RoutingItem?.Remarks, RunningTunEnabled == true);
             return CoreLoadResult.Started;
         }
         catch (Exception ex)
@@ -308,7 +320,19 @@ public class CoreManager
     public async Task<ProcessStopResult> CoreStop(CancellationToken token = default)
     {
         await _lifecycleGate.WaitAsync(token);
-        try { return await CoreStopUnderLock(token: token); }
+        try
+        {
+            // A user can disconnect TUN, then choose ordinary mode while offline.
+            // Preserve the same owned endpoint evidence used by a direct reload.
+            if (OperatingSystem.IsMacOS())
+                foreach (var old in new[] { _processService, _processPreService })
+                    if (old?.IsElevated == true && old.CoreIdentity != null && old.ConfigPath != null)
+                    {
+                        try { _elevatedHandoff.AddRange(CoreListenerCheck.Read(await File.ReadAllTextAsync(old.ConfigPath, token))); }
+                        catch (Exception ex) { Logging.SaveLog("Remember disconnected TUN listeners", ex); }
+                    }
+            return await CoreStopUnderLock(token: token);
+        }
         finally { _lifecycleGate.Release(); }
     }
 
@@ -334,6 +358,7 @@ public class CoreManager
             }
         }
         var combined = ProcessStopResult.Combine(results);
+        if (combined.Success) { RunningTunEnabled = null; RuntimeSummary = null; }
         if (combined.Success && clearRequirements) _processRequirements = null;
         if (!combined.Success) Logging.SaveLog(_tag + ": " + combined.Error);
         return combined;
