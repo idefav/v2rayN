@@ -6,6 +6,43 @@ namespace ServiceLib.Tests.Services;
 
 public class CoreUpdateInstallerIntegrationTests
 {
+    [Test]
+    public async Task RealCoreUpdateCanCommitWhileDisconnectedWithoutStartingAProcess()
+    {
+        var binary = Environment.GetEnvironmentVariable("V2RAYN_UPDATE_TEST_CORE");
+        if (string.IsNullOrEmpty(binary)) { Skip.Test("Set V2RAYN_UPDATE_TEST_CORE for isolated installation verification"); return; }
+        var root = Path.Combine(Path.GetTempPath(), "v2rayn-disconnected-update-" + Guid.NewGuid());
+        Directory.CreateDirectory(root);
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            var output = await Cli.Wrap(binary).WithArguments("version").ExecuteBufferedAsync(timeout.Token);
+            var version = UpdateService.ParseCoreVersion(output.StandardOutput)!;
+            var archive = Path.Combine(root, "core.zip");
+            using (var zip = ZipFile.Open(archive, ZipArchiveMode.Create))
+                zip.CreateEntryFromFile(binary, "package/sing-box", CompressionLevel.NoCompression);
+            var config = Path.Combine(root, "check.json");
+            await File.WriteAllTextAsync(config, """{"log":{"disabled":true},"outbounds":[{"type":"direct"}]}""");
+            var store = new InstalledUpdateStore(Path.Combine(root, "installed"));
+            var starts = 0;
+            var deferred = 0;
+            var session = new CoreUpdateRestartSession(() => false,
+                (_, _) => { starts++; return Task.FromResult(true); }, () => deferred++);
+            await new CoreUpdateInstaller().InstallAsync(ECoreType.sing_box,
+                new UpdateResult(true, version) { Repository = "idefav/sing-box", Tag = "v" + version }, archive, store,
+                async (executable, _, token) =>
+                {
+                    await Cli.Wrap(executable).WithArguments(["check", "-c", config]).ExecuteBufferedAsync(token);
+                    return true;
+                }, session.RestartAsync, timeout.Token);
+            await starts.Should().BeEqualTo(0);
+            await deferred.Should().BeEqualTo(1);
+            await store.Read()!.Version.Should().BeEqualTo(version.ToString());
+            await InstalledUpdateStore.Digest(store.Resolve(store.Read()!.Executable)).Should().BeEqualTo(InstalledUpdateStore.Digest(binary));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
     // Opt-in: a copy of a real core is installed in a disposable store. No production config or proxy is touched.
     [Test]
     public async Task RealSingboxInstallLaunchAndRollback()

@@ -9,7 +9,7 @@ public partial class CheckUpdateViewModel : MyReactiveObject
 
     public EventChannel<RxVoid> ReloadRequested { get; } = new();
     public EventChannel<RxVoid> SourceSettingsRequested { get; } = new();
-    public Func<string, Task<bool>>? RestartCoreAsync { get; set; }
+    public Func<Task<Func<string, Task<bool>>>>? PrepareCoreRestartAsync { get; set; }
 
     public BulkObservableCollection<CheckUpdateModel> CheckUpdateModels { get; } = [];
     public ReactiveCommand<RxVoid, RxVoid> CheckUpdateCmd { get; }
@@ -190,6 +190,8 @@ public partial class CheckUpdateViewModel : MyReactiveObject
         // Take a snapshot before settings changes or UI refreshes can replace the collection.
         var selected = CheckUpdateModels.Where(x => x.IsSelected == true).Reverse().ToArray();
         var snapshot = JsonUtils.Deserialize<Config>(JsonSerializer.Serialize(_config))!;
+        // Capture once before downloading. Rollback uses this same connection intent.
+        var restart = PrepareCoreRestartAsync == null ? null : await PrepareCoreRestartAsync();
         foreach (var item in selected)
         {
             string? archive = null;
@@ -200,8 +202,7 @@ public partial class CheckUpdateViewModel : MyReactiveObject
                 if (item.IsGeoFile)
                 {
                     await service.UpdateGeoFileAll(snapshot.CheckUpdateItem.UpdateViaProxy);
-                    if (await CoreManager.Instance.IsCoreRunningAsync() && RestartCoreAsync != null
-                        && !await RestartCoreAsync("Geo／SRS 规则更新完成"))
+                    if (restart != null && !await restart("Geo／SRS 规则更新完成"))
                         throw new InvalidOperationException("Rules were downloaded, but the core could not reload");
                     continue;
                 }
@@ -217,8 +218,8 @@ public partial class CheckUpdateViewModel : MyReactiveObject
                     await AppManager.Instance.AppExitAsync(true);
                     return;
                 }
-                if (RestartCoreAsync == null) throw new InvalidOperationException("Core restart is unavailable");
-                await new CoreUpdateInstaller().InstallAsync(type, result, archive, _config, RestartCoreAsync);
+                if (restart == null) throw new InvalidOperationException("Core restart is unavailable");
+                await new CoreUpdateInstaller().InstallAsync(type, result, archive, _config, restart);
                 await UpdateView(type, $"{ResUI.MsgUpdateV2rayCoreSuccessfully} ({result.Repository} {result.Tag})");
             }
             catch (Exception ex)

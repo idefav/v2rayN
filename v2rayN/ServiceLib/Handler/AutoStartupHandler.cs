@@ -5,9 +5,12 @@ namespace ServiceLib.Handler;
 public static class AutoStartupHandler
 {
     private static readonly string _tag = "AutoStartupHandler";
+    // Isolated UI verification must not register, unload or delete host startup entries.
+    public static bool ChangesEnabled { get; set; } = true;
 
     public static async Task<bool> UpdateTask(Config config)
     {
+        if (!ChangesEnabled) return false;
         if (Utils.IsWindows())
         {
             await ClearTaskWindows();

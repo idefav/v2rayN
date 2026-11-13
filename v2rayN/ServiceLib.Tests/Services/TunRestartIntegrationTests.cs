@@ -18,7 +18,7 @@ public class TunRestartIntegrationTests
         { Skip.Test("Opt-in macOS TUN fixture: V2RAYN_TEST_TUN_RESTART=1 and SSH_TEST_SINGBOX; existing sudo authorization required"); return; }
         if (!OperatingSystem.IsMacOS() || string.IsNullOrEmpty(binary) || !File.Exists(binary))
             throw new Exception("Explicit TUN verification requires macOS and a real sing-box binary");
-        using var deadline = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+        using var deadline = new CancellationTokenSource(TimeSpan.FromMinutes(10));
         var sudo = await Cli.Wrap("/usr/bin/sudo").WithArguments(["-n", "true"]).WithValidation(CommandResultValidation.None).ExecuteBufferedAsync(deadline.Token);
         if (sudo.ExitCode != 0) throw new Exception("Required TUN verification has no sudo authorization");
         const string destination = "198.18.77.2";
@@ -60,12 +60,18 @@ public class TunRestartIntegrationTests
             await CoreAdminManager.Instance.Init(new Config(), null);
             for (var round = 0; round < 3; round++)
             {
-                if (preSocks)
+                // Begin every round in ordinary mode, including direct TUN topology.
                 {
                     plain = new ProcessService(binary, "", directory, true, false, null, null);
                     plain.SetArguments(["run", "-c", plainPath, "--disable-color"]);
                     await plain.StartAsync();
                     await CoreListenerCheck.WaitForReadyAsync(plain, CoreListenerCheck.Read(plainJson), deadline.Token);
+                    if (await RecoveryProbe.CheckSocksAsync(proxyPort, deadline.Token) != LocalHealth.Healthy) throw new Exception("ordinary SOCKS unavailable");
+                    if (!preSocks)
+                    {
+                        if (!(await plain.StopAndWaitAsync()).Success) throw new Exception("ordinary stop failed");
+                        plain.Dispose(); plain = null;
+                    }
                 }
                 await CoreListenerCheck.EnsureAvailableAsync(CoreListenerCheck.Read(tun.ToJsonString()));
                 elevated = await CoreAdminManager.Instance.RunProcessAsLinuxSudo(binary,
@@ -78,13 +84,21 @@ public class TunRestartIntegrationTests
                 if (uid.StandardOutput.Trim() != "0" || await elevated.HasExitedAsync(deadline.Token))
                     throw new Exception("Root core identity was not verified as alive");
                 var identity = elevated.CoreIdentity;
+                await ProxyTraffic(proxyPort, deadline.Token);
+                // Exercise a real root-owned accepted TCP connection before shutdown.
+                using (var http = new System.Net.Http.HttpClient(new System.Net.Http.SocketsHttpHandler { UseProxy = false }))
+                {
+                    http.DefaultRequestHeaders.ConnectionClose = true;
+                    using var response = await http.GetAsync($"http://127.0.0.1:{apiPort}/version", deadline.Token);
+                    response.EnsureSuccessStatusCode();
+                }
                 if (!(await Route(destination, deadline.Token)).Contains("utun")) throw new Exception("TUN route did not become ready");
                 var result = await elevated.StopAndWaitAsync();
                 if (!result.Success) throw new Exception(result.Error);
                 var remaining = await UnixProcessControl.ReadMacProcessAsync(identity.Pid, deadline.Token);
                 if (remaining != null && !remaining.Zombie && remaining.Identity.StartTime == identity.StartTime)
                     throw new Exception("Root core still alive after stop");
-                await CoreListenerCheck.EnsureAvailableAsync(CoreListenerCheck.Read(tun.ToJsonString()));
+                await PortHandoff.WaitAsync(CoreListenerCheck.Read(tun.ToJsonString()), deadline.Token);
                 elevated.Dispose(); elevated = null;
                 if (plain != null)
                 {
@@ -94,6 +108,17 @@ public class TunRestartIntegrationTests
                     await CoreListenerCheck.EnsureAvailableAsync(CoreListenerCheck.Read(plainJson));
                 }
                 if (await Route(destination, deadline.Token) != routeBefore) throw new Exception("isolated TUN route was not restored");
+                await PortHandoff.WaitAsync(CoreListenerCheck.Read(plainJson), deadline.Token);
+                plain = new ProcessService(binary, "", directory, true, false, null, null);
+                plain.SetArguments(["run", "-c", plainPath, "--disable-color"]);
+                await plain.StartAsync();
+                await CoreListenerCheck.WaitForReadyAsync(plain, CoreListenerCheck.Read(plainJson), deadline.Token);
+                var plainUid = await Cli.Wrap("/bin/ps").WithArguments(["-p", plain.Id.ToString(), "-o", "uid="]).ExecuteBufferedAsync(deadline.Token);
+                if (plainUid.StandardOutput.Trim() == "0" || await RecoveryProbe.CheckSocksAsync(proxyPort, deadline.Token) != LocalHealth.Healthy)
+                    throw new Exception("ordinary handoff did not restore non-root SOCKS");
+                await ProxyTraffic(proxyPort, deadline.Token);
+                if (!(await plain.StopAndWaitAsync()).Success) throw new Exception("ordinary cleanup failed");
+                plain.Dispose(); plain = null;
             }
         }
         finally
@@ -115,5 +140,34 @@ public class TunRestartIntegrationTests
     {
         var text = (await Cli.Wrap("/sbin/route").WithArguments(["-n", "get", destination]).ExecuteBufferedAsync(token)).StandardOutput;
         return string.Join("\n", text.Split('\n').Where(l => Regex.IsMatch(l, @"^\s*(destination|mask|gateway|interface):")));
+    }
+
+    private static async Task ProxyTraffic(int proxyPort, CancellationToken token)
+    {
+        using var server = new TcpListener(IPAddress.Loopback, 0);
+        server.Start();
+        var destination = ((IPEndPoint)server.LocalEndpoint).Port;
+        var reply = Task.Run(async () =>
+        {
+            using var peer = await server.AcceptTcpClientAsync(token);
+            using var stream = peer.GetStream();
+            var buffer = new byte[4096];
+            var header = new StringBuilder();
+            while (!header.ToString().Contains("\r\n\r\n"))
+            {
+                var count = await stream.ReadAsync(buffer, token);
+                if (count == 0) throw new IOException("proxy request ended early");
+                header.Append(Encoding.ASCII.GetString(buffer, 0, count));
+            }
+            await stream.WriteAsync(Encoding.ASCII.GetBytes("HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nOK"), token);
+        }, token);
+        using var http = new System.Net.Http.HttpClient(new System.Net.Http.SocketsHttpHandler
+        {
+            UseProxy = true, Proxy = new WebProxy($"http://127.0.0.1:{proxyPort}", false)
+        });
+        http.DefaultRequestHeaders.ConnectionClose = true;
+        if (await http.GetStringAsync($"http://127.0.0.1:{destination}/handoff", token) != "OK")
+            throw new Exception("real proxy traffic failed");
+        await reply;
     }
 }

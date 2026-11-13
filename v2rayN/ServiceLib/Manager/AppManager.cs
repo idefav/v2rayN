@@ -12,6 +12,8 @@ public sealed class AppManager
     public Config Config => _config;
     internal ConnectionRecoveryService? ConnectionRecovery { get; set; }
     internal bool IsExiting { get; private set; }
+    private readonly CancellationTokenSource _exitCancellation = new();
+    internal CancellationToken ExitToken => _exitCancellation.Token;
     internal Func<Task>? WaitForCoreReloadAsync { get; set; }
     public IWindowDialog WindowDialog { get; set; } = null!;
 
@@ -123,38 +125,51 @@ public sealed class AppManager
         return true;
     }
 
+    private readonly ShutdownCoordinator _shutdown = new();
+
     public async Task AppExitAsync(bool needShutdown)
     {
-        try
+        await _shutdown.RunAsync(CleanupForExitAsync);
+        if (needShutdown) Shutdown(false);
+    }
+
+    private async Task<ShutdownResult> CleanupForExitAsync()
+    {
+        IsExiting = true;
+        _exitCancellation.Cancel();
+        var id = Guid.NewGuid().ToString("N");
+        var elapsed = Stopwatch.StartNew();
+        using var budget = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var token = budget.Token;
+        Logging.SaveLog($"AppExitAsync Begin exit={id}");
+        var stages = new ShutdownStages(token, (message, ex) =>
         {
-            Logging.SaveLog("AppExitAsync Begin");
-            IsExiting = true;
-            if (ConnectionRecovery != null) await ConnectionRecovery.StopAsync();
-            if (WaitForCoreReloadAsync != null) await WaitForCoreReloadAsync();
-            if (ExitInfoService.DesktopOwnsDetection) await ExitInfoService.Instance.StopAsync();
-
-            await SysProxyHandler.UpdateSysProxy(_config, true);
-            AppEvents.AppExitRequested.Publish();
-            await Task.Delay(50); //Wait for AppExitRequested to be processed
-
-            await ConfigHandler.SaveConfig(_config);
-            await ProfileExManager.Instance.SaveTo();
-            await StatisticsManager.Instance.SaveTo();
-            var stopped = await CoreManager.Instance.CoreStop();
-            if (!stopped.Success) Logging.SaveLog("AppExitAsync core stop failed: " + stopped.Error);
-            await ProcessService.RetryFailedStopsAsync(stopped.RemainingProcesses.Select(p => p.Pid));
-            StatisticsManager.Instance.Close();
-
-            Logging.SaveLog("AppExitAsync End");
-        }
-        catch { }
-        finally
+            if (ex == null) Logging.SaveLog($"AppExitAsync exit={id} stage={message}");
+            else Logging.SaveLog($"AppExitAsync exit={id} stage={message}", ex);
+        });
+        Task Stage(string name, Func<Task> action) => stages.RunAsync(name, _ => action());
+        await stages.RunAsync("recovery", async _ => { if (ConnectionRecovery != null) await ConnectionRecovery.StopAsync(); }, TimeSpan.FromSeconds(3));
+        await stages.RunAsync("reload", async _ => { if (WaitForCoreReloadAsync != null) await WaitForCoreReloadAsync(); }, TimeSpan.FromSeconds(5));
+        // Stop owned cores before optional persistence work consumes the deadline.
+        await Stage("cores", async () =>
         {
-            if (needShutdown)
-            {
-                Shutdown(false);
-            }
-        }
+            var stopped = await CoreManager.Instance.CoreStop(token);
+            if (!stopped.Success) throw new IOException(stopped.Error);
+        });
+        await Stage("remaining", () => ProcessService.RetryFailedStopsAsync(CoreManager.Instance.RemainingProcesses.Select(p => p.Pid), token));
+        await Stage("detection", async () => { if (ExitInfoService.DesktopOwnsDetection) await ExitInfoService.Instance.StopAsync(); });
+        await Stage("proxy", async () =>
+        {
+            if (!await SysProxyHandler.UpdateSysProxy(_config, true, cancellationToken: token)) throw new IOException("System proxy cleanup failed.");
+        });
+        await Stage("ui", () => { AppEvents.AppExitRequested.Publish(); return Task.CompletedTask; });
+        await Stage("config", async () => { await ConfigHandler.SaveConfig(_config); });
+        await Stage("profiles", async () => { await ProfileExManager.Instance.SaveTo(); });
+        await Stage("statistics", async () => { await StatisticsManager.Instance.SaveTo(); StatisticsManager.Instance.Close(); });
+        var remaining = CoreManager.Instance.RemainingProcesses.Concat(ProcessService.FailedStopIdentities).Distinct().ToArray();
+        var errors = stages.Errors;
+        Logging.SaveLog($"AppExitAsync End exit={id} elapsedMs={elapsed.ElapsedMilliseconds} remaining={string.Join(",", remaining)} errors={string.Join("; ", errors)}");
+        return new(errors.Count == 0 && remaining.Length == 0, errors, remaining);
     }
 
     public void Shutdown(bool byUser)

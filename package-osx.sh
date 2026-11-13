@@ -27,6 +27,11 @@ if [[ -n "$PinnedCore" ]]; then
     rm "$PinnedCore"
 fi
 
+# Core archives may contain a legacy application icon. The application's own
+# published branding must remain authoritative after those archives are merged.
+cp -f "$ScriptDir/v2rayN/v2rayN.Desktop/v2rayN.icns" "$OutputPath/v2rayN.icns"
+cp -f "$ScriptDir/v2rayN/v2rayN.Desktop/v2rayN.png" "$OutputPath/v2rayN.png"
+
 PackagePath="v2rayN-Package-${Arch}"
 mkdir -p "$PackagePath/v2rayN.app/Contents/Resources"
 cp -rf "$OutputPath" "$PackagePath/v2rayN.app/Contents/MacOS"

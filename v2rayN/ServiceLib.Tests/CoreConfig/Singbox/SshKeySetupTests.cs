@@ -10,6 +10,15 @@ public class SshKeySetupTests
         if (!ok) throw new Exception(message);
     }
 
+    private static void WritePrivateFixture(string path, byte[] bytes)
+    {
+        // Test fixtures must also have private Windows ACLs. A plain copy/write
+        // inherits the runner temp directory's ACL and fails permission checking
+        // before the key identity or damaged payload under test is inspected.
+        using var stream = SshKeyStore.CreatePrivateFile(path);
+        stream.Write(bytes);
+    }
+
     private sealed class Sandbox : IDisposable
     {
         public string Path { get; } = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ssh-key-setup-" + Guid.NewGuid());
@@ -70,8 +79,7 @@ public class SshKeySetupTests
         var ssh = System.IO.Path.Combine(sandbox.Path, ".ssh");
         Directory.CreateDirectory(System.IO.Path.Combine(ssh, "nested"));
         var external = System.IO.Path.Combine(ssh, "my-key");
-        File.Copy(key.Path, external);
-        if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(external, (UnixFileMode)384);
+        WritePrivateFixture(external, File.ReadAllBytes(key.Path));
         File.Copy(key.Path, System.IO.Path.Combine(ssh, "nested", "hidden-key"));
         File.WriteAllText(System.IO.Path.Combine(ssh, "my-key.pub"), key.PublicKey);
         File.WriteAllText(System.IO.Path.Combine(ssh, "config"), "Host test\nHostName localhost\n");
@@ -130,8 +138,7 @@ public class SshKeySetupTests
         using var sandbox = new Sandbox();
         var key = await sandbox.Store.GenerateAsync(null, default);
         var broken = System.IO.Path.Combine(sandbox.Path, "broken");
-        File.WriteAllText(broken, "-----BEGIN OPENSSH PRIVATE KEY-----\nbroken\n-----END OPENSSH PRIVATE KEY-----\n");
-        if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(broken, (UnixFileMode)384);
+        WritePrivateFixture(broken, Encoding.UTF8.GetBytes("-----BEGIN OPENSSH PRIVATE KEY-----\nbroken\n-----END OPENSSH PRIVATE KEY-----\n"));
         Check(sandbox.Store.Inspect(broken)?.Error == "invalidKey", "damaged private key is rejected");
         var publicOnly = System.IO.Path.Combine(sandbox.Path, "public-only.pub");
         File.WriteAllText(publicOnly, key.PublicKey);

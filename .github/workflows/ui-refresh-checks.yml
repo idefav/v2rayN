@@ -39,9 +39,55 @@ jobs:
       - name: Build UI review
         working-directory: v2rayN
         run: dotnet build v2rayN.Desktop.Review -c Release -p:UsedAvaloniaProducts=
+      - name: Verify review failures return a failing exit code
+        shell: bash
+        working-directory: v2rayN
+        run: |
+          result=0
+          dotnet v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll ../artifacts/expected-review-failure --headless --verify-failure-exit || result=$?
+          test "$result" -eq 1
+          test -f ../artifacts/expected-review-failure/failure.txt
+          grep -Fq 'Expected review failure for exit-code regression.' ../artifacts/expected-review-failure/failure.txt
       - name: Render actual controls and check navigation
         working-directory: v2rayN
         run: dotnet v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll ../artifacts/ui-review --headless
+      - name: Check V3 connection intent and keyboard regressions
+        working-directory: v2rayN
+        run: dotnet v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll ../artifacts/workspace-v3 --headless --workspace-v3-only
+      - name: Check production startup and native menu ownership
+        working-directory: v2rayN
+        run: dotnet v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll ../artifacts/startup-headless --headless --startup-only
+      - name: Check macOS native production startup
+        if: runner.os == 'macOS'
+        working-directory: v2rayN
+        run: dotnet v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll ../artifacts/startup-native --startup-only
+      - name: Check independent windows, authorization and tray actions
+        working-directory: v2rayN
+        run: dotnet v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll ../artifacts/workspace-v4 --headless --workspace-v4-only
+      - name: Check animated server drawer, button pixels and colored status icons
+        working-directory: v2rayN
+        run: dotnet v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll ../artifacts/workspace-v5 --headless --workspace-v5-only
+      - name: Check macOS native drawer and colored status item
+        if: runner.os == 'macOS'
+        working-directory: v2rayN
+        run: dotnet v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll ../artifacts/workspace-v5-native --workspace-v5-only
+      - name: Check non-modal feedback timing, focus and actual-mode colors
+        working-directory: v2rayN
+        run: dotnet v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll ../artifacts/workspace-v6 --headless --workspace-v6-only
+      - name: Check macOS native feedback and authorization coexistence
+        if: runner.os == 'macOS'
+        working-directory: v2rayN
+        run: dotnet v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll ../artifacts/workspace-v6-native --workspace-v6-only
+      - name: Check compact home bounds, long text and keyboard details
+        working-directory: v2rayN
+        run: dotnet v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll ../artifacts/workspace-v7 --headless --workspace-v7-only
+      - name: Check English compact home with larger interface font
+        working-directory: v2rayN
+        run: dotnet v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll ../artifacts/workspace-v7-en --headless --workspace-v7-only --language=en --font=18
+      - name: Check macOS native compact home and keyboard details
+        if: runner.os == 'macOS'
+        working-directory: v2rayN
+        run: dotnet v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll ../artifacts/workspace-v7-native --workspace-v7-only
       - name: Service regression tests
         working-directory: v2rayN
         run: dotnet test --project ServiceLib.Tests -c Release --results-directory ../artifacts/tests -- --report-trx

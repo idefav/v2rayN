@@ -28,10 +28,12 @@ public partial class ReviewApp
             Mtu = 9000, IcmpRouting = Global.TunIcmpRoutingPolicies.First(), EnableLegacyProtect = true
         };
         await _main.OpenSettingsAsync("Core");
-        var options = _main.GetLogicalDescendants().OfType<OptionSettingWindow>().Single().ViewModel!;
+        var options = _main.WorkspaceWindow.GetLogicalDescendants().OfType<OptionSettingWindow>().Single().ViewModel!;
         Check(!options.ManagesTunSettings, "Avalonia options do not overwrite the independent TUN draft");
         await _main.OpenSettingsAsync("Tun");
-        var page = _main.GetLogicalDescendants().OfType<TunSettingsWindow>().Single();
+        var host = _main.WorkspaceWindow;
+        host.Width = Math.Max(host.MinWidth, Program.Width);
+        var page = host.GetLogicalDescendants().OfType<TunSettingsWindow>().Single();
         await page.ViewModel!.Initialization;
         // Production saving checks the future TUN graph even while inactive.
         // The review uses an explicit fixture model and never probes the synthetic SSH node.
@@ -52,9 +54,8 @@ public partial class ReviewApp
         Check(navButtons.Where(b => !b.Classes.Contains("isCurrent")).All(b => b.BorderBrush is Avalonia.Media.ISolidColorBrush brush && brush.Color.A == 0),
             "unselected navigation is flat rather than outlined button cards");
         var rail = page.FindControl<Border>("navigationRail")!;
-        if (page.Bounds.Width > 760)
-            Check(Math.Abs(rail.Bounds.Width - (page.Bounds.Width > 1100 ? 168 : 152)) < 1,
-                "navigation width follows the original 168/152 px design columns");
+        Check(page.IsEmbedded && Grid.GetRow(rail) == 0 && rail.Bounds.Width <= page.Bounds.Width,
+            "embedded TUN sections use the settings content width without a second sidebar");
 
         page.SelectGroup("dns");
         var dns = page.GetLogicalDescendants().OfType<ComboBox>()
@@ -149,8 +150,8 @@ public partial class ReviewApp
         foreach (var name in new[] { "saveChanges", "discardChanges", "resetGroup" })
         {
             var button = page.FindControl<Button>(name)!;
-            var point = button.TranslatePoint(default, _main);
-            Check(point != null && point.Value.X >= -1 && point.Value.X + button.Bounds.Width <= _main.ClientSize.Width + 1,
+            var point = button.TranslatePoint(default, host);
+            Check(point != null && point.Value.X >= -1 && point.Value.X + button.Bounds.Width <= host.ClientSize.Width + 1,
                 "footer action remains visible: " + name);
         }
         Check(!config.TunModeItem.EnableTun, "UI review never enables real TUN");

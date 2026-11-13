@@ -7,6 +7,7 @@ namespace v2rayN.Desktop;
 
 public partial class App : Application
 {
+    internal WorkspaceTray? MenuBar { get; private set; }
     public override void Initialize()
     {
         AvaloniaXamlLoader.Load(this);
@@ -32,6 +33,18 @@ public partial class App : Application
             var mainWindow = (MainWindow)viewLocator.Build(mainWindowViewModel);
             mainWindow.ViewModel = mainWindowViewModel;
             desktop.MainWindow = mainWindow;
+            if (TrayIcon.GetIcons(this)?.FirstOrDefault() is { } tray)
+            {
+                var menu = WorkspaceTray.Attach(tray, mainWindow);
+                MenuBar = menu;
+                desktop.Exit += (_, _) => menu.Dispose();
+            }
+            desktop.ShutdownRequested += (_, e) =>
+            {
+                if (mainWindow.AllowsShutdown) return;
+                e.Cancel = true;
+                _ = mainWindow.RequestExitAsync();
+            };
             _ = ServiceLib.Services.ExitInfoService.Instance.StartAsync();
             desktop.Exit += (_, _) => ServiceLib.Services.ExitInfoService.Instance.Stop();
 
@@ -172,10 +185,8 @@ public partial class App : Application
 
     private async void MenuExit_Click(object? sender, EventArgs e)
     {
-        if (Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime { MainWindow: MainWindow window }
-            && !await window.PrepareExitAsync()) return;
-        await AppManager.Instance.AppExitAsync(false);
-        AppManager.Instance.Shutdown(true);
+        if (Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime { MainWindow: MainWindow window })
+            await window.RequestExitAsync();
     }
 
     #endregion App Event
