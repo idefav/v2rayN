@@ -529,7 +529,7 @@ public partial class ReviewApp : v2rayN.Desktop.App
         Check(!model.HasCountryMatches, "region picker exposes an empty search state");
         model.CountrySearch = ""; regionPicker.IsExpanded = false;
         await CaptureAsync("proxy-check-options-jump", "Check options · owned modal window", optionsWindow);
-        Check(optionsWindow.Owner == _main && optionsWindow.IsVisible && !optionsWindow.ShowInTaskbar,
+        Check(optionsWindow.Owner == TopLevel.GetTopLevel(page) && optionsWindow.IsVisible && !optionsWindow.ShowInTaskbar,
             "check options open in an owned modal window instead of expanding the page");
         Check(pageScroll.Offset == pageOffset && pageScroll.Extent == pageExtent,
             "opening check options preserves the main page scroll position and extent");
@@ -917,6 +917,8 @@ public partial class ReviewApp : v2rayN.Desktop.App
         await Task.Delay(300);
         await _main.WorkspaceWindow.GetLogicalDescendants().OfType<SubSettingWindow>().Single().ViewModel!.RefreshSubItems();
         var subscriptions = _main.WorkspaceWindow.GetLogicalDescendants().OfType<SubSettingWindow>().Single().FindControl<DataGrid>("lstSubscription")!;
+        await WaitForUiAsync(() => subscriptions.ItemsSource?.Cast<object>().Any() == true,
+            "subscription rows bind after navigating to their settings page");
         subscriptions.SelectedItem = subscriptions.ItemsSource.Cast<object>().First();
         await CaptureAsync("01", "订阅管理", _main);
         await ShowAsync("02", "编辑订阅", new SubEditViewModel(new SubItem { Remarks = "机场订阅", Url = "https://subscription.example.com/list" }));
@@ -1216,11 +1218,17 @@ public partial class ReviewApp : v2rayN.Desktop.App
         var active = _vm.ProfilesViewModel.ProfileItems.First();
         var originalActive = active.IsActive;
         active.IsActive = true;
+        // SelectedItem alone can retain the previous item in an extended-
+        // selection grid. Model the unmodified single click being reviewed.
+        table.SelectedItems.Clear();
         table.SelectedItem = _vm.ProfilesViewModel.ProfileItems[1];
+        await WaitForUiAsync(() => table.SelectedItems.Count == 1 && !table.SelectedItems.Contains(active),
+            "single-row selection replaces the previously selected active server");
         await Task.Delay(1100);
         await CaptureAsync("active-unselected", "活动行与其他选中行", _main);
         var activeRow = table.GetVisualDescendants().OfType<DataGridRow>().Single(r => r.DataContext == active);
-        Check(activeRow.Classes.Contains("activeServer") && !activeRow.IsSelected, "active highlight remains when another server is selected");
+        Check(activeRow.Classes.Contains("activeServer") && !activeRow.IsSelected,
+            $"active highlight remains when another server is selected (active={active.IsActive}, class={activeRow.Classes.Contains("activeServer")}, selected={activeRow.IsSelected})");
         table.SelectedItem = active;
         await CaptureAsync("active-selected", "活动且选中", _main);
         Check(activeRow.Classes.Contains("activeServer") && activeRow.IsSelected, "active and selected states coexist");
@@ -1971,6 +1979,15 @@ public partial class ReviewApp : v2rayN.Desktop.App
     }
 
     private void Check(bool passed, string message) { if (!passed) throw new InvalidOperationException(message); _checks.Add(message); }
+    private static async Task WaitForUiAsync(Func<bool> ready, string message)
+    {
+        var elapsed = System.Diagnostics.Stopwatch.StartNew();
+        while (!ready())
+        {
+            if (elapsed.Elapsed > TimeSpan.FromSeconds(5)) throw new TimeoutException(message);
+            await Task.Delay(25);
+        }
+    }
     private async Task WaitForDrawerAsync()
     {
         for (var i = 0; i < 100 && _main.ServerDrawer?.IsAnimating == true; i++) await Task.Delay(10);
