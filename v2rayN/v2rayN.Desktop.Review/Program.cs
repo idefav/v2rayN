@@ -1218,10 +1218,16 @@ public partial class ReviewApp : v2rayN.Desktop.App
         var active = _vm.ProfilesViewModel.ProfileItems.First();
         var originalActive = active.IsActive;
         active.IsActive = true;
+        // Queue model changes before the newer user selection. Their dispatcher
+        // notifications must not restore a stale row afterwards.
+        _vm.ProfilesViewModel.SelectedProfile = _vm.ProfilesViewModel.ProfileItems[2];
+        _vm.ProfilesViewModel.SelectedProfile = active;
         // SelectedItem alone can retain the previous item in an extended-
         // selection grid. Model the unmodified single click being reviewed.
         table.SelectedItems.Clear();
         table.SelectedItem = _vm.ProfilesViewModel.ProfileItems[1];
+        Check(ReferenceEquals(_vm.ProfilesViewModel.SelectedProfile, table.SelectedItem),
+            "server selection updates the current profile before queued refreshes can restore stale state");
         await WaitForUiAsync(() => table.SelectedItems.Count == 1 && !table.SelectedItems.Contains(active),
             "single-row selection replaces the previously selected active server");
         await Task.Delay(1100);
