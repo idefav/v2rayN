@@ -47,6 +47,7 @@ jobs:
           dotnet v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll ../artifacts/expected-review-failure --headless --verify-failure-exit || result=$?
           test "$result" -eq 1
           test -f ../artifacts/expected-review-failure/failure.txt
+          grep -Fq 'Expected review failure for exit-code regression.' ../artifacts/expected-review-failure/failure.txt
       - name: Render actual controls and check navigation
         working-directory: v2rayN
         run: dotnet v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll ../artifacts/ui-review --headless

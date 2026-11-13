@@ -129,6 +129,11 @@ internal static class Program
             throw new InvalidOperationException("UI review needs its own writable directory; it must never fall back to production user configuration.");
         if (!File.Exists(Utils.GetBaseDirectory("v2rayN.Desktop.Review.dll")))
             throw new InvalidOperationException("UI review can only initialize fixtures beside its own executable.");
+        // MainWindow subscribes to the Windows startup signal normally created
+        // by Program.Main. Use an unnamed, process-local signal in this harness
+        // so review never contacts or acquires the running client's instance.
+        if (OperatingSystem.IsWindows())
+            v2rayN.Desktop.Program.ProgramStarted = new EventWaitHandle(false, EventResetMode.AutoReset);
         // Discard this executable's disposable fixture database, not the user's saved configuration.
         foreach (var suffix in new[] { "", "-wal", "-shm" })
         {

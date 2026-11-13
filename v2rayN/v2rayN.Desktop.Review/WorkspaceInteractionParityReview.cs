@@ -136,8 +136,11 @@ public partial class ReviewApp
             await _main.NavigateAsync("Home");
             status.CloseConnectionControls();
             status.FindControl<ComboBox>("pickerScope")!.SelectedIndex = 0;
-            status.FindControl<TextBox>("txtServerSearch")!.Text = first.Remarks;
             status.FindControl<Button>("btnConnectionControls")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            await WaitForDrawerAsync();
+            // Every open intentionally clears the old filter to reveal the
+            // selected server. Enter this test's query after opening the drawer.
+            status.FindControl<TextBox>("txtServerSearch")!.Text = first.Remarks;
             var choices = status.FindControl<StackPanel>("serverChoices")!;
             for (var i = 0; i < 50 && choices.Children.Count != 2; i++) await Task.Delay(20);
             Check(choices.Children.Count == 2, "same-name servers both appear in the inline picker");
@@ -156,6 +159,8 @@ public partial class ReviewApp
             _main.Width = 800;
             _main.Height = 600;
             status.FindControl<Button>("btnConnectionControls")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            await WaitForDrawerAsync();
+            status.FindControl<TextBox>("txtServerSearch")!.Text = first.Remarks;
             for (var i = 0; i < 50 && choices.Children.Count != 2; i++) await Task.Delay(20);
             await CaptureAsync("v3-interaction-picker-small", "Same-name selection at 800x600", _main);
             select = choices.GetVisualDescendants().OfType<Button>().Single(b => b.Name == "select-" + second.IndexId);
