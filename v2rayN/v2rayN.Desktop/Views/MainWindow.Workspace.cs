@@ -141,7 +141,7 @@ public partial class MainWindow
         _settingsFeedback.DiagnosticsRequested += () => OpenSettingsAsync("Logs");
         _settingsFeedback.Present(false);
         Activated += (_, _) => RouteConnectionFeedback();
-        PropertyChanged += (_, args) => { if (args.Property == IsVisibleProperty) RouteConnectionFeedback(); };
+        PropertyChanged += (_, args) => { if (args.Property == IsVisibleProperty || args.Property == WindowStateProperty) RouteConnectionFeedback(); };
         status.SetWindowHeaderInset(56);
         _serverDrawer = new ConnectionDrawer(this, status, connectionHeader);
         BuildSettingsWorkspace();
@@ -232,7 +232,7 @@ public partial class MainWindow
         }, RoutingStrategies.Bubble);
         window.SizeChanged += (_, _) => ResizeWorkspace();
         window.Activated += (_, _) => { HotkeyManager.Instance.IsPause = _settingsKey == "Hotkeys"; RouteConnectionFeedback(); };
-        window.PropertyChanged += (_, args) => { if (args.Property == IsVisibleProperty) RouteConnectionFeedback(); };
+        window.PropertyChanged += (_, args) => { if (args.Property == IsVisibleProperty || args.Property == WindowStateProperty) RouteConnectionFeedback(); };
         window.Deactivated += (_, _) => HotkeyManager.Instance.IsPause = false;
         window.Closing += async (_, e) =>
         {
@@ -679,17 +679,22 @@ public partial class MainWindow
     {
         if (state == null || AppManager.Instance.IsExiting || _connectionFeedback == null) return;
         RouteConnectionFeedback();
-        ConnectionFeedback?.Update(state, IsVisible || _settingsWindow?.IsVisible == true);
+        ConnectionFeedback?.Update(state, CanPresentFeedback(this) || CanPresentFeedback(_settingsWindow));
     }
+
+    private static bool CanPresentFeedback(Window? window) =>
+        window is { IsVisible: true, WindowState: not WindowState.Minimized };
 
     private void RouteConnectionFeedback()
     {
         if (_connectionFeedback == null || _settingsFeedback == null) return;
-        var settings = _settingsWindow?.IsVisible == true && (_settingsWindow.IsActive || !IsVisible);
-        if (!IsVisible && _settingsWindow?.IsVisible != true) _connectionFeedback.Dismiss();
+        var mainVisible = CanPresentFeedback(this);
+        var settingsVisible = CanPresentFeedback(_settingsWindow);
+        var settings = settingsVisible && (_settingsWindow!.IsActive || !mainVisible);
+        if (!mainVisible && !settingsVisible) _connectionFeedback.Dismiss();
         // Each top level owns its visual tree. Only state crosses windows; moving a live
         // control during activation can leave it queued in the previous LayoutManager.
-        _connectionFeedback.Present(!settings);
+        _connectionFeedback.Present(mainVisible && !settings);
         _settingsFeedback.Present(settings);
     }
 

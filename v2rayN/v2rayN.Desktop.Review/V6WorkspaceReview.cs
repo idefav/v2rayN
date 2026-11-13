@@ -122,12 +122,20 @@ public partial class ReviewApp
             $"settings feedback stays in settings and does not claim the core connected (mainActive={_main.IsActive}, settingsActive={_main.SettingsWindow!.IsActive}, top={TopLevel.GetTopLevel(feedback)?.Name})");
         _vm.StatusBarViewModel.ReportTransition(new(ConnectionStage.Failed, true) { OperationId = id - 1 }); await Task.Delay(50);
         Check(_vm.StatusBarViewModel.Transition?.OperationId == id && feedback.State.Current?.OperationId == id, "view model and notice both reject obsolete operation reports");
-        _main.SettingsWindow!.Hide(); _main.ShowHideWindow(false);
+        // Linux may minimize on close when hiding to the tray is disabled.
+        // Exercise hidden and minimized states separately on every platform.
+        _main.SettingsWindow!.Hide(); _main.Hide();
         id = ConnectionTransition.NewOperationId(); Send(ConnectionStage.Starting); await Task.Delay(450); Send(ConnectionStage.Completed); await Task.Delay(50);
         Check(!_main.IsVisible && !_main.SettingsWindow.IsVisible && !feedback.NoticeVisible, "background progress never activates hidden windows");
         _main.ShowHideWindow(true); await _main.NavigateAsync("Home"); await Task.Delay(50);
         feedback = _main.ConnectionFeedback!;
         Check(!feedback.NoticeVisible, "returning to the app does not replay hidden success");
+        _main.WindowState = WindowState.Minimized;
+        id = ConnectionTransition.NewOperationId(); Send(ConnectionStage.Starting); await Task.Delay(450); Send(ConnectionStage.Completed); await Task.Delay(50);
+        Check(_main.WindowState == WindowState.Minimized && !feedback.NoticeVisible,
+            "background progress neither restores minimized windows nor displays a notice");
+        _main.ShowHideWindow(true); await Task.Delay(50);
+        Check(!feedback.NoticeVisible, "restoring a minimized window does not replay background success");
         _vm.StatusBarViewModel.ConnectionError = null;
         id = ConnectionTransition.NewOperationId(); Send(ConnectionStage.Starting); await Task.Delay(450);
         var host = _main.GetVisualDescendants().OfType<DialogHost>().Single();
