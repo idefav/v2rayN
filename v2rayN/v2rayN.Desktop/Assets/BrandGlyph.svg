@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none">
+  <title>v2rayN · 对向接续单色标记</title>
+  <g stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M5 15V10C5 7.239 7.239 5 10 5H15"/>
+    <path d="M9 19H14C16.761 19 19 16.761 19 14V9"/>
+  </g>
+</svg>

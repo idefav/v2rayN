@@ -50,7 +50,9 @@ public class GlobalHotkeySettingViewModel : MyReactiveObject, ICloseable
 
     private async Task SaveSettingAsync()
     {
-        _config.GlobalHotkeys = _globalHotkeys;
+        // Embedded settings stay open after saving. Subsequent edits must remain a draft.
+        var previous = _config.GlobalHotkeys;
+        _config.GlobalHotkeys = JsonUtils.DeepCopy(_globalHotkeys);
 
         if (await ConfigHandler.SaveConfig(_config) == 0)
         {
@@ -58,6 +60,7 @@ public class GlobalHotkeySettingViewModel : MyReactiveObject, ICloseable
         }
         else
         {
+            _config.GlobalHotkeys = previous;
             NoticeManager.Instance.Enqueue(ResUI.OperationFailed);
         }
     }

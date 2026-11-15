@@ -42,7 +42,8 @@ public class StatisticsSingboxService
         {
             try
             {
-                if (!AppManager.Instance.IsRunningCore(ECoreType.sing_box))
+                if ((!_config.GuiItem.EnableStatistics && !_config.GuiItem.DisplayRealTimeSpeed)
+                    || !AppManager.Instance.IsRunningCore(ECoreType.sing_box))
                 {
                     await Task.Delay(1000, token).ConfigureAwait(false);
                     continue;
@@ -52,6 +53,7 @@ public class StatisticsSingboxService
 
                 var buffer = new byte[1024];
                 while (ws.State == WebSocketState.Open
+                    && (_config.GuiItem.EnableStatistics || _config.GuiItem.DisplayRealTimeSpeed)
                     && !token.IsCancellationRequested)
                 {
                     var res = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), token);

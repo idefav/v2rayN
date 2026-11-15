@@ -5,6 +5,15 @@ namespace ServiceLib.Manager;
 
 public class CoreAdminManager
 {
+    internal static async Task<bool> ValidateAuthorizationAsync(string password, CancellationToken token)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
+        timeout.CancelAfter(TimeSpan.FromSeconds(5));
+        var result = await Cli.Wrap("/usr/bin/sudo").WithArguments(["-S", "-p", "", "-v"])
+            .WithStandardInputPipe(PipeSource.FromString(password + "\n"))
+            .WithValidation(CommandResultValidation.None).ExecuteBufferedAsync(timeout.Token);
+        return result.ExitCode == 0;
+    }
     private static readonly Lazy<CoreAdminManager> _instance = new(() => new());
     public static CoreAdminManager Instance => _instance.Value;
     private Func<bool, string, Task>? _updateFunc;

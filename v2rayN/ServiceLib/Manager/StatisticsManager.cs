@@ -12,20 +12,28 @@ public class StatisticsManager
 
     private StatisticsXrayService? _statisticsXray;
     private StatisticsSingboxService? _statisticsSingbox;
+    private readonly SemaphoreSlim _initializationGate = new(1, 1);
     private static readonly string _tag = "StatisticsHandler";
     public List<ServerStatItem> ServerStat => _lstServerStat;
 
     public async Task Init(Config config, Func<ServerSpeedItem, Task> updateFunc)
     {
-        _config = config;
-        _updateFunc = updateFunc;
-        if (config.GuiItem.EnableStatistics || _config.GuiItem.DisplayRealTimeSpeed)
+        await _initializationGate.WaitAsync();
+        try
         {
-            await InitData();
+            _config = config;
+            _updateFunc = updateFunc;
+            if (_statisticsSingbox != null || AppManager.Instance.IsExiting) return;
+            if (config.GuiItem.EnableStatistics || _config.GuiItem.DisplayRealTimeSpeed)
+            {
+                await InitData();
+                if (AppManager.Instance.IsExiting) return;
 
-            _statisticsXray = new StatisticsXrayService(config, UpdateServerStatHandler);
-            _statisticsSingbox = new StatisticsSingboxService(config, UpdateServerStatHandler);
+                _statisticsXray = new StatisticsXrayService(config, UpdateServerStatHandler);
+                _statisticsSingbox = new StatisticsSingboxService(config, UpdateServerStatHandler);
+            }
         }
+        finally { _initializationGate.Release(); }
     }
 
     public void Close()

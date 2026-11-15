@@ -2,6 +2,18 @@ namespace ServiceLib.ViewModels;
 
 public partial class StatusBarViewModel : MyReactiveObject
 {
+    [Reactive]
+    public partial ConnectionTransition? Transition { get; set; }
+
+    internal void ReportTransition(ConnectionTransition transition)
+        => RxSchedulers.MainThreadScheduler.Schedule(() =>
+        {
+            if (Transition is { } current && transition.OperationId > 0 && current.OperationId > 0
+                && (transition.OperationId < current.OperationId
+                    || transition.OperationId == current.OperationId && current.IsTerminal)) return;
+            Transition = transition;
+        });
+
     public Interaction<string, RxVoid> SetClipboardDataInteraction { get; } = new();
     public Interaction<RxVoid, string?> PasswordInputInteraction { get; } = new();
     public Interaction<RxVoid, RxVoid> DispatcherRefreshIconInteraction { get; } = new();
@@ -106,6 +118,9 @@ public partial class StatusBarViewModel : MyReactiveObject
     public partial bool EnableTun { get; set; }
 
     [Reactive]
+    public partial bool HasPendingChanges { get; set; }
+
+    [Reactive]
     public partial bool BlIsNonWindows { get; set; }
 
     #endregion UI
@@ -119,14 +134,7 @@ public partial class StatusBarViewModel : MyReactiveObject
         BlSystemProxyPacVisible = Utils.IsWindows();
         BlIsNonWindows = Utils.IsNonWindows();
 
-        if (_config.TunModeItem.EnableTun && AllowEnableTun())
-        {
-            EnableTun = true;
-        }
-        else
-        {
-            _config.TunModeItem.EnableTun = EnableTun = false;
-        }
+        EnableTun = _config.TunModeItem.EnableTun;
 
         #region WhenAnyValue && ReactiveCommand
 
@@ -412,7 +420,22 @@ public partial class StatusBarViewModel : MyReactiveObject
 
     public async Task ChangeSystemProxyAsync(ESysProxyType type, bool blChange)
     {
-        await SysProxyHandler.UpdateSysProxy(_config, false, error => ConnectionError = error);
+        var operationId = blChange ? ConnectionTransition.NewOperationId() : 0;
+        if (blChange)
+        {
+            ConnectionError = null;
+            ReportTransition(new(ConnectionStage.ApplyingProxy, EnableTun, UpdatingProxy: true) { OperationId = operationId });
+        }
+        bool applied;
+        try { applied = await SysProxyHandler.UpdateSysProxy(_config, false, error => ConnectionError = error); }
+        catch (Exception ex)
+        {
+            ConnectionError = ex.Message;
+            if (blChange) ReportTransition(new(ConnectionStage.Failed, EnableTun, ex.Message, UpdatingProxy: true) { OperationId = operationId });
+            throw;
+        }
+        if (blChange) ReportTransition(new(applied ? ConnectionStage.Completed : ConnectionStage.Failed,
+            EnableTun, ConnectionError, UpdatingProxy: true) { OperationId = operationId });
 
         BlSystemProxyClear = type == ESysProxyType.ForcedClear;
         BlSystemProxySet = type == ESysProxyType.ForcedChange;
@@ -472,29 +495,44 @@ public partial class StatusBarViewModel : MyReactiveObject
         }
 
         _config.TunModeItem.EnableTun = EnableTun;
-
-        if (EnableTun && AllowEnableTun() == false)
-        {
-            // When running as a non-administrator, reboot to administrator mode
-            if (Utils.IsWindows())
-            {
-                _config.TunModeItem.EnableTun = false;
-                await AppManager.Instance.RebootAsAdmin();
-                return;
-            }
-            else
-            {
-                var password = await PasswordInputInteraction.HandleSafe(RxVoid.Default);
-                if (password.IsNullOrEmpty())
-                {
-                    _config.TunModeItem.EnableTun = false;
-                    return;
-                }
-            }
-        }
-
+        _tunAuthorization.Invalidate();
         await ConfigHandler.SaveConfig(_config);
         ReloadRequested.Publish();
+    }
+
+    private readonly TunAuthorization _tunAuthorization = new();
+    private readonly TaskCompletionSource _authorizationUiReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    public void MarkAuthorizationUiReady() => _authorizationUiReady.TrySetResult();
+
+    internal async Task<bool> EnsureTunAuthorizationAsync()
+    {
+        if (!_config.TunModeItem.EnableTun) return true;
+        if (Utils.IsWindows())
+        {
+            if (AllowEnableTun()) return true;
+            await AppManager.Instance.RebootAsAdmin();
+            return false;
+        }
+        var token = AppManager.Instance.ExitToken;
+        await _authorizationUiReady.Task.WaitAsync(token);
+        if (AppManager.Instance.LinuxSudoPwd.IsNotEmpty())
+        {
+            if (await CoreAdminManager.ValidateAuthorizationAsync(AppManager.Instance.LinuxSudoPwd, token)) return true;
+            AppManager.Instance.LinuxSudoPwd = string.Empty;
+        }
+        ConnectionError = "等待 TUN 授权，设置尚未应用 / Waiting for TUN authorization; settings not applied.";
+        var result = await _tunAuthorization.RequestAsync(
+            async () => await PasswordInputInteraction.HandleSafe(RxVoid.Default), CoreAdminManager.ValidateAuthorizationAsync, token);
+        if (result.State == TunAuthorizationState.Authorized && _config.TunModeItem.EnableTun && !AppManager.Instance.IsExiting)
+        {
+            AppManager.Instance.LinuxSudoPwd = result.Password!;
+            ConnectionError = null;
+            return true;
+        }
+        ConnectionError = result.State == TunAuthorizationState.Failed
+            ? "TUN 授权失败；设置尚未应用，点击重启服务重试 / TUN authorization failed; restart service to retry."
+            : "TUN 授权已取消或过期；设置尚未应用，点击重启服务重试 / TUN authorization cancelled or superseded; restart service to retry.";
+        return false;
     }
 
     private bool AllowEnableTun()

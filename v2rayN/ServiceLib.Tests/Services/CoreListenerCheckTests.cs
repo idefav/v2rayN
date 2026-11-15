@@ -63,13 +63,26 @@ public class CoreListenerCheckTests
     [Test]
     public async Task UdpListenerIsDetected()
     {
-        using var udp = new UdpClient(new IPEndPoint(IPAddress.Loopback, 0));
-        var port = ((IPEndPoint)udp.Client.LocalEndPoint!).Port;
-        var denied = false;
-        try { await CoreListenerCheck.EnsureAvailableAsync([new(IPAddress.Loopback, port, ProtocolType.Udp)]); }
-        catch (IOException) { denied = true; }
-        Check(denied, "occupied UDP port was missed");
-        await CoreListenerCheck.EnsureAvailableAsync([new(IPAddress.Loopback, port, ProtocolType.Tcp)]);
+        for (var attempt = 0; attempt < 20; attempt++)
+        {
+            // TCP and UDP allocate ephemeral ports independently. Reserve TCP
+            // first so a UDP allocation cannot select a running system service's
+            // TCP port (common on Windows), then establish the UDP fixture.
+            using var tcp = new TcpListener(IPAddress.Loopback, 0);
+            tcp.Start();
+            var port = ((IPEndPoint)tcp.LocalEndpoint).Port;
+            using var udp = new UdpClient(AddressFamily.InterNetwork);
+            try { udp.Client.Bind(new IPEndPoint(IPAddress.Loopback, port)); }
+            catch (SocketException ex) when (ex.SocketErrorCode == SocketError.AddressAlreadyInUse) { continue; }
+            var denied = false;
+            try { await CoreListenerCheck.EnsureAvailableAsync([new(IPAddress.Loopback, port, ProtocolType.Udp)]); }
+            catch (IOException) { denied = true; }
+            Check(denied, "occupied UDP port was missed");
+            tcp.Stop();
+            await CoreListenerCheck.EnsureAvailableAsync([new(IPAddress.Loopback, port, ProtocolType.Tcp)]);
+            return;
+        }
+        throw new IOException("Could not reserve an isolated TCP/UDP port pair for the fixture.");
     }
 
     [Test]
@@ -95,7 +108,7 @@ public class CoreListenerCheckTests
     }
 
     [Test]
-    public async Task ElevatedCheckUsesLaunchCredentialsOnlyWhenLocalBindFails()
+    public async Task ElevatedCheckAlwaysUsesTargetLaunchCredentials()
     {
         using var reserved = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
         reserved.Bind(new IPEndPoint(IPAddress.Loopback, 0));
@@ -117,12 +130,13 @@ public class CoreListenerCheckTests
         catch (IOException ex) { denied = ex.Message.Contains("elevation refused"); }
         Check(denied, "elevation failure was treated as an available port");
         reserved.Listen(1);
-        try { await CoreListenerCheck.EnsureAvailableAsync([endpoint], (_, _) => { probes++; return Task.FromResult(SocketError.Success); }); }
+        try { await CoreListenerCheck.EnsureAvailableAsync([endpoint], (_, _) => { probes++; return Task.FromResult(SocketError.AddressAlreadyInUse); }); }
         catch (IOException) { }
-        Check(probes == 1, "a known listener was bypassed through elevation");
+        Check(probes >= 2, "a known listener was not checked with target credentials");
+        var previousProbes = probes;
         reserved.Close();
         await CoreListenerCheck.EnsureAvailableAsync([endpoint], (_, _) => { probes++; return Task.FromResult(SocketError.Success); });
-        Check(probes == 1, "an available port unnecessarily requested elevation");
+        Check(probes == previousProbes + 1, "an available port was not checked with target credentials");
     }
 
     [Test]

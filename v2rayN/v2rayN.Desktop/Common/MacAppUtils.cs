@@ -17,6 +17,10 @@ internal static class MacAppUtils
         => window.TryGetPlatformHandle() is IMacOSTopLevelPlatformHandle { NSWindow: not 0 } handle
             && objc_msgSend_bool(handle.NSWindow, sel_registerName("isMiniaturized"));
 
+    internal static bool PrefersReducedMotion()
+        => objc_msgSend_bool(objc_msgSend(objc_getClass("NSWorkspace"), sel_registerName("sharedWorkspace")),
+            sel_registerName("accessibilityDisplayShouldReduceMotion"));
+
     [DllImport(LibObjC)]
     private static extern nint objc_getClass(string name);
 

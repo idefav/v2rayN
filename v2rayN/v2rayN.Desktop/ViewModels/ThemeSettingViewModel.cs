@@ -13,11 +13,42 @@ public partial class ThemeSettingViewModel : MyReactiveObject
 
     [Reactive] public partial string CurrentLanguage { get; set; }
 
-    public ThemeSettingViewModel()
+    [Reactive] public partial string CurrentFontFamily { get; set; }
+    public bool IsDraft { get; }
+    private static Style? _fontStyle;
+
+    public ThemeSettingViewModel(bool editAsDraft = false)
     {
         _config = AppManager.Instance.Config;
-
+        IsDraft = editAsDraft;
         BindingUI();
+        RestoreUI();
+    }
+
+    public async Task SaveAsync()
+    {
+        if (!Enum.TryParse<ETheme>(CurrentTheme, out _) || CurrentFontSize < Global.MinFontSize
+            || CurrentFontSize >= Global.MinFontSize + Global.MinFontSizeCount || string.IsNullOrWhiteSpace(CurrentLanguage))
+            throw new InvalidOperationException(Common.WorkspaceText.T("请选择有效的主题、字号和语言。", "Choose a valid theme, font size and language."));
+        var ui = _config.UiItem;
+        var previous = (ui.CurrentTheme, ui.CurrentFontSize, ui.CurrentLanguage, ui.CurrentFontFamily);
+        ui.CurrentTheme = CurrentTheme; ui.CurrentFontSize = CurrentFontSize;
+        ui.CurrentLanguage = CurrentLanguage; ui.CurrentFontFamily = CurrentFontFamily;
+        if (await ConfigHandler.SaveConfig(_config) != 0)
+        {
+            (ui.CurrentTheme, ui.CurrentFontSize, ui.CurrentLanguage, ui.CurrentFontFamily) = previous;
+            throw new IOException(Common.WorkspaceText.T("外观设置保存失败，草稿已保留。", "Could not save appearance; the draft is retained."));
+        }
+        RestoreUI();
+        if (previous.CurrentLanguage != CurrentLanguage) NoticeManager.Instance.Enqueue(ResUI.NeedRebootTips);
+    }
+
+    public void RevertPreview()
+    {
+        CurrentTheme = _config.UiItem.CurrentTheme ?? nameof(ETheme.FollowSystem);
+        CurrentFontSize = _config.UiItem.CurrentFontSize >= Global.MinFontSize ? _config.UiItem.CurrentFontSize : 14;
+        CurrentLanguage = _config.UiItem.CurrentLanguage;
+        CurrentFontFamily = _config.UiItem.CurrentFontFamily ?? string.Empty;
         RestoreUI();
     }
 
@@ -33,12 +64,14 @@ public partial class ThemeSettingViewModel : MyReactiveObject
         CurrentTheme = Enum.TryParse<ETheme>(_config.UiItem.CurrentTheme, out var theme) ? theme.ToString() : nameof(ETheme.FollowSystem);
         CurrentFontSize = _config.UiItem.CurrentFontSize >= Global.MinFontSize ? _config.UiItem.CurrentFontSize : 14;
         CurrentLanguage = _config.UiItem.CurrentLanguage;
+        CurrentFontFamily = _config.UiItem.CurrentFontFamily ?? string.Empty;
 
         this.WhenAnyValue(x => x.CurrentTheme)
             .Skip(1)
             .Where(y => y.IsNotEmpty())
             .SubscribeAsync(async _ =>
             {
+                if (IsDraft) { ModifyTheme(); return; }
                 if (_config.UiItem.CurrentTheme != CurrentTheme)
                 {
                     _config.UiItem.CurrentTheme = CurrentTheme;
@@ -52,6 +85,7 @@ public partial class ThemeSettingViewModel : MyReactiveObject
             .Where(y => y > 0)
             .SubscribeAsync(async _ =>
             {
+                if (IsDraft) { ModifyFontSize(); return; }
                 if (_config.UiItem.CurrentFontSize != CurrentFontSize && CurrentFontSize >= Global.MinFontSize)
                 {
                     _config.UiItem.CurrentFontSize = CurrentFontSize;
@@ -65,6 +99,7 @@ public partial class ThemeSettingViewModel : MyReactiveObject
             .Where(y => !y.IsNullOrEmpty())
             .SubscribeAsync(async _ =>
             {
+                if (IsDraft) return;
                 if (CurrentLanguage.IsNotEmpty() && _config.UiItem.CurrentLanguage != CurrentLanguage)
                 {
                     _config.UiItem.CurrentLanguage = CurrentLanguage;
@@ -73,6 +108,8 @@ public partial class ThemeSettingViewModel : MyReactiveObject
                     NoticeManager.Instance.Enqueue(ResUI.NeedRebootTips);
                 }
             });
+
+        this.WhenAnyValue(x => x.CurrentFontFamily).Skip(1).Subscribe(_ => ModifyFontFamily());
     }
 
     private void ModifyTheme()
@@ -112,7 +149,9 @@ public partial class ThemeSettingViewModel : MyReactiveObject
 
     private void ModifyFontFamily()
     {
-        var currentFontFamily = _config.UiItem.CurrentFontFamily;
+        if (_fontStyle != null) Application.Current?.Styles.Remove(_fontStyle);
+        _fontStyle = null;
+        var currentFontFamily = CurrentFontFamily;
         if (currentFontFamily.IsNullOrEmpty())
         {
             return;
@@ -138,6 +177,7 @@ public partial class ThemeSettingViewModel : MyReactiveObject
                 Property = TemplatedControl.FontFamilyProperty,
                 Value = new FontFamily(currentFontFamily),
             });
+            _fontStyle = style;
             Application.Current?.Styles.Add(style);
         }
         catch (Exception ex)

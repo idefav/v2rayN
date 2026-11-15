@@ -67,6 +67,7 @@ public partial class OptionSettingViewModel : MyReactiveObject, ICloseable
     public int InitialSection { get; init; }
     public bool OnlySourcesChanged { get; private set; }
     private string? _initialOtherSettings;
+    private bool _initialStatistics, _initialRealTimeSpeed;
     [Reactive] public partial string IPAPIUrl { get; set; }
     [Reactive] public partial bool AutoDetectExit { get; set; }
     [Reactive] public partial string RootCertProvider { get; set; }
@@ -189,6 +190,8 @@ public partial class OptionSettingViewModel : MyReactiveObject, ICloseable
         AutoRun = _config.GuiItem.AutoRun;
         EnableStatistics = _config.GuiItem.EnableStatistics;
         DisplayRealTimeSpeed = _config.GuiItem.DisplayRealTimeSpeed;
+        _initialStatistics = EnableStatistics;
+        _initialRealTimeSpeed = DisplayRealTimeSpeed;
         KeepOlderDedupl = _config.GuiItem.KeepOlderDedupl;
         EnableAutoAdjustMainLvColWidth = _config.UiItem.EnableAutoAdjustMainLvColWidth;
         AutoHideStartup = _config.UiItem.AutoHideStartup;
@@ -349,6 +352,11 @@ public partial class OptionSettingViewModel : MyReactiveObject, ICloseable
             NoticeManager.Instance.Enqueue(ResUI.FillFragmentParameterError);
             return;
         }
+        // The connection window remains interactive while this editor is open.
+        // Preserve live changes to fields the settings draft did not edit.
+        if (EnableStatistics == _initialStatistics) EnableStatistics = _config.GuiItem.EnableStatistics;
+        if (DisplayRealTimeSpeed == _initialRealTimeSpeed) DisplayRealTimeSpeed = _config.GuiItem.DisplayRealTimeSpeed;
+        var autoRunChanged = AutoRun != _config.GuiItem.AutoRun;
         var needReboot = EnableStatistics != _config.GuiItem.EnableStatistics
                           || DisplayRealTimeSpeed != _config.GuiItem.DisplayRealTimeSpeed
                         || EnableDragDropSort != _config.UiItem.EnableDragDropSort
@@ -448,9 +456,12 @@ public partial class OptionSettingViewModel : MyReactiveObject, ICloseable
 
         if (await ConfigHandler.SaveConfig(_config) == 0)
         {
+            _initialStatistics = EnableStatistics;
+            _initialRealTimeSpeed = DisplayRealTimeSpeed;
+            _initialOtherSettings = OtherSettingsSnapshot();
             if (!OnlySourcesChanged)
             {
-                await AutoStartupHandler.UpdateTask(_config);
+                if (autoRunChanged) await AutoStartupHandler.UpdateTask(_config);
                 AppManager.Instance.Reset();
             }
             foreach (var type in changedSources) AppManager.Instance.LastCheckUpdateResults.Remove(type);

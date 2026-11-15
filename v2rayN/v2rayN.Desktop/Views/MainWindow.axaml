@@ -11,9 +11,9 @@
     xmlns:ws="clr-namespace:v2rayN.Desktop.Common"
     xmlns:chrome="clr-namespace:Avalonia.Controls.Chrome;assembly=Avalonia.Controls"
     Title="v2rayN"
-    Width="1440"
-    Height="900"
-    MinWidth="600"
+    Width="440"
+    Height="560"
+    MinWidth="360"
     MinHeight="480"
     ExtendClientAreaToDecorationsHint="True"
     ExtendClientAreaTitleBarHeightHint="56"
@@ -24,31 +24,19 @@
     ShowInTaskbar="True"
     WindowStartupLocation="CenterScreen"
     mc:Ignorable="d">
-    <dialogHost:DialogHost CloseOnClickAway="False" DisableOpeningAnimation="True">
-        <Grid x:Name="shellGrid" ColumnDefinitions="196,*">
-            <Border x:Name="sidebar" Background="{DynamicResource WorkspaceSidebar}" BorderBrush="{DynamicResource WorkspaceBorder}" BorderThickness="0,0,1,0" Padding="8,56,8,16" chrome:WindowDecorationProperties.ElementRole="TitleBar">
-                <DockPanel chrome:WindowDecorationProperties.ElementRole="User">
-                    <StackPanel DockPanel.Dock="Top" Spacing="24">
-                        <StackPanel Orientation="Horizontal" Spacing="12" Margin="8,0,0,0">
-                            <Border Background="{DynamicResource WorkspaceSurface}" BorderBrush="{DynamicResource WorkspaceBorder}" BorderThickness="1" CornerRadius="6" Width="32" Height="32">
-                                <TextBlock Text="V" FontSize="22" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                            </Border>
-                            <TextBlock x:Name="brandLabel" Text="v2rayN" FontSize="20" FontWeight="SemiBold" VerticalAlignment="Center" />
-                        </StackPanel>
-                        <ListBox x:Name="navigation" Classes="workspaceNavigation" Background="Transparent" BorderThickness="0" />
-                    </StackPanel>
-                    <StackPanel DockPanel.Dock="Bottom" Spacing="8">
-                        <Button x:Name="btnSettings" Classes="nav" Content="{x:Static resx:ResUI.menuSetting}" />
-                        <Button x:Name="btnHelp" Classes="nav" Content="{x:Static resx:ResUI.menuHelp}" />
-                        <TextBlock x:Name="txtVersion" Classes="muted" Margin="12,8,0,0" TextTrimming="CharacterEllipsis" />
-                    </StackPanel>
-                    <Border />
-                </DockPanel>
-            </Border>
-        <DockPanel Grid.Column="1" Margin="24,0,24,12">
-            <DockPanel x:Name="pageHeader" Background="Transparent" MinHeight="56" Margin="0,0,0,12" DockPanel.Dock="Top" chrome:WindowDecorationProperties.ElementRole="TitleBar">
-                <Button x:Name="btnTunSettingsBack" DockPanel.Dock="Left" IsVisible="False" Classes="rowAction" VerticalAlignment="Center" chrome:WindowDecorationProperties.ElementRole="User" />
-                <Button x:Name="btnAppearance" DockPanel.Dock="Right" VerticalAlignment="Center" Width="36" Padding="8" chrome:WindowDecorationProperties.ElementRole="User" />
+    <dialogHost:DialogHost Identifier="connectionWorkspace" CloseOnClickAway="False" DisableOpeningAnimation="True">
+        <Grid x:Name="shellGrid" RowDefinitions="Auto,*" Background="{DynamicResource WorkspaceSurface}">
+            <Border x:Name="connectionHeader" ZIndex="1" BorderBrush="{DynamicResource WorkspaceBorder}" BorderThickness="0,0,0,1" Background="{DynamicResource WorkspaceSurface}" chrome:WindowDecorationProperties.ElementRole="TitleBar">
+            <DockPanel x:Name="pageHeader" MinHeight="56" Margin="24,0" LastChildFill="True">
+                <StackPanel x:Name="homeBrand" DockPanel.Dock="Left" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center" IsHitTestVisible="False">
+                    <ContentControl x:Name="brandIcon" Width="22" Height="22" />
+                    <TextBlock Text="v2rayN" FontSize="17" FontWeight="SemiBold" VerticalAlignment="Center" />
+                </StackPanel>
+                <Button x:Name="btnReturnConnection" DockPanel.Dock="Left" IsVisible="False" Classes="rowAction" Margin="0,0,20,0" VerticalAlignment="Center" chrome:WindowDecorationProperties.ElementRole="User" />
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center" chrome:WindowDecorationProperties.ElementRole="User">
+                    <TextBox x:Name="settingsSearch" Width="280" IsVisible="False" />
+                    <Button x:Name="btnSettings" />
+                </StackPanel>
                 <Menu x:Name="legacyMenu" IsVisible="False" Margin="0,0,112,0" DockPanel.Dock="Right" VerticalAlignment="Center" chrome:WindowDecorationProperties.ElementRole="User">
                     <MenuItem Header="{x:Static ws:WorkspaceText.More}">
                     <MenuItem x:Name="menuServers" Header="{x:Static resx:ResUI.menuServers}">
@@ -140,30 +128,13 @@
                     HorizontalAlignment="Left"
                     Content="{x:Static resx:ResUI.menuNewUpdate}"
                     IsVisible="False" />
-                <TextBlock x:Name="txtPageTitle" Classes="title" IsHitTestVisible="False" Text="{x:Static ws:WorkspaceText.Servers}" VerticalAlignment="Center" />
+                <TextBlock x:Name="txtPageTitle" FontSize="17" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" IsHitTestVisible="False" IsVisible="False" VerticalAlignment="Center" />
             </DockPanel>
-            <StackPanel x:Name="serverActions" DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" IsVisible="False">
-                    <Button x:Name="btnImport" Content="{x:Static ws:WorkspaceText.Import}" />
-                    <Button x:Name="btnAddServer" Classes="primary" Content="{x:Static ws:WorkspaceText.AddServer}" />
-            </StackPanel>
-            <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource WorkspaceBorder}" BorderThickness="0,1,0,0" Padding="0,10,0,0">
-                <Button x:Name="btnDiagnosticLogs" Content="{x:Static ws:WorkspaceText.DiagnosticLogs}" HorizontalAlignment="Right" />
             </Border>
-            <Border x:Name="logDrawer" DockPanel.Dock="Bottom" Classes="surface" Padding="12" Margin="0,12,0,12">
-                <DockPanel>
-                    <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto">
-                        <TextBlock Text="{x:Static resx:ResUI.MsgInformationTitle}" Classes="sectionTitle" VerticalAlignment="Center" />
-                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
-                            <Button x:Name="btnClearLogs" Content="{x:Static resx:ResUI.menuMsgViewClear}" />
-                            <Button x:Name="btnToggleLogs" Content="⌃" ToolTip.Tip="{x:Static ws:WorkspaceText.ToggleLogs}" />
-                        </StackPanel>
-                    </Grid>
-                    <ContentControl x:Name="drawerLogs" Height="120" Margin="0,8,0,0" />
-                </DockPanel>
-            </Border>
-            <ContentControl x:Name="contentStatusBarView" DockPanel.Dock="Top" Margin="0,0,0,16" HorizontalContentAlignment="Stretch" />
-            <ContentControl x:Name="pageContent" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
-        </DockPanel>
+            <Grid Grid.Row="0" Grid.RowSpan="2">
+                <ContentControl x:Name="contentStatusBarView" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
+                <ContentControl x:Name="pageContent" IsVisible="False" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
+            </Grid>
         </Grid>
     </dialogHost:DialogHost>
 </Window>

@@ -70,6 +70,7 @@ public partial class TunSettingsViewModel : MyReactiveObject, ICloseable
     public Task Initialization { get; }
     public event EventHandler? RequestClose;
     public Func<string, Task<bool>>? ApplyAsync { get; set; }
+    public bool DeferApply { get; set; }
     public ReactiveCommand<RxVoid, RxVoid> SaveCmd { get; }
     [Reactive] public partial bool IsSaving { get; set; }
     [Reactive] public partial bool IsTemplateOwned { get; set; }
@@ -369,7 +370,7 @@ public partial class TunSettingsViewModel : MyReactiveObject, ICloseable
                 var profile = await AppManager.Instance.GetProfileItem(candidate.IndexId);
                 if (profile == null && draft.EnableTun)
                     throw new TunConfigurationException(TunSettingsText.T("请先选择节点，再应用开启状态的 TUN 配置。", "Select a node before applying enabled TUN settings."));
-                if (draft.EnableTun && ApplyAsync == null)
+                if (draft.EnableTun && ApplyAsync == null && !DeferApply)
                     throw new TunConfigurationException(TunSettingsText.T("当前页面没有连接到内核应用流程，请重新打开设置。", "The core apply handler is unavailable; reopen settings."));
                 if (profile != null)
                 {
@@ -398,8 +399,10 @@ public partial class TunSettingsViewModel : MyReactiveObject, ICloseable
                     throw new TunConfigurationException(TunSettingsText.T("预检期间 TUN 设置或开关已变更，请重新打开本页。", "TUN settings or its switch changed during preflight; reopen this page."));
             }
             var result = await TunSettingsTransaction.ApplyAsync(_appConfig, draft,
-                async () => await ConfigHandler.SaveConfig(_appConfig) == 0, ApplyAsync);
-            Status = result.Message;
+                async () => await ConfigHandler.SaveConfig(_appConfig) == 0, DeferApply ? null : ApplyAsync);
+            Status = result.Success && DeferApply
+                ? TunSettingsText.T("已保存，返回连接首页应用更改；当前连接保持不变。", "Saved. Apply changes from the connection home; the current connection is unchanged.")
+                : result.Message;
             if (result.Success && _loadRuntime && !checkedCore)
                 Status += "\n" + TunSettingsText.T("尚未选择节点，未执行内核预检。", "No node selected; core preflight has not been performed.");
             if (!result.Success) return false;

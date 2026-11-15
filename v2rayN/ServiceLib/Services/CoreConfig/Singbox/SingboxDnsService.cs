@@ -25,7 +25,8 @@ public partial class CoreConfigSingboxService
             if (ManagedEgress)
             {
                 _coreConfig.dns.final = DnsForEgress(DefaultDnsEgress())[0].tag;
-                _coreConfig.dns.independent_cache = true;
+                // sing-box 1.14+ no longer requires independent_cache; emitting it
+                // warns on every startup and is unsupported starting with 1.16.
                 // These legacy servers are replaced by per-egress upstreams in managed mode.
                 _coreConfig.dns.servers.RemoveAll(s => s.tag?.StartsWith(Global.SingboxRemoteDNSTagPrefix) == true);
             }

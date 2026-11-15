@@ -176,14 +176,15 @@ public class ProcessService : IDisposable
         return _stopScriptPath = path;
     }
 
-    public async Task<ProcessStopResult> StopAndWaitAsync()
+    public async Task<ProcessStopResult> StopAndWaitAsync(CancellationToken cancellationToken = default)
     {
-        await _stopGate.WaitAsync();
+        await _stopGate.WaitAsync(cancellationToken);
         try
         {
             if (_stopConfirmed || !_started) return ProcessStopResult.Stopped;
             var elapsed = Stopwatch.StartNew();
-            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(TimeSpan.FromSeconds(10));
             ProcessStopResult result;
             if (Utils.IsNonWindows())
                 result = await UnixProcessControl.StopAsync(this, IsElevated ? AppManager.Instance.LinuxSudoPwd : null, timeout.Token);
@@ -242,14 +243,17 @@ public class ProcessService : IDisposable
         if (!result.Success && _updateFunc != null) await _updateFunc(true, result.Error ?? "Core stop failed.");
     }
 
-    internal static async Task RetryFailedStopsAsync(IEnumerable<int> excludedPids)
+    internal static async Task RetryFailedStopsAsync(IEnumerable<int> excludedPids, CancellationToken token = default)
     {
         var excluded = excludedPids.ToHashSet();
         await Task.WhenAll(FailedStops.Values.Where(p => !p.KnownProcesses.Any(i => excluded.Contains(i.Pid))).Select(async process =>
         {
-            if ((await process.StopAndWaitAsync()).Success) process.Dispose();
+            if ((await process.StopAndWaitAsync(token)).Success) process.Dispose();
         }));
     }
+
+    internal static IReadOnlyList<ProcessIdentity> FailedStopIdentities => FailedStops.Values
+        .SelectMany(p => p.KnownProcesses).Distinct().ToArray();
 
     public void Dispose()
     {

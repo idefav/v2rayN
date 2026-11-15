@@ -160,6 +160,7 @@ public partial class ClashProxiesView : ReactiveUserControl<ClashProxiesViewMode
         switch (e.Key)
         {
             case Key.F5:
+                e.Handled = true;
                 ViewModel?.ProxiesReload();
                 break;
 

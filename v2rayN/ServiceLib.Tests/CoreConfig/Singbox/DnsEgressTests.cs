@@ -186,7 +186,7 @@ public class DnsEgressTests
         await (Detour("direct.example") == null).Should().BeTrue();
         await Detour("port.example").Should().BeEqualTo(Global.ProxyTag);
         await config.dns.rules.Any(r => r.domain?.Contains("blocked.example") == true && r.rcode == "NXDOMAIN").Should().BeTrue();
-        await config.dns.independent_cache.Should().BeEqualTo(true);
+        await JsonNode.Parse(JsonUtils.Serialize(config))!["dns"]!.AsObject().ContainsKey("independent_cache").Should().BeFalse();
         await config.dns.rules[0].domain_regex![0].Should().BeEqualTo(@"(?i)\.local\.?$");
     }
 
@@ -357,7 +357,9 @@ public class DnsEgressTests
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
             try { await process.WaitForExitAsync(timeout.Token); }
             catch { if (!process.HasExited) process.Kill(true); throw; }
-            if (process.ExitCode != 0) throw new Exception(await errors);
+            var stderr = await errors;
+            if (process.ExitCode != 0) throw new Exception(stderr);
+            await stderr.Contains("independent_cache", StringComparison.Ordinal).Should().BeFalse();
         }
         finally { File.Delete(path); }
     }

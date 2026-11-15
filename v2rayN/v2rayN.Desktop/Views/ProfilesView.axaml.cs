@@ -16,6 +16,7 @@ public partial class ProfilesView : ReactiveUserControl<ProfilesViewModel>
     private static readonly string _tag = "ProfilesView";
     private DataGridCollectionView? _filteredProfiles;
     private bool _refreshing;
+    private bool _syncingSelectedProfile;
     private readonly Dictionary<DataGridRow, IDisposable> _activeRows = new();
     private bool _syncingGroup;
     private Button? _detailsEntry;
@@ -50,6 +51,8 @@ public partial class ProfilesView : ReactiveUserControl<ProfilesViewModel>
         var narrow = Bounds.Width > 0 && Bounds.Width * 14 / size < 800;
         if (narrow && _wideColumns == null)
         {
+            // Compact columns are temporary. Preserve the user's layout before replacing it.
+            if (lstProfiles.Bounds.Width > 0) StorageUI();
             _wideColumns = lstProfiles.Columns.ToDictionary(c => c, c => (c.Width, c.MinWidth, c.IsVisible, c.DisplayIndex));
             foreach (var column in lstProfiles.Columns)
             {
@@ -118,6 +121,8 @@ public partial class ProfilesView : ReactiveUserControl<ProfilesViewModel>
         ((MenuFlyout)btnTestScope.Flyout!).Popup.ShouldUseOverlayLayer = true;
 
         _config = AppManager.Instance.Config;
+        // Most exits now happen from connection home, after this view has deactivated.
+        DetachedFromVisualTree += (_, _) => StorageUI();
         cmbProtocolFilter.Items.Add(WorkspaceText.AllProtocols);
         foreach (var protocol in Enum.GetValues<EConfigType>()) cmbProtocolFilter.Items.Add(protocol.ToString());
         cmbProtocolFilter.SelectedIndex = 0;
@@ -170,7 +175,18 @@ public partial class ProfilesView : ReactiveUserControl<ProfilesViewModel>
             _filteredProfiles ??= new DataGridCollectionView(ViewModel!.ProfileItems) { Filter = MatchProfile };
             lstProfiles.ItemsSource = _filteredProfiles;
             RefreshFilter();
-            this.Bind(ViewModel, vm => vm.SelectedProfile, v => v.lstProfiles.SelectedItem).DisposeWith(disposables);
+            this.WhenAnyValue(v => v.ViewModel!.SelectedProfile)
+                .ObserveOn(RxSchedulers.MainThreadScheduler)
+                .Subscribe(selected =>
+                {
+                    // A queued model notification must not undo a newer user
+                    // selection made before the dispatcher processes it.
+                    if (!ReferenceEquals(selected, ViewModel?.SelectedProfile)
+                        || ReferenceEquals(selected, lstProfiles.SelectedItem)) return;
+                    _syncingSelectedProfile = true;
+                    try { lstProfiles.SelectedItem = selected; }
+                    finally { _syncingSelectedProfile = false; }
+                }).DisposeWith(disposables);
 
             this.WhenAnyValue(v => v.ViewModel!.SelectedSub).ObserveOn(RxSchedulers.MainThreadScheduler).Subscribe(group =>
             {
@@ -416,8 +432,9 @@ public partial class ProfilesView : ReactiveUserControl<ProfilesViewModel>
             return;
         }
 
-        var dialog = new QrcodeView(url);
-        await DialogHost.Show(dialog);
+        var identifier = TopLevel.GetTopLevel(this)?.GetVisualDescendants().OfType<DialogHost>().FirstOrDefault()?.Identifier as string;
+        var dialog = new QrcodeView(url, identifier);
+        await DialogHost.Show(dialog, identifier);
     }
 
     public void RefreshServersBiz()
@@ -433,6 +450,8 @@ public partial class ProfilesView : ReactiveUserControl<ProfilesViewModel>
     {
         if (!_refreshing && ViewModel != null)
         {
+            if (!_syncingSelectedProfile)
+                ViewModel.SelectedProfile = lstProfiles.SelectedItem as ProfileItemModel ?? new();
             ViewModel.SelectedProfiles = lstProfiles.SelectedItems.Cast<ProfileItemModel>().ToList();
             UpdateSelectionTools();
         }
@@ -695,7 +714,7 @@ public partial class ProfilesView : ReactiveUserControl<ProfilesViewModel>
 
     private void StorageUI()
     {
-        if (_wideColumns != null) return;
+        if (_wideColumns != null || lstProfiles.Bounds.Width <= 0) return;
         try
         {
             List<ColumnItem> lvColumnItem = [];

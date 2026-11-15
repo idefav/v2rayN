@@ -28,7 +28,8 @@ public partial class TunSettingsWindow : PageBase<TunSettingsViewModel>
     private Control? _helpTrigger;
     public event Action<string>? NavigateRequested;
     public string SelectedGroup => _group;
-    private bool Compact => Bounds.Width <= 760;
+    public bool IsEmbedded { get; set; }
+    private bool Compact => IsEmbedded || Bounds.Width <= 760;
 
     public TunSettingsWindow()
     {
@@ -118,6 +119,7 @@ public partial class TunSettingsWindow : PageBase<TunSettingsViewModel>
     private void UpdateStatus()
     {
         if (_model == null) return;
+        saveChanges.Content = _model.DeferApply ? T("保存", "Save") : T("保存并应用", "Save & apply");
         saveChanges.IsEnabled = _model.CanSave;
         discardChanges.IsEnabled = !_model.IsSaving && _model.IsDirty && !_model.IsTemplateOwned;
         resetGroup.IsEnabled = _group != "help" && _model.CanResetGroup(_group);
@@ -131,7 +133,7 @@ public partial class TunSettingsWindow : PageBase<TunSettingsViewModel>
         groupChangeCount.Text = _group == "help" ? T("无需联网", "No connection needed")
             : modified.Count(k => _model[k].Definition.Group == _group) is var count && count > 0
                 ? T($"{count} 项修改", $"{count} changed") : T("保留现有行为", "Keep existing behavior");
-        statusText.Text = _model.IsSaving ? T("正在检查并应用…", "Checking and applying…")
+        statusText.Text = _model.IsSaving ? _model.DeferApply ? T("正在检查并保存…", "Checking and saving…") : T("正在检查并应用…", "Checking and applying…")
             : _model.IsDirty ? T($"已修改 {modified.Count} 项", $"{modified.Count} changes")
             : T("所有修改已保存", "All changes saved");
         statusHint.Text = _model.TunEnabled ? T("TUN 配置开启 · 接管效果需验证", "TUN configured on · verify capture")
@@ -569,7 +571,7 @@ public partial class TunSettingsWindow : PageBase<TunSettingsViewModel>
     private void AdaptLayout()
     {
         var width = Bounds.Width;
-        var small = width <= 760;
+        var small = Compact;
         var gutters = small ? 16 : 24;
         pageHeading.Margin = new Thickness(gutters, small ? 16 : 20, gutters, small ? 12 : 16);
         pageNote.FontSize = small ? 12 : 14;
@@ -578,7 +580,7 @@ public partial class TunSettingsWindow : PageBase<TunSettingsViewModel>
         workbench.Margin = new Thickness(gutters, 0);
         runtimeGrid.ColumnDefinitions = new ColumnDefinitions(width <= 1100 ? "1.15*,0.8*,0.95*,0" : "1.15*,0.9*,0.95*,1.45*");
         Grid.SetColumn(runtimeNoteCell, 3);
-        runtimeNoteCell.IsVisible = width > 1100;
+        runtimeNoteCell.IsVisible = !IsEmbedded && width > 1100;
         runtimeCoreValue.FontSize = runtimeStateValue.FontSize = runtimeConfigValue.FontSize = small ? 12 : 14;
         runtimeCoreCell.Margin = small ? new Thickness(12, 8) : new Thickness(16, 10);
         runtimeStateCell.Padding = runtimeConfigCell.Padding = small ? new Thickness(12, 8) : new Thickness(16, 10);
@@ -590,8 +592,8 @@ public partial class TunSettingsWindow : PageBase<TunSettingsViewModel>
         Grid.SetRow(navigationRail, 0); Grid.SetColumn(navigationRail, 0);
         Grid.SetColumn(editorScroll, small ? 0 : 2); Grid.SetRow(editorScroll, small ? 1 : 0);
         editorScroll.Padding = new Thickness(0, small ? 16 : 4, 4, small ? 24 : 32);
-        helpDock.IsVisible = width > 1100; Grid.SetColumn(helpDock, width > 1100 ? 4 : 0);
-        if (width > 1100) helpOverlay.IsVisible = false;
+        helpDock.IsVisible = !IsEmbedded && width > 1100; Grid.SetColumn(helpDock, !IsEmbedded && width > 1100 ? 4 : 0);
+        if (!IsEmbedded && width > 1100) helpOverlay.IsVisible = false;
         helpSheet.Width = Math.Min(400, Math.Max(220, width - 24));
         groupTitle.FontSize = small ? 16 : 20;
         groupTitle.LineHeight = small ? 22.4 : 28;

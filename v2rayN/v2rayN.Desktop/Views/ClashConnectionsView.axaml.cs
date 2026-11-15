@@ -20,6 +20,7 @@ public partial class ClashConnectionsView : ReactiveUserControl<ClashConnections
              (Common.WorkspaceText.T("持续时间", "Duration"), "Elapsed")], closeSelected);
 
         _config = AppManager.Instance.Config;
+        DetachedFromVisualTree += (_, _) => StorageUI();
 
         btnAutofitColumnWidth.Click += BtnAutofitColumnWidth_Click;
 
@@ -115,6 +116,7 @@ public partial class ClashConnectionsView : ReactiveUserControl<ClashConnections
 
     private void StorageUI()
     {
+        if (lstConnections.Bounds.Width <= 0) return;
         try
         {
             List<ColumnItem> lvColumnItem = [];

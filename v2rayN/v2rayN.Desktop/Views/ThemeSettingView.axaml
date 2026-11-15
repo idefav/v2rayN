@@ -3,7 +3,12 @@
     xmlns:resx="clr-namespace:ServiceLib.Resx;assembly=ServiceLib"
     xmlns:ws="clr-namespace:v2rayN.Desktop.Common"
     xmlns:vms="clr-namespace:v2rayN.Desktop.ViewModels" x:DataType="vms:ThemeSettingViewModel">
-    <ScrollViewer>
+    <DockPanel>
+        <StackPanel x:Name="draftActions" DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="12" Margin="16" IsVisible="False">
+            <Button x:Name="discardAppearance" />
+            <Button x:Name="saveAppearance" Classes="primary" />
+        </StackPanel>
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled">
         <StackPanel Margin="24" Spacing="24" MaxWidth="760" HorizontalAlignment="Stretch">
             <TextBlock Text="{x:Static resx:ResUI.TbSettingsTheme}" Classes="title" />
             <Border Classes="surface">
@@ -15,6 +20,8 @@
             </Border>
             <Border Classes="surface">
                 <StackPanel Spacing="12">
+                    <TextBlock Text="{x:Static resx:ResUI.TbSettingsCurrentFontFamily}" Classes="sectionTitle" />
+                    <ComboBox x:Name="cmbCurrentFontFamily" IsEditable="True" HorizontalAlignment="Stretch" />
                     <TextBlock Text="{x:Static resx:ResUI.TbSettingsFontSize}" Classes="sectionTitle" />
                     <ComboBox x:Name="cmbCurrentFontSize" HorizontalAlignment="Stretch" />
                     <TextBlock Text="v2rayN · 服务器 / Servers · 0123456789" TextWrapping="Wrap" />
@@ -29,4 +36,5 @@
             </Border>
         </StackPanel>
     </ScrollViewer>
+    </DockPanel>
 </UserControl>

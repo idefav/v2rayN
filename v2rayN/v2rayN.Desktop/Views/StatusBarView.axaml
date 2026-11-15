@@ -1,77 +1,91 @@
 <UserControl x:Class="v2rayN.Desktop.Views.StatusBarView"
-    xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:resx="clr-namespace:ServiceLib.Resx;assembly=ServiceLib"
-    xmlns:vms="clr-namespace:ServiceLib.ViewModels;assembly=ServiceLib"
-    xmlns:ws="clr-namespace:v2rayN.Desktop.Common" x:DataType="vms:StatusBarViewModel">
-    <Border x:Name="summaryCard" Background="{DynamicResource WorkspaceSurface}" BorderBrush="{DynamicResource WorkspaceBorder}" BorderThickness="1" CornerRadius="6">
-        <Grid RowDefinitions="Auto,Auto">
-        <DockPanel Margin="16,12">
-            <Button x:Name="btnConnectionControls" DockPanel.Dock="Right" Content="{x:Static ws:WorkspaceText.ConnectionControls}" Margin="12,0,0,0">
-                <Button.Flyout>
-                    <Flyout Placement="BottomEdgeAlignedRight">
-                        <ScrollViewer x:Name="connectionScroll" MaxHeight="560">
-                            <StackPanel x:Name="connectionPanel" Width="336" Spacing="16" Margin="8">
-                                <DockPanel>
-                                    <Button x:Name="btnCloseConnection" DockPanel.Dock="Right" Content="×" ToolTip.Tip="{x:Static ws:WorkspaceText.Close}" />
-                                    <TextBlock Text="{x:Static ws:WorkspaceText.ConnectionControls}" Classes="sectionTitle" VerticalAlignment="Center" />
-                                </DockPanel>
-                                <StackPanel x:Name="connectionFields" Spacing="12">
-                                    <TextBlock Text="{x:Static resx:ResUI.menuSystemproxy}" />
-                                    <ComboBox x:Name="cmbSystemProxy" HorizontalAlignment="Stretch">
-                                        <ComboBoxItem Content="{x:Static resx:ResUI.menuSystemProxyClear}" />
-                                        <ComboBoxItem Content="{x:Static resx:ResUI.menuSystemProxySet}" />
-                                        <ComboBoxItem Content="{x:Static resx:ResUI.menuSystemProxyNothing}" />
-                                        <ComboBoxItem Content="{x:Static resx:ResUI.menuSystemProxyPac}" />
-                                    </ComboBox>
-                                    <DockPanel x:Name="spEnableTun">
-                                        <ToggleSwitch x:Name="togEnableTun" DockPanel.Dock="Right" Theme="{DynamicResource SimpleToggleSwitch}" />
-                                        <TextBlock Text="{x:Static resx:ResUI.TbEnableTunAs}" VerticalAlignment="Center" />
-                                    </DockPanel>
-                                    <TextBlock Text="{x:Static resx:ResUI.menuRouting}" />
-                                    <ComboBox x:Name="cmbRoutings2" HorizontalAlignment="Stretch" PlaceholderText="—" ItemsSource="{Binding RoutingItems}" DisplayMemberBinding="{Binding Remarks}" />
-                                    <Button x:Name="btnRestart" Content="{x:Static resx:ResUI.menuReload}" Classes="primary" HorizontalAlignment="Stretch" />
-                                </StackPanel>
-                                <StackPanel x:Name="inboundLabels" Spacing="8">
-                                    <TextBlock Text="{x:Static ws:WorkspaceText.LocalListeners}" Classes="sectionTitle" />
-                                    <TextBlock x:Name="txtInboundDisplay" Classes="muted" TextWrapping="Wrap" />
-                                    <TextBlock x:Name="txtInboundLanDisplay" Classes="muted" TextWrapping="Wrap" />
-                                    <TextBlock x:Name="txtSpeedProxyDisplay" Classes="muted" TextWrapping="Wrap" />
-                                    <TextBlock x:Name="txtSpeedDirectDisplay" Classes="muted" TextWrapping="Wrap" />
-                                </StackPanel>
-                                <TextBlock Text="{x:Static ws:WorkspaceText.ConnectionImmediate}" Classes="muted" TextWrapping="Wrap"/>
-                                <TextBlock x:Name="txtConnectionError" Classes="error" TextWrapping="Wrap" IsVisible="False" />
-                                <Button x:Name="btnAvailability" Content="{x:Static resx:ResUI.menuRealPingServer}" />
-                            </StackPanel>
-                        </ScrollViewer>
-                    </Flyout>
-                </Button.Flyout>
-            </Button>
-            <StackPanel x:Name="transferSummary" DockPanel.Dock="Right" VerticalAlignment="Center" Spacing="4" Margin="16,0,8,0">
-                <TextBlock x:Name="txtDownload" Text="↓ —" Classes="caption" />
-                <TextBlock x:Name="txtUpload" Text="↑ —" Classes="caption" />
-            </StackPanel>
-            <StackPanel Spacing="6">
-                <WrapPanel x:Name="overview">
-                    <TextBlock x:Name="txtCoreState" FontWeight="SemiBold" Classes="caption" Margin="0,0,12,0" />
-                    <TextBlock x:Name="txtRecoveryState" Classes="caption" Margin="0,0,12,0" IsVisible="False" TextWrapping="Wrap" />
-                    <TextBlock x:Name="txtRuntimeCaption" Classes="muted caption" />
-                </WrapPanel>
-                <TextBlock x:Name="txtRunningServerDisplay" FontWeight="SemiBold" FontSize="16" TextTrimming="CharacterEllipsis" />
-                <WrapPanel x:Name="cachedExitRow">
-                    <TextBlock Text="{x:Static ws:WorkspaceText.CachedExit}" Classes="muted caption" VerticalAlignment="Center" Margin="0,0,4,0" />
-                    <ContentControl x:Name="exitSummary" MaxWidth="220" VerticalAlignment="Center" Margin="0,0,12,0" />
-                    <TextBlock x:Name="txtRunningInfoDisplay" Classes="muted caption" VerticalAlignment="Center" />
-                </WrapPanel>
-            </StackPanel>
-        </DockPanel>
-        <Border Grid.Row="1" Background="{DynamicResource WorkspaceSidebar}" BorderBrush="{DynamicResource WorkspaceBorder}" BorderThickness="0,1,0,0" CornerRadius="0,0,6,6" Padding="16,8">
-            <WrapPanel x:Name="runtimeMetadata">
-                <TextBlock x:Name="txtCoreName" Classes="muted caption" Margin="0,0,16,2" TextWrapping="Wrap" />
-                <TextBlock x:Name="txtProxyMode" Classes="muted caption" Margin="0,0,16,2" TextWrapping="Wrap" />
-                <TextBlock x:Name="txtTunMode" Classes="muted caption" Margin="0,0,16,2" />
-                <TextBlock x:Name="txtRoutingMode" Classes="muted caption" TextWrapping="Wrap" />
-            </WrapPanel>
-        </Border>
+ xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ xmlns:vms="clr-namespace:ServiceLib.ViewModels;assembly=ServiceLib" x:DataType="vms:StatusBarViewModel">
+ <Grid x:Name="connectionLayout" ColumnDefinitions="*,Auto" ClipToBounds="True">
+ <Grid x:Name="connectionColumn" RowDefinitions="*,Auto">
+ <Grid x:Name="connectionBody">
+  <Grid x:Name="homeStack" MaxWidth="620" Margin="20,12,20,0" VerticalAlignment="Center">
+   <Border x:Name="summaryCard" Classes="surface" Padding="0" BorderThickness="0" CornerRadius="0">
+    <Grid x:Name="homeRows" RowDefinitions="64,88,44,24,60,60,36" RowSpacing="10">
+     <Grid ColumnDefinitions="32,*" ColumnSpacing="12" VerticalAlignment="Center">
+      <ContentControl x:Name="connectionStateIcon" Width="28" Height="28" VerticalAlignment="Center" />
+      <StackPanel Grid.Column="1" Spacing="1">
+       <TextBlock x:Name="txtCoreState" FontSize="21" LineHeight="26" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+       <TextBlock x:Name="txtRuntimeCaption" Classes="muted caption" FontSize="11" LineHeight="14" TextTrimming="CharacterEllipsis" />
+       <TextBlock x:Name="txtRecoveryState" FontSize="11" LineHeight="14" TextTrimming="CharacterEllipsis" IsVisible="False" />
+      </StackPanel>
+     </Grid>
+     <Border Grid.Row="1" Classes="surface" Padding="12,8" CornerRadius="10">
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+       <StackPanel Spacing="4" VerticalAlignment="Center">
+        <TextBlock x:Name="txtNodeLabel" Classes="muted caption" FontSize="11" />
+        <Button x:Name="btnServerIdentity" Classes="rowAction" Padding="0" MinHeight="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+         <TextBlock x:Name="txtRunningServerDisplay" Foreground="{DynamicResource WorkspaceText}" FontSize="14" LineHeight="19" MaxLines="2" MaxHeight="38" FontWeight="SemiBold" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" />
+        </Button>
+       </StackPanel>
+       <Button x:Name="btnConnectionControls" Grid.Column="1" Classes="serverPickerAction" FontSize="11" Padding="6,6" VerticalAlignment="Center" />
+      </Grid>
+     </Border>
+     <Button x:Name="btnConnect" Grid.Row="2" Classes="primary connectionAction" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" MinHeight="44" Height="44" />
+     <Grid Grid.Row="3">
+      <Grid x:Name="selectionSummary" ColumnDefinitions="*,Auto" ColumnSpacing="4">
+       <TextBlock x:Name="txtSelectionState" Classes="muted caption" FontSize="11" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+       <TextBlock x:Name="txtActualServer" Classes="muted caption" FontSize="11" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" IsVisible="False" />
+       <Button x:Name="btnApplyPending" Grid.Column="1" Classes="rowAction" FontSize="11" MinHeight="24" Padding="4,0" IsVisible="False" />
+      </Grid>
+      <StackPanel x:Name="connectionErrorPanel" IsVisible="False">
+       <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="4">
+        <TextBlock x:Name="txtConnectionError" Classes="error" FontSize="11" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Focusable="True" />
+        <Button x:Name="btnRetryConnection" Grid.Column="1" Classes="rowAction" FontSize="11" MinHeight="24" Padding="4,0" />
+        <Button x:Name="btnConnectionDiagnostics" Grid.Column="2" Classes="rowAction" FontSize="11" MinHeight="24" Padding="4,0" />
+       </Grid>
+      </StackPanel>
+     </Grid>
+     <StackPanel x:Name="connectionFields" Grid.Row="4">
+      <Border BorderThickness="0,1,0,0" BorderBrush="{DynamicResource WorkspaceBorder}" Padding="0,9,0,0">
+       <DockPanel x:Name="spEnableTun" LastChildFill="True">
+        <ToggleSwitch x:Name="togEnableTun" DockPanel.Dock="Right" Theme="{DynamicResource SimpleToggleSwitch}" />
+        <StackPanel Spacing="2" Margin="0,0,8,0"><TextBlock Text="TUN" FontSize="13" FontWeight="SemiBold" /><TextBlock x:Name="txtTunMode" Classes="muted caption" FontSize="11" TextTrimming="CharacterEllipsis" /></StackPanel>
+       </DockPanel>
+      </Border>
+     </StackPanel>
+     <Border Grid.Row="5" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource WorkspaceBorder}" Padding="0,9,0,0">
+      <DockPanel>
+       <ToggleSwitch x:Name="togRealTimeSpeed" DockPanel.Dock="Right" Theme="{DynamicResource SimpleToggleSwitch}" />
+       <StackPanel x:Name="transferSummary" Spacing="2" Margin="0,0,8,0">
+        <TextBlock x:Name="txtSpeedLabel" Classes="muted caption" FontSize="11" />
+        <Grid>
+         <Grid x:Name="speedReadout" ColumnDefinitions="*,*" ColumnSpacing="8"><TextBlock x:Name="txtDownload" FontSize="13" Text="↓ —" TextTrimming="CharacterEllipsis" /><TextBlock x:Name="txtUpload" Grid.Column="1" FontSize="13" Text="↑ —" TextTrimming="CharacterEllipsis" /></Grid>
+         <TextBlock x:Name="txtSpeedHint" Classes="caption muted" FontSize="11" TextTrimming="CharacterEllipsis" />
         </Grid>
-    </Border>
+       </StackPanel>
+      </DockPanel>
+     </Border>
+     <Border Grid.Row="6" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource WorkspaceBorder}">
+      <Button x:Name="btnRouting" Classes="rowAction" Padding="0,4" MinHeight="30" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+       <DockPanel><ContentControl x:Name="routingIcon" DockPanel.Dock="Right" Width="14" Height="14" Margin="8,0,0,0" /><TextBlock x:Name="txtRoutingMode" Classes="caption" FontSize="11" TextTrimming="CharacterEllipsis" /></DockPanel>
+      </Button>
+     </Border>
+    </Grid>
+   </Border>
+  </Grid>
+ </Grid>
+ <ContentControl x:Name="connectionFeedbackHost" Grid.Row="1" Height="32" Margin="20,8,20,12" HorizontalContentAlignment="Stretch" />
+ </Grid>
+ <Border x:Name="pickerClip" Grid.Column="1" Width="0" ClipToBounds="True" IsVisible="False">
+   <Border x:Name="serverPicker" Width="350" HorizontalAlignment="Left" Background="{DynamicResource WorkspaceSurface}"
+           BorderBrush="{DynamicResource WorkspaceBorder}" BorderThickness="1,0,0,0" Padding="16" IsVisible="False">
+    <Grid RowDefinitions="Auto,Auto,*,Auto" RowSpacing="12">
+     <DockPanel><Button x:Name="btnCloseConnection" DockPanel.Dock="Right" Classes="serverPickerAction" /><TextBlock x:Name="txtPickerTitle" Classes="sectionTitle" VerticalAlignment="Center" /></DockPanel>
+     <StackPanel Grid.Row="1" Spacing="10"><TextBox x:Name="txtServerSearch" /><ComboBox x:Name="pickerScope" MinWidth="110" HorizontalAlignment="Left" /></StackPanel>
+     <ScrollViewer Grid.Row="2" x:Name="serverListScroll" HorizontalScrollBarVisibility="Disabled">
+      <StackPanel Spacing="12"><TextBlock x:Name="txtPickerEmpty" Classes="muted" IsVisible="False" TextWrapping="Wrap" /><StackPanel x:Name="serverChoices" Spacing="6" /></StackPanel>
+     </ScrollViewer>
+     <Border Grid.Row="3" BorderBrush="{DynamicResource WorkspaceBorder}" BorderThickness="0,1,0,0" Padding="0,12,0,0">
+      <Button x:Name="btnManageServers" HorizontalAlignment="Stretch" />
+     </Border>
+    </Grid>
+   </Border>
+ </Border>
+ </Grid>
 </UserControl>

@@ -1,9 +1,28 @@
 <Styles xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <Styles.Resources>
         <ResourceDictionary>
+            <!-- Own the complete face: Semi's template hover setters otherwise
+                 paint a second gray surface over the blue primary button. -->
+            <ControlTheme x:Key="ConnectionActionTheme" TargetType="Button">
+                <Setter Property="Template">
+                    <ControlTemplate>
+                        <ContentPresenter x:Name="PART_ContentPresenter"
+                            Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="{TemplateBinding CornerRadius}"
+                            Padding="{TemplateBinding Padding}" Content="{TemplateBinding Content}"
+                            ContentTemplate="{TemplateBinding ContentTemplate}" Foreground="{TemplateBinding Foreground}"
+                            HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                            VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
+                    </ControlTemplate>
+                </Setter>
+                <Setter Property="VerticalContentAlignment" Value="Center" />
+                <Style Selector="^:focus-visible">
+                    <Setter Property="BorderBrush" Value="{DynamicResource WorkspaceText}" />
+                </Style>
+            </ControlTheme>
             <ResourceDictionary.ThemeDictionaries>
                 <ResourceDictionary x:Key="Light">
-                    <SolidColorBrush x:Key="WorkspaceBackground">#FFFFFF</SolidColorBrush>
+                    <SolidColorBrush x:Key="WorkspaceBackground">#F5F6FA</SolidColorBrush>
                     <SolidColorBrush x:Key="WorkspaceSurface">#FFFFFF</SolidColorBrush>
                     <SolidColorBrush x:Key="WorkspaceSidebar">#F6F8FA</SolidColorBrush>
                     <SolidColorBrush x:Key="WorkspaceBorder">#D0D7DE</SolidColorBrush>
@@ -13,8 +32,19 @@
                     <SolidColorBrush x:Key="WorkspaceActiveRow">#FFFFFF</SolidColorBrush>
                     <SolidColorBrush x:Key="WorkspaceActiveSelectedRow">#EAEEF2</SolidColorBrush>
                     <SolidColorBrush x:Key="WorkspaceAccent">#0969DA</SolidColorBrush>
+                    <SolidColorBrush x:Key="WorkspaceOnAccent">#FFFFFF</SolidColorBrush>
                     <SolidColorBrush x:Key="WorkspaceAccentHover">#0550AE</SolidColorBrush>
                     <SolidColorBrush x:Key="WorkspaceAccentPressed">#033D8B</SolidColorBrush>
+                    <SolidColorBrush x:Key="ConnectionAccent">#126CE5</SolidColorBrush>
+                    <SolidColorBrush x:Key="ConnectionAccentHover">#0B59C4</SolidColorBrush>
+                    <SolidColorBrush x:Key="ConnectionAccentPressed">#08499F</SolidColorBrush>
+                    <SolidColorBrush x:Key="ConnectionTun">#0D8057</SolidColorBrush>
+                    <SolidColorBrush x:Key="ConnectionTunHover">#096844</SolidColorBrush>
+                    <SolidColorBrush x:Key="ConnectionTunPressed">#074F35</SolidColorBrush>
+                    <SolidColorBrush x:Key="ConnectionTunText">#0D8057</SolidColorBrush>
+                    <SolidColorBrush x:Key="ConnectionTransition">#9D5B10</SolidColorBrush>
+                    <SolidColorBrush x:Key="ConnectionAccentDisabled">#526D8A</SolidColorBrush>
+                    <SolidColorBrush x:Key="ConnectionAccentSurface">#EFF5FF</SolidColorBrush>
                     <SolidColorBrush x:Key="WorkspaceSuccess">#1A7F37</SolidColorBrush>
                     <SolidColorBrush x:Key="WorkspaceWarning">#9A6700</SolidColorBrush>
                     <SolidColorBrush x:Key="WorkspaceDanger">#CF222E</SolidColorBrush>
@@ -31,8 +61,19 @@
                     <SolidColorBrush x:Key="WorkspaceActiveRow">#0D1117</SolidColorBrush>
                     <SolidColorBrush x:Key="WorkspaceActiveSelectedRow">#262C36</SolidColorBrush>
                     <SolidColorBrush x:Key="WorkspaceAccent">#2F81F7</SolidColorBrush>
+                    <SolidColorBrush x:Key="WorkspaceOnAccent">#FFFFFF</SolidColorBrush>
                     <SolidColorBrush x:Key="WorkspaceAccentHover">#388BFD</SolidColorBrush>
                     <SolidColorBrush x:Key="WorkspaceAccentPressed">#1F6FEB</SolidColorBrush>
+                    <SolidColorBrush x:Key="ConnectionAccent">#126CE5</SolidColorBrush>
+                    <SolidColorBrush x:Key="ConnectionAccentHover">#0B59C4</SolidColorBrush>
+                    <SolidColorBrush x:Key="ConnectionAccentPressed">#08499F</SolidColorBrush>
+                    <SolidColorBrush x:Key="ConnectionTun">#0D8057</SolidColorBrush>
+                    <SolidColorBrush x:Key="ConnectionTunHover">#096844</SolidColorBrush>
+                    <SolidColorBrush x:Key="ConnectionTunPressed">#074F35</SolidColorBrush>
+                    <SolidColorBrush x:Key="ConnectionTunText">#6ECDA9</SolidColorBrush>
+                    <SolidColorBrush x:Key="ConnectionTransition">#9D5B10</SolidColorBrush>
+                    <SolidColorBrush x:Key="ConnectionAccentDisabled">#425B7A</SolidColorBrush>
+                    <SolidColorBrush x:Key="ConnectionAccentSurface">#162A44</SolidColorBrush>
                     <SolidColorBrush x:Key="WorkspaceSuccess">#7EE787</SolidColorBrush>
                     <SolidColorBrush x:Key="WorkspaceWarning">#D29922</SolidColorBrush>
                     <SolidColorBrush x:Key="WorkspaceDanger">#FF7B72</SolidColorBrush>
@@ -145,6 +186,68 @@
     <Style Selector="Button.rowAction:pointerover">
         <Setter Property="Background" Value="{DynamicResource WorkspaceSelection}" />
     </Style>
+    <Style Selector="Button.selectedServer">
+        <Setter Property="Background" Value="{DynamicResource WorkspaceSelection}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource WorkspaceAccent}" />
+    </Style>
+    <Style Selector="Button.connectionAction">
+        <Setter Property="Theme" Value="{StaticResource ConnectionActionTheme}" />
+        <Setter Property="Background" Value="{DynamicResource ConnectionAccent}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource ConnectionAccent}" />
+        <Setter Property="BorderThickness" Value="2" />
+        <Setter Property="CornerRadius" Value="8" />
+    </Style>
+    <Style Selector="Button.connectionAction:pointerover">
+        <Setter Property="Background" Value="{DynamicResource ConnectionAccentHover}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource ConnectionAccentHover}" />
+        <Setter Property="Foreground" Value="{DynamicResource WorkspaceOnAccent}" />
+    </Style>
+    <Style Selector="Button.connectionAction:pressed">
+        <Setter Property="Background" Value="{DynamicResource ConnectionAccentPressed}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource ConnectionAccentPressed}" />
+    </Style>
+    <Style Selector="Button.connectionAction:disabled">
+        <Setter Property="Background" Value="{DynamicResource ConnectionAccentDisabled}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource ConnectionAccentDisabled}" />
+        <Setter Property="Foreground" Value="{DynamicResource WorkspaceOnAccent}" />
+        <Setter Property="Opacity" Value="1" />
+    </Style>
+    <Style Selector="Button.connectionAction.tun">
+        <Setter Property="Background" Value="{DynamicResource ConnectionTun}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource ConnectionTun}" />
+    </Style>
+    <Style Selector="Button.connectionAction.tun:pointerover">
+        <Setter Property="Background" Value="{DynamicResource ConnectionTunHover}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource ConnectionTunHover}" />
+    </Style>
+    <Style Selector="Button.connectionAction.tun:pressed">
+        <Setter Property="Background" Value="{DynamicResource ConnectionTunPressed}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource ConnectionTunPressed}" />
+    </Style>
+    <Style Selector="Button.connectionAction.tun:disabled">
+        <Setter Property="Background" Value="{DynamicResource ConnectionAccentDisabled}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource ConnectionAccentDisabled}" />
+    </Style>
+    <Style Selector="Button.connectionAction.transitioning, Button.connectionAction.transitioning:disabled, Button.connectionAction.transitioning:pointerover, Button.connectionAction.transitioning:pressed">
+        <Setter Property="Background" Value="{DynamicResource ConnectionTransition}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource ConnectionTransition}" />
+    </Style>
+    <Style Selector="Button.serverPickerAction">
+        <Setter Property="Theme" Value="{StaticResource ConnectionActionTheme}" />
+        <Setter Property="Foreground" Value="{DynamicResource WorkspaceAccent}" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderBrush" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="2" />
+    </Style>
+    <Style Selector="Button.serverPickerAction:pointerover, Button.serverPickerAction.expanded">
+        <Setter Property="Background" Value="{DynamicResource ConnectionAccentSurface}" />
+    </Style>
+    <Style Selector="Button.serverPickerAction:pressed">
+        <Setter Property="BorderBrush" Value="{DynamicResource WorkspaceAccent}" />
+    </Style>
+    <Style Selector="Button.connectionAction:focus-visible, Button.serverPickerAction:focus-visible">
+        <Setter Property="BorderBrush" Value="{DynamicResource WorkspaceText}" />
+    </Style>
     <Style Selector="Label.nodeStatus">
         <Setter Property="CornerRadius" Value="12" />
         <Setter Property="Padding" Value="10,2" />
@@ -180,6 +283,17 @@
         <Setter Property="CornerRadius" Value="6" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+    <Style Selector="Button.workspacePage">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="CornerRadius" Value="6" />
+        <Setter Property="Padding" Value="10,8" />
+    </Style>
+    <Style Selector="Button.workspacePage.selected">
+        <Setter Property="Background" Value="{DynamicResource WorkspaceSelection}" />
+        <Setter Property="Foreground" Value="{DynamicResource WorkspaceAccent}" />
+        <Setter Property="FontWeight" Value="SemiBold" />
     </Style>
     <Style Selector="ListBox.workspaceNavigation ListBoxItem:selected">
         <Setter Property="Background" Value="{DynamicResource WorkspaceSurface}" />

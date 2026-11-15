@@ -8,10 +8,24 @@ namespace v2rayN.Desktop.Views;
 /// </summary>
 public partial class ThemeSettingView : ReactiveUserControl<ThemeSettingViewModel>
 {
-    public ThemeSettingView()
+    public event Action? Saved;
+
+    public ThemeSettingView() : this(new ThemeSettingViewModel()) { }
+
+    public ThemeSettingView(ThemeSettingViewModel model)
     {
         InitializeComponent();
-        ViewModel = new ThemeSettingViewModel();
+        ViewModel = model;
+        draftActions.IsVisible = model.IsDraft;
+        Common.WorkspaceIcons.SetButton(saveAppearance, "save", Common.WorkspaceText.T("保存", "Save"), "WorkspaceOnAccent");
+        Common.WorkspaceIcons.SetButton(discardAppearance, "close", Common.WorkspaceText.T("放弃修改", "Discard changes"));
+        saveAppearance.Click += async (_, _) =>
+        {
+            try { await ViewModel.SaveAsync(); Saved?.Invoke(); }
+            catch (Exception ex) { NoticeManager.Instance.Enqueue(ex.Message); }
+        };
+        discardAppearance.Click += (_, _) => ViewModel.RevertPreview();
+        cmbCurrentFontFamily.ItemsSource = FontManager.Current.SystemFonts.Select(font => font.Name).Prepend(string.Empty).Distinct().Order().ToArray();
         var previews = new Dictionary<string, Button>();
         foreach (var (theme, label, dark) in new[]
         {
@@ -50,6 +64,7 @@ public partial class ThemeSettingView : ReactiveUserControl<ThemeSettingViewMode
             this.Bind(ViewModel, vm => vm.CurrentTheme, v => v.cmbCurrentTheme.SelectedValue).DisposeWith(disposables);
             this.Bind(ViewModel, vm => vm.CurrentFontSize, v => v.cmbCurrentFontSize.SelectedValue).DisposeWith(disposables);
             this.Bind(ViewModel, vm => vm.CurrentLanguage, v => v.cmbCurrentLanguage.SelectedValue).DisposeWith(disposables);
+            this.Bind(ViewModel, vm => vm.CurrentFontFamily, v => v.cmbCurrentFontFamily.Text).DisposeWith(disposables);
         });
     }
 }

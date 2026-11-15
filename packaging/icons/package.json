@@ -1,0 +1,11 @@
+{
+  "private": true,
+  "description": "Deterministic exports of the original v2rayN SVG branding",
+  "scripts": {
+    "build": "node generate.mjs",
+    "check": "node generate.mjs --check"
+  },
+  "devDependencies": {
+    "sharp": "0.35.3"
+  }
+}
