@@ -125,6 +125,12 @@ jobs:
           test "$result" -eq 1
           test -f artifacts/preview-ui/expected-failure/failure.txt
           grep -Fq 'Expected review failure for exit-code regression.' artifacts/preview-ui/expected-failure/failure.txt
+      - name: Review grouped picker bindings and isolated DNS controls
+        env:
+          SSH_DNS_PICKER_REVIEW: '1'
+        run: |
+          dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/preview-ui/picker-zh --headless --language=zh-Hans
+          dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/preview-ui/picker-en --headless --language=en
       - uses: actions/upload-artifact@v7
         if: always()
         with:

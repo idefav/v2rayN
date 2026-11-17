@@ -38,8 +38,10 @@ public partial class ReviewApp
         var timer = (DispatcherTimer)typeof(StatusBarView).GetField("_coreTimer", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(bar)!;
         timer.Stop();
         bar.FindControl<Button>("btnConnectionControls")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-        await Task.Delay(250);
-        var picker = (ServerPickerViewModel)typeof(StatusBarView).GetField("_picker", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(bar)!;
+        await WaitForDrawerAsync();
+        await WaitForPickerAsync(PickerList(bar), rows => rows.Length > 0, "picker fixture waits for the production load");
+        await SelectPickerGroupAsync(bar, "*");
+        var picker = PickerViewModel(bar);
         var nodes = Enumerable.Range(0, 150).Select(i => new ProfileItem
         {
             IndexId = "picker-review-" + i, Subid = i % 2 == 0 ? "ssh" : "jms",
@@ -62,7 +64,7 @@ public partial class ReviewApp
             row.PropertyChanged += (_, _) => threadViolation |= !Dispatcher.UIThread.CheckAccess();
         var test = bar.FindControl<Button>("btnTestPicker")!;
         test.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-        await Task.Delay(100);
+        await WaitForUiAsync(() => probe.Calls >= 3, "batch test starts the three permitted workers");
         Check(picker.Busy && !test.IsEnabled && probe.Calls == 3, "picker: actual batch button disables; concurrency is three");
         test.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         await Task.Delay(50);

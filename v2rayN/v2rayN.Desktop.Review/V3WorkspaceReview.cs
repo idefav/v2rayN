@@ -1,4 +1,3 @@
-using System.Reflection;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -34,19 +33,24 @@ public partial class ReviewApp
         Check(status.FindControl<Button>("btnRouting")!.IsEffectivelyVisible && status.FindControl<ToggleSwitch>("togEnableTun")!.IsEffectivelyVisible,
             "home retains route navigation and TUN choice");
         status.FindControl<Button>("btnConnectionControls")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-        await Task.Delay(100);
+        await WaitForDrawerAsync();
+        var choices = PickerList(status);
+        await WaitForPickerAsync(choices, rows => rows.Length > 0, "favorite fixture waits for picker data");
+        await SelectPickerGroupAsync(status, "*");
         status.FindControl<TextBox>("txtServerSearch")!.Text = "";
-        var choices = status.FindControl<StackPanel>("serverChoices")!;
-        var favorites = choices.GetVisualDescendants().OfType<Button>().First(b => b.Name?.StartsWith("favorite-") == true);
+        await WaitForPickerAsync(choices, rows => rows.Length == 5, "favorite fixture shows all groups");
+        var favoriteId = PickerNodes(choices)[0].Node.IndexId;
+        var favorites = await PickerButtonAsync(choices, favoriteId, favorite: true, reveal: true);
         favorites.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-        await Task.Delay(150);
+        await WaitForPickerAsync(choices, rows => rows.Single(row => row.Node.IndexId == favoriteId).Favorite,
+            "favorite save completes before filtering");
         status.FindControl<ComboBox>("pickerScope")!.SelectedIndex = 1;
-        Check(choices.Children.Count == 1 && AppManager.Instance.Config.UiItem.ConnectionFavorites.Count == 1,
+        await WaitForPickerAsync(choices, rows => rows.Length == 1, "favorites filter contains one server");
+        Check(PickerNodes(choices)[0].Node.IndexId == favoriteId && AppManager.Instance.Config.UiItem.ConnectionFavorites.Count == 1,
             "favorite action persists a real preference and filters the inline picker");
-        choices.GetVisualDescendants().OfType<Button>().First(b => b.Name?.StartsWith("favorite-") == true)
-            .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-        await Task.Delay(150);
-        Check(choices.Children.Count == 0 && status.FindControl<TextBlock>("txtPickerEmpty")!.IsVisible,
+        (await PickerButtonAsync(choices, favoriteId, favorite: true, reveal: true)).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        await WaitForPickerAsync(choices, rows => rows.Length == 0, "removing the last favorite completes");
+        Check(status.FindControl<TextBlock>("txtPickerEmpty")!.IsVisible,
             "removing the last favorite presents an empty state without selecting another server");
         status.FindControl<ComboBox>("pickerScope")!.SelectedIndex = 0;
         status.CloseConnectionControls();
@@ -66,7 +70,7 @@ public partial class ReviewApp
 
         // A choice made while disconnected must not enter a connection transaction.
         var transition = _vm.StatusBarViewModel.Transition;
-        await (Task)typeof(MainWindowViewModel).GetMethod("ReloadSelectedConfigurationAsync", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(_vm, new object[] { "UI fixture selection", false })!;
+        await _vm.ReloadSelectedConfigurationAsync("UI fixture selection");
         Check(_vm.StatusBarViewModel.HasPendingChanges && ReferenceEquals(transition, _vm.StatusBarViewModel.Transition),
             "disconnected configuration selection remains pending and does not start a transaction");
 

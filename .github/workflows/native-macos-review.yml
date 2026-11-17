@@ -33,6 +33,12 @@ jobs:
           dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/native-review/workspace-v5 --workspace-v5-only
           dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/native-review/workspace-v6 --workspace-v6-only
           dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/native-review/workspace-v7 --workspace-v7-only
+      - name: Check native grouped picker and isolated DNS controls
+        env:
+          SSH_DNS_PICKER_REVIEW: '1'
+        run: |
+          dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/native-review/picker-zh --language=zh-Hans
+          dotnet v2rayN/v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll artifacts/native-review/picker-en --language=en
       - name: Verify native evidence
         run: |
           python3 - <<'PY'
@@ -47,6 +53,14 @@ jobs:
               assert any('AppKit NSWindow' in check for check in report['checks'])
               assert len(report['screenshots'])>=(10 if name.startswith('tun-') else 17)
               print(name, len(report['checks']), 'native checks passed', report['actualTheme'], report['actualWidth'], report['actualHeight'])
+          for name in ['picker-zh', 'picker-en']:
+              path=pathlib.Path('artifacts/native-review')/name
+              report=json.loads((path/'manifest.json').read_text())
+              assert report['renderer']=='native'
+              assert not (path/'failure.txt').exists()
+              assert any('AppKit NSWindow' in check for check in report['checks'])
+              assert len(report['screenshots'])>=7
+              print(name, len(report['checks']), 'native picker checks passed')
           PY
       - uses: actions/upload-artifact@v7
         if: always()
