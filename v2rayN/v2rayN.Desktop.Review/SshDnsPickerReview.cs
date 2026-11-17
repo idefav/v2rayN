@@ -99,10 +99,12 @@ public partial class ReviewApp
         dialog.ViewModel.DnsDetails = "Fixture only · no remote commands or deployment executed";
         dialog.Show(_main);
         await Task.Delay(100);
-        foreach (var expander in dialog.GetVisualDescendants().OfType<Expander>()) expander.IsExpanded = true;
+        dialog.FindControl<Expander>("sshAdvanced")!.IsExpanded = true;
+        dialog.FindControl<Expander>("dnsDetails")!.IsExpanded = true;
         await Task.Delay(100);
         var dns = dialog.GetVisualDescendants().OfType<TextBlock>().First(t => t.Text == ServiceLib.Resx.SshStrings.DnsTitle);
-        dns.GetVisualAncestors().OfType<ScrollViewer>().First().ScrollToEnd();
+        var formScroll = dialog.FindControl<ScrollViewer>("formScroll")!;
+        formScroll.ScrollToEnd();
         await Task.Delay(100);
         await CaptureAsync("ssh-dns-controls", "DNS deployment, detection and rollback controls", dialog);
         Check(dialog.ViewModel.DeployDnsCmd != null && dialog.ViewModel.RollbackDnsCmd != null, "DNS: shared commands bound");
@@ -116,7 +118,6 @@ public partial class ReviewApp
             await Task.Delay(100);
             await CaptureAsync($"ssh-dns-minimum-{dark}", "DNS actions in the minimum SSH editor", dialog);
             var stop = dialog.FindControl<Button>("btnStopOperation")!;
-            var formScroll = dns.GetVisualAncestors().OfType<ScrollViewer>().First();
             var actionAt = deploy.TranslatePoint(default, dialog)!.Value;
             var footerAt = stop.TranslatePoint(default, dialog)!.Value;
             Check(formScroll.Bounds.Height > 80 && actionAt.Y >= 0 && actionAt.Y + deploy.Bounds.Height < footerAt.Y,

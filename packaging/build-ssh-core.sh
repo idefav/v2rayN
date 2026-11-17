@@ -14,7 +14,7 @@ git -C "$build_dir/source" checkout --quiet --detach FETCH_HEAD
 test "$(git -C "$build_dir/source" rev-parse HEAD)" = "$commit"
 git -C "$build_dir/source" apply --check "$root/core-patches/sing-box-ssh-udp-modes.patch"
 git -C "$build_dir/source" apply "$root/core-patches/sing-box-ssh-udp-modes.patch"
-(cd "$build_dir/source" && go test -race ./protocol/ssh/...)
+(cd "$build_dir/source" && python3 "$root/packaging/download-go-modules.py" && go mod verify && go test -race ./protocol/ssh/...)
 export GOOS="$target_os" GOARCH="$target_arch"
 tags=with_gvisor,with_quic,with_dhcp,with_wireguard,with_utls,with_acme,with_clash_api,with_tailscale,with_ccm,with_ocm,with_cloudflared,with_naive_outbound,with_usbip,with_openvpn,with_openconnect,badlinkname,tfogo_checklinkname0
 link_flags='-s -w -X github.com/sagernet/sing-box/constant.Version=1.14.3-ssh-udp.3'

@@ -6,6 +6,8 @@ on:
   pull_request:
     paths:
       - 'proxy-check/**'
+      - 'packaging/download-go-modules.py'
+      - 'packaging/test-download-go-modules.py'
       - 'v2rayN/ServiceLib/**'
       - 'v2rayN/ServiceLib.Tests/**'
       - '.github/workflows/observer-client.yml'
@@ -30,7 +32,8 @@ jobs:
           GOWORK: 'off'
           GOFLAGS: '-mod=readonly'
         run: |
-          go mod download
+          python3 ../packaging/test-download-go-modules.py
+          python3 ../packaging/download-go-modules.py
           go mod verify
           go test -race ./...
           go vet ./...
