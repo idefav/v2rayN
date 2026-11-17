@@ -188,8 +188,11 @@ public sealed class AppManager
     #region Config
 
     public int GetLocalPort(EInboundProtocol protocol)
+        => GetLocalPort(_config, protocol);
+
+    internal static int GetLocalPort(Config config, EInboundProtocol protocol)
     {
-        var localPort = _config.Inbound.FirstOrDefault(t => t.Protocol == nameof(EInboundProtocol.socks))?.LocalPort ?? 10808;
+        var localPort = config.Inbound?.FirstOrDefault(t => t.Protocol == nameof(EInboundProtocol.socks))?.LocalPort ?? 10808;
         return localPort + (int)protocol;
     }
 
@@ -689,6 +692,9 @@ public sealed class AppManager
     }
 
     public ECoreType GetCoreType(ProfileItem? profileItem, EConfigType eConfigType)
+        => GetCoreType(_config, profileItem, eConfigType);
+
+    internal static ECoreType GetCoreType(Config config, ProfileItem? profileItem, EConfigType eConfigType)
     {
         if (eConfigType == EConfigType.SSH)
         {
@@ -699,7 +705,7 @@ public sealed class AppManager
             return (ECoreType)profileItem.CoreType;
         }
 
-        var item = _config.CoreTypeItem?.FirstOrDefault(it => it.ConfigType == eConfigType);
+        var item = config.CoreTypeItem?.FirstOrDefault(it => it.ConfigType == eConfigType);
         return item?.CoreType ?? ECoreType.Xray;
     }
 

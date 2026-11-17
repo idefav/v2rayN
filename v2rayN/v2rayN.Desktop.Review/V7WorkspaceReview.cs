@@ -23,6 +23,7 @@ public partial class ReviewApp
         await Task.Delay(150);
         var timer = (DispatcherTimer)typeof(StatusBarView).GetField("_coreTimer", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(bar)!;
         timer.Stop();
+        await ReviewBackgroundSubscriptionAsync(bar);
         var running = typeof(StatusBarView).GetField("_coreRunning", BindingFlags.Instance | BindingFlags.NonPublic)!;
         var render = typeof(StatusBarView).GetMethod("RenderCoreState", BindingFlags.Instance | BindingFlags.NonPublic)!;
         var core = CoreManager.Instance;
@@ -37,21 +38,25 @@ public partial class ReviewApp
         {
             foreach (var (width, height) in new[] { (440, 620), (440, 560), (360, 480) })
             foreach (var dark in new[] { false, true })
-            foreach (var state in new[] { "stopped", "tun", "standard", "waiting", "failed", "pending", "empty" })
+            foreach (var state in new[] { "stopped", "tun", "standard", "waiting", "failed", "pending", "failed-pending", "incomplete", "unconfirmed", "proxyfailed", "background-refresh", "background-apply", "empty" })
             {
                 _main.Width = width; _main.Height = height;
                 RequestedThemeVariant = dark ? ThemeVariant.Dark : ThemeVariant.Light;
                 _vm.StatusBarViewModel.Transition = null;
                 _vm.StatusBarViewModel.ConnectionError = null;
-                _vm.StatusBarViewModel.HasPendingChanges = state == "pending";
+                _vm.StatusBarViewModel.BackgroundRefreshError = state == "background-refresh" ? "[Fixture] background refresh failed" : null;
+                _vm.StatusBarViewModel.BackgroundApplyError = state == "background-apply" ? "[Fixture] background application failed" : null;
+                _vm.StatusBarViewModel.ConnectionIncomplete = state == "incomplete";
+                _vm.StatusBarViewModel.ExitUnconfirmed = state == "unconfirmed";
+                _vm.StatusBarViewModel.HasPendingChanges = state is "pending" or "failed-pending";
                 AppManager.Instance.Config.IndexId = state == "empty" ? "" : originalSelection;
                 _vm.StatusBarViewModel.RunningServerDisplay = state == "empty" ? "" : longName;
-                runtimeProperty.SetValue(core, state == "pending" ? new CoreRuntimeSummary("previous", "实际节点 " + longName, "很长的路由规则 " + longName, false) : null);
-                running.SetValue(bar, state is "tun" or "standard" or "pending");
+                runtimeProperty.SetValue(core, state is "pending" or "failed-pending" ? new CoreRuntimeSummary("previous", "实际节点 " + longName, "很长的路由规则 " + longName, false) { Core = ServiceLib.Enums.ECoreType.sing_box } : null);
+                running.SetValue(bar, state is "tun" or "standard" or "pending" or "failed-pending");
                 mode.SetValue(core, state == "tun");
                 if (state == "waiting")
                     _vm.StatusBarViewModel.ReportTransition(new(ConnectionStage.Waiting, false, WaitSeconds: 37) { OperationId = ConnectionTransition.NewOperationId() });
-                if (state == "failed")
+                if (state is "failed" or "failed-pending" or "proxyfailed")
                 {
                     _vm.StatusBarViewModel.ConnectionError = "端口占用，未终止未知进程。 " + new string('详', 500);
                     var id = ConnectionTransition.NewOperationId();
@@ -61,9 +66,32 @@ public partial class ReviewApp
                 }
                 await Task.Delay(state == "waiting" ? 500 : 80);
                 // Health is a synthetic layout fixture; no lifecycle action is invoked.
-                running.SetValue(bar, state is "tun" or "standard" or "pending"); render.Invoke(bar, null);
+                _vm.StatusBarViewModel.ConnectionIncomplete = state == "incomplete";
+                _vm.StatusBarViewModel.ExitUnconfirmed = state == "unconfirmed";
+                running.SetValue(bar, state is "tun" or "standard" or "pending" or "failed-pending" or "incomplete" or "proxyfailed" or "background-refresh" or "background-apply"); render.Invoke(bar, null);
+                await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
                 _main.UpdateLayout();
                 var context = $"{width}x{height}/{dark}/{state}/{Program.Language}";
+                var restart = bar.GetVisualDescendants().OfType<Button>().Single(b => b.Name == "btnRestart");
+                Check(restart.IsEffectivelyVisible && ReferenceEquals(restart.Command, _vm.StatusBarViewModel.RestartCoreCmd), "home exposes shared restart command: " + context);
+                Check(restart.IsEffectivelyEnabled == (state is "tun" or "standard" or "pending" or "failed-pending" or "incomplete" or "proxyfailed" or "background-refresh" or "background-apply"), "restart availability matches lifecycle: " + context);
+                if (state is "incomplete" or "unconfirmed")
+                    Check(bar.FindControl<TextBlock>("txtCoreState")!.Text == (state == "incomplete"
+                        ? ServiceLib.Services.RoutingCoreCompatibility.T("连接不完整", "Connection incomplete")
+                        : ServiceLib.Services.RoutingCoreCompatibility.T("退出尚未确认", "Exit not confirmed")), "runtime failure is not displayed as ready: " + context
+                            + ", actual=" + bar.FindControl<TextBlock>("txtCoreState")!.Text);
+                Check((string)restart.Content! == _vm.StatusBarViewModel.RestartCoreLabel, "restart label reflects saved pending changes: " + context);
+                if (state is "background-refresh" or "background-apply")
+                    Check(bar.FindControl<TextBlock>("txtCoreState")!.Text == (state == "background-refresh"
+                        ? ServiceLib.Services.RoutingCoreCompatibility.T("内核已就绪", "Core ready")
+                        : ServiceLib.Services.RoutingCoreCompatibility.T("后台应用失败，连接保持", "Apply failed; connected")),
+                        "background failure is not a failed manual switch: " + context);
+                var restartOrigin = restart.TranslatePoint(default, _main)!.Value;
+                Check(restartOrigin.X >= 0 && restartOrigin.X + restart.Bounds.Width <= width && restartOrigin.Y + restart.Bounds.Height <= height,
+                    "restart remains inside compact window: " + context);
+                var connect = bar.FindControl<Button>("btnConnect")!;
+                Check(connect.TranslatePoint(default, _main)!.Value.X + connect.Bounds.Width <= restartOrigin.X,
+                    "connect and restart never overlap: " + context);
                 var scrolls = bar.GetVisualDescendants().OfType<ScrollViewer>().Where(s => s.IsEffectivelyVisible).ToArray();
                 Check(scrolls.Length == 0, "connection home has no scroll container, including active feedback: " + context);
                 Check(!bar.GetVisualDescendants().OfType<ScrollBar>().Any(s => s.IsEffectivelyVisible), "connection home has no visible scroll bars: " + context);
@@ -94,15 +122,29 @@ public partial class ReviewApp
                     Check(position.X >= 0 && position.X + button.Bounds.Width <= width && position.Y + button.Bounds.Height <= height,
                         "feedback action remains inside the window: " + button.Name + "/" + context);
                 }
-                if (state == "failed")
+                if (state == "failed-pending")
+                    Check(bar.FindControl<TextBlock>("txtActualServer")!.IsEffectivelyVisible
+                        && bar.FindControl<TextBlock>("txtActualServer")!.Text!.Contains("sing-box")
+                        && bar.FindControl<TextBlock>("txtNodeLabel")!.Text!.Contains(ServiceLib.Services.RoutingCoreCompatibility.T("待应用", "Pending")),
+                        "failed switch retains both the real core/server and pending selection: " + context);
+                if (state is "failed" or "failed-pending")
                     Check(bar.FindControl<Button>("btnRetryConnection")!.IsEffectivelyVisible
                         && bar.FindControl<Button>("btnConnectionDiagnostics")!.IsEffectivelyVisible, "failure retains direct recovery actions: " + context);
-                if (state is "tun" or "waiting" or "failed")
+                if (state is "failed" or "failed-pending")
+                {
+                    var errorPanel = bar.FindControl<StackPanel>("connectionErrorPanel")!;
+                    var fields = bar.FindControl<StackPanel>("connectionFields")!;
+                    Check(errorPanel.TranslatePoint(default, bar)!.Value.Y + errorPanel.Bounds.Height
+                        <= fields.TranslatePoint(default, bar)!.Value.Y, "error content cannot overlap TUN controls: " + context);
+                }
+                if (state is "tun" or "waiting" or "failed" or "failed-pending" or "incomplete" or "unconfirmed" or "proxyfailed" or "background-refresh" or "background-apply")
                     await CaptureAsync($"v7-{width}x{height}-{(dark ? "dark" : "light")}-{state}", "Compact home with long fixture text", _main);
                 _main.ConnectionFeedback!.Dismiss();
             }
             _vm.StatusBarViewModel.Transition = null;
             _vm.StatusBarViewModel.ConnectionError = null;
+            _vm.StatusBarViewModel.BackgroundRefreshError = null;
+            _vm.StatusBarViewModel.BackgroundApplyError = null;
             _vm.StatusBarViewModel.RunningServerDisplay = longName;
             await Task.Delay(50);
             var identityButton = bar.FindControl<Button>("btnServerIdentity")!;
@@ -138,6 +180,8 @@ public partial class ReviewApp
             _vm.StatusBarViewModel.ConnectionError = null;
             _vm.StatusBarViewModel.RunningServerDisplay = name;
             _vm.StatusBarViewModel.HasPendingChanges = false;
+            _vm.StatusBarViewModel.ConnectionIncomplete = false;
+            _vm.StatusBarViewModel.ExitUnconfirmed = false;
             runtimeProperty.SetValue(core, originalRuntime);
             AppManager.Instance.Config.IndexId = originalSelection;
             mode.SetValue(core, originalMode); running.SetValue(bar, false); timer.Start();

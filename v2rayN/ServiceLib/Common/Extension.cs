@@ -155,4 +155,11 @@ public static class Extension
                 return Signal.Return(defaultValue);
             });
     }
+
+    // List positioning and column sizing have no work when their view is inactive.
+    // Suppress only a missing handler; actual handler failures still reach the caller.
+    internal static IObservable<TOutput> HandleIfActive<TInput, TOutput>(
+        this Interaction<TInput, TOutput> interaction, TInput input, TOutput defaultValue = default!)
+        => Signal.Defer(() => interaction.Handle(input))
+            .Catch<TOutput, UnhandledInteractionException<TInput, TOutput>>(_ => Signal.Return(defaultValue));
 }

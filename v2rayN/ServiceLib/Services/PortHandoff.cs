@@ -37,7 +37,7 @@ internal static class PortHandoff
             }
             progress?.Invoke(elapsed);
             if (elapsed >= TimeSpan.FromSeconds(90))
-                throw new TimeoutException($"等待普通模式端口释放超时（90 秒），请手动重试 / Unprivileged port handoff timed out: {string.Join(", ", endpoints)}");
+                throw new TimeoutException($"等待目标核心端口可用超时（90 秒），请手动重试 / Target core port handoff timed out: {string.Join(", ", endpoints)}");
             await Task.Delay(TimeSpan.FromMilliseconds(250), clock, token);
         }
     }

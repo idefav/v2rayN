@@ -2,12 +2,32 @@ namespace ServiceLib.ViewModels;
 
 public partial class StatusBarViewModel : MyReactiveObject
 {
+    [Reactive] public partial bool CoreRunning { get; set; }
+    [Reactive] public partial bool CoreReloading { get; set; }
+    [Reactive] public partial bool ConnectionIncomplete { get; set; }
+    [Reactive] public partial bool ExitUnconfirmed { get; set; }
+    [Reactive] public partial bool ActualTun { get; set; }
+    [Reactive] public partial string RuntimeStateText { get; set; } = "";
+    public ReactiveCommand<RxVoid, RxVoid> RestartCoreCmd { get; private set; }
+    internal Func<Task>? RestartCore { get; set; }
+    internal Func<Task>? RetryBackgroundUpdate { get; set; }
+    private int _backgroundRetry;
+    public async Task RetryBackgroundUpdateAsync()
+    {
+        if (CoreReloading || IsChangingConnection || Interlocked.CompareExchange(ref _backgroundRetry, 1, 0) != 0) return;
+        try { if (RetryBackgroundUpdate != null) await RetryBackgroundUpdate(); }
+        finally { Interlocked.Exchange(ref _backgroundRetry, 0); }
+    }
+    private int _restartInProgress;
+    public string RestartCoreLabel => HasPendingChanges
+        ? RoutingCoreCompatibility.T("应用并重启", "Apply & restart") : RoutingCoreCompatibility.T("重启内核", "Restart core");
     [Reactive]
     public partial ConnectionTransition? Transition { get; set; }
 
     internal void ReportTransition(ConnectionTransition transition)
         => RxSchedulers.MainThreadScheduler.Schedule(() =>
         {
+            if (AppManager.Instance.IsExiting) return;
             if (Transition is { } current && transition.OperationId > 0 && current.OperationId > 0
                 && (transition.OperationId < current.OperationId
                     || transition.OperationId == current.OperationId && current.IsTerminal)) return;
@@ -95,6 +115,10 @@ public partial class StatusBarViewModel : MyReactiveObject
     [Reactive]
     public partial string RunningServerDisplay { get; set; }
 
+    // RunningServerDisplay is the legacy selected-profile binding used by the desktop node card.
+    [Reactive]
+    public partial string ActualServerDisplay { get; set; }
+
     [Reactive]
     public partial string RunningServerToolTipText { get; set; }
 
@@ -105,6 +129,18 @@ public partial class StatusBarViewModel : MyReactiveObject
     [Reactive] public partial bool IsTestingAvailability { get; set; }
     [Reactive] public partial bool IsChangingConnection { get; set; }
     [Reactive] public partial string? ConnectionError { get; set; }
+    [Reactive] public partial string? BackgroundRefreshError { get; set; }
+    [Reactive] public partial string? BackgroundApplyError { get; set; }
+    public string? DisplayConnectionError => ConnectionError
+        ?? (BackgroundApplyError is { } apply ? RoutingCoreCompatibility.T("后台配置应用失败", "Background configuration failed") + ": " + apply : null)
+        ?? (BackgroundRefreshError is { } refresh ? RoutingCoreCompatibility.T("后台刷新失败", "Background refresh failed") + ": " + refresh : null);
+
+    internal Task SetApplyErrorAsync(string? error, bool background = false, Func<bool>? isCurrent = null)
+        => UiThread.RunAsync(() =>
+        {
+            if (background) BackgroundApplyError = error;
+            else ConnectionError = error;
+        }, isCurrent);
     private int _connectionOperations;
     private string? _availabilityServerId;
 
@@ -127,6 +163,21 @@ public partial class StatusBarViewModel : MyReactiveObject
 
     public StatusBarViewModel()
     {
+        RestartCoreCmd = ReactiveCommand.CreateFromTask(async () =>
+        {
+            if ((!CoreRunning && !ConnectionIncomplete) || ExitUnconfirmed || CoreReloading || IsChangingConnection || Transition is { IsTerminal: false }
+                || Interlocked.CompareExchange(ref _restartInProgress, 1, 0) != 0) return;
+            try { if (RestartCore != null) await RestartCore(); }
+            finally { Interlocked.Exchange(ref _restartInProgress, 0); }
+        }, this.WhenAnyValue(x => x.CoreRunning, x => x.CoreReloading, x => x.IsChangingConnection, x => x.Transition,
+            x => x.ExitUnconfirmed, x => x.ConnectionIncomplete,
+            (running, reloading, changing, transition, unconfirmed, incomplete) => (running || incomplete) && !unconfirmed && !reloading && !changing && transition is not { IsTerminal: false })
+            .ObserveOn(RxSchedulers.MainThreadScheduler));
+        this.WhenAnyValue(x => x.HasPendingChanges).ObserveOn(RxSchedulers.MainThreadScheduler)
+            .Subscribe(_ => this.RaisePropertyChanged(nameof(RestartCoreLabel)));
+        this.WhenAnyValue(x => x.ConnectionError, x => x.BackgroundRefreshError, x => x.BackgroundApplyError)
+            .ObserveOn(RxSchedulers.MainThreadScheduler)
+            .Subscribe(_ => this.RaisePropertyChanged(nameof(DisplayConnectionError)));
         _config = AppManager.Instance.Config;
         SelectedRouting = new();
         SelectedServer = new();
@@ -279,19 +330,46 @@ public partial class StatusBarViewModel : MyReactiveObject
     {
         await RefreshServersMenu();
 
-        //display running server
-        var running = await ConfigHandler.GetDefaultServer(_config);
-        if (running?.IndexId != _availabilityServerId) LastAvailabilityCheck = null;
-        if (running != null)
+        var selected = await ConfigHandler.GetDefaultServer(_config);
+        await UiThread.RunAsync(() => RunningServerDisplay = selected?.GetSummary() ?? ResUI.CheckServerSettings,
+            () => selected?.IndexId == _config.IndexId);
+        await RefreshRunningServerAsync();
+    }
+
+    private long _runtimeRefresh;
+    public async Task RefreshRunningServerAsync()
+    {
+        var refresh = Interlocked.Increment(ref _runtimeRefresh);
+        var state = await CoreManager.Instance.GetRuntimeStateAsync();
+        var runtime = state.Summary;
+        var running = state.MainReady || state.PreReady;
+        await UiThread.RunAsync(() =>
         {
-            RunningServerDisplay = running.GetSummary();
-            RunningServerToolTipText = GetRunningServerToolTipText(RunningServerDisplay);
-        }
-        else
+        CoreRunning = state.Ready;
+        ConnectionIncomplete = state.Incomplete;
+        ExitUnconfirmed = state.Unconfirmed;
+        ActualTun = state.Tun;
+        RuntimeStateText = state.Unconfirmed ? RoutingCoreCompatibility.T("退出尚未确认", "Exit not confirmed")
+            : state.Incomplete ? RoutingCoreCompatibility.T("连接不完整", "Connection incomplete")
+            : state.Ready ? RoutingCoreCompatibility.T("内核已就绪", "Core ready") : RoutingCoreCompatibility.T("未连接", "Disconnected");
+        if (!state.Ready || runtime?.Generation != _availabilityGeneration || runtime?.ProfileId != _availabilityServerId)
         {
-            RunningServerDisplay = ResUI.CheckServerSettings;
-            RunningServerToolTipText = GetRunningServerToolTipText(RunningServerDisplay);
+            LastAvailabilityCheck = null;
+            if (_availabilityGeneration != null) { RunningInfoDisplay = ""; _availabilityGeneration = null; }
         }
+        if (_activeAvailabilityGeneration != null && (!state.Ready || runtime?.Generation != _activeAvailabilityGeneration))
+        {
+            _activeAvailabilityCancellation?.Cancel();
+            RunningInfoDisplay = "";
+        }
+        ActualServerDisplay = running && runtime != null
+            ? RoutingCoreCompatibility.T("实际连接：", "Running server: ") + runtime.Server
+                + (runtime.Core is { } core ? " · " + RoutingProtocolPolicy.CoreName(core) : "")
+            : RoutingCoreCompatibility.T("未连接", "Disconnected");
+        if (HasPendingChanges || running && runtime?.ProfileId != _config.IndexId)
+            ActualServerDisplay += RoutingCoreCompatibility.T(" · 所选配置待应用", " · Selected configuration pending");
+        RunningServerToolTipText = GetRunningServerToolTipText(ActualServerDisplay);
+        }, () => refresh == Volatile.Read(ref _runtimeRefresh) && runtime == CoreManager.Instance.RuntimeSummary);
     }
 
     private string GetRunningServerToolTipText(string serverInfo)
@@ -305,17 +383,19 @@ public partial class StatusBarViewModel : MyReactiveObject
 
         if (lstModel?.Count > _config.GuiItem.TrayMenuServersLimit)
         {
-            BlServers = false;
+            await UiThread.RunAsync(() => BlServers = false);
             return;
         }
 
         var models = lstModel.Select(it => new ComboItem { ID = it.IndexId, Text = it.GetSummary() }).ToList();
 
-        BlServers = true;
-        Servers.ReplaceRange(models);
-
-        // Update the ItemsSource before SelectedItem so a collection reset does not clear the tray selection.
-        SelectedServer = models.FirstOrDefault(it => it.ID == _config.IndexId) ?? new();
+        await UiThread.RunAsync(() =>
+        {
+            BlServers = true;
+            Servers.ReplaceRange(models);
+            // Update ItemsSource before SelectedItem; use the current choice at publication.
+            SelectedServer = models.FirstOrDefault(it => it.ID == _config.IndexId) ?? new();
+        });
     }
 
     private void ServerSelectedChanged()
@@ -333,73 +413,94 @@ public partial class StatusBarViewModel : MyReactiveObject
 
     public async Task<AvailabilityCheckResult?> TestServerAvailability()
     {
-        if (IsTestingAvailability) return LastAvailabilityCheck;
-        var item = await ConfigHandler.GetDefaultServer(_config);
-        if (item == null)
+        var state = await CoreManager.Instance.GetRuntimeStateAsync();
+        var runtime = state.Summary;
+        if (!state.Ready || runtime == null || string.IsNullOrEmpty(runtime.ProfileId) || runtime.ProxyPort <= 0)
         {
             return null;
         }
 
-        IsTestingAvailability = true;
-        LastAvailabilityCheck = null;
+        CancellationTokenSource? next = null;
+        await UiThread.RunAsync(() =>
+        {
+            if (IsTestingAvailability && _activeAvailabilityGeneration == runtime.Generation) return;
+            _activeAvailabilityCancellation?.Cancel();
+            next = CancellationTokenSource.CreateLinkedTokenSource(AppManager.Instance.ExitToken);
+            _activeAvailabilityCancellation = next;
+            _activeAvailabilityGeneration = runtime.Generation;
+            IsTestingAvailability = true;
+            LastAvailabilityCheck = null;
+        }, () => AvailabilityBelongsTo(runtime, CoreManager.Instance.RuntimeSummary));
+        if (next == null) return null;
+        using var cancellation = next;
         try
         {
-        await TestServerAvailabilitySub(ResUI.Speedtesting);
+        await TestServerAvailabilitySub(ResUI.Speedtesting, runtime);
 
-        var result = await Task.Run(ConnectionHandler.RunAvailabilityCheck);
-        if (_config.IndexId == item.IndexId) { LastAvailabilityCheck = result; _availabilityServerId = item.IndexId; }
+        var pingUrl = _config.SpeedTestItem.SpeedPingTestUrl;
+        var ipUrl = _config.SpeedTestItem.IPAPIUrl;
+        var result = await ConnectionHandler.RunAvailabilityCheck(runtime.ProxyPort, pingUrl, ipUrl, cancellation.Token);
+        if (!ReferenceEquals(_activeAvailabilityCancellation, cancellation)) return null;
         var msg = string.Format(ResUI.TestMeOutput, result.Time, result.Ip);
-
-        var ip = result.GetValidIp();
-        if (ip.IsNotEmpty())
+        var published = false;
+        await UiThread.RunTaskAsync(async () => published = await CoreManager.Instance.PublishAvailabilityAsync(runtime, () =>
         {
-            ProfileExManager.Instance.SetTestIpInfo(item.IndexId, ip);
-        }
-        if (result.Time > 0)
-        {
-            ProfileExManager.Instance.SetTestDelay(item.IndexId, result.Time);
-        }
-
-        NoticeManager.Instance.SendMessageEx(msg);
-        await TestServerAvailabilitySub(msg);
+            LastAvailabilityCheck = result; _availabilityServerId = runtime.ProfileId; _availabilityGeneration = runtime.Generation;
+            var ip = result.GetValidIp();
+            if (ip.IsNotEmpty()) ProfileExManager.Instance.SetTestIpInfo(runtime.ProfileId, ip);
+            if (result.Time > 0) ProfileExManager.Instance.SetTestDelay(runtime.ProfileId, result.Time);
+            NoticeManager.Instance.SendMessageEx(msg);
+        }, cancellation.Token));
+        if (!published) return null;
+        await TestServerAvailabilitySub(msg, runtime);
         return result;
         }
-        finally { IsTestingAvailability = false; }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { return null; }
+        finally
+        {
+            await UiThread.RunAsync(() =>
+            {
+                if (ReferenceEquals(_activeAvailabilityCancellation, cancellation))
+                { _activeAvailabilityCancellation = null; _activeAvailabilityGeneration = null; IsTestingAvailability = false; }
+            });
+        }
     }
+
+    private string? _availabilityGeneration;
+    private string? _activeAvailabilityGeneration;
+    private CancellationTokenSource? _activeAvailabilityCancellation;
+    internal static bool AvailabilityBelongsTo(CoreRuntimeSummary expected, CoreRuntimeSummary? current)
+        => current != null && expected.Generation == current.Generation && expected.ProfileId == current.ProfileId && expected.ProxyPort == current.ProxyPort;
 
     private async Task ChangeConnectionAsync(Func<Task> operation)
     {
         AppManager.Instance.ConnectionRecovery?.RequestCheck("connection settings changed");
         Interlocked.Increment(ref _connectionOperations);
-        IsChangingConnection = true;
-        ConnectionError = null;
+        await UiThread.RunAsync(() => { IsChangingConnection = true; ConnectionError = null; });
         try { await operation(); }
         catch (Exception ex)
         {
-            ConnectionError = ex.Message;
+            await SetApplyErrorAsync(ex.Message);
             NoticeManager.Instance.Enqueue(ex.Message);
             Logging.SaveLog("ChangeConnection", ex);
         }
         finally
         {
-            IsChangingConnection = Interlocked.Decrement(ref _connectionOperations) != 0;
+            Interlocked.Decrement(ref _connectionOperations);
+            await UiThread.RunAsync(() => IsChangingConnection = Volatile.Read(ref _connectionOperations) != 0);
             AppManager.Instance.ConnectionRecovery?.RequestCheck("connection settings applied");
         }
     }
 
-    private async Task TestServerAvailabilitySub(string msg)
+    private async Task TestServerAvailabilitySub(string msg, CoreRuntimeSummary? expected = null)
     {
-        RxSchedulers.MainThreadScheduler.Schedule(() =>
-        {
-            _ = TestServerAvailabilityResult(msg);
-        });
-        await Task.CompletedTask;
+        await UiThread.RunAsync(() => RunningInfoDisplay = msg,
+            () => expected == null || AvailabilityBelongsTo(expected, CoreManager.Instance.RuntimeSummary));
     }
 
     public async Task TestServerAvailabilityResult(string msg)
     {
-        RunningInfoDisplay = msg;
-        await Task.CompletedTask;
+        await UiThread.RunAsync(() => RunningInfoDisplay = msg);
     }
 
     #region System proxy and Routings
@@ -423,24 +524,32 @@ public partial class StatusBarViewModel : MyReactiveObject
         var operationId = blChange ? ConnectionTransition.NewOperationId() : 0;
         if (blChange)
         {
-            ConnectionError = null;
+            await SetApplyErrorAsync(null);
             ReportTransition(new(ConnectionStage.ApplyingProxy, EnableTun, UpdatingProxy: true) { OperationId = operationId });
         }
         bool applied;
-        try { applied = await SysProxyHandler.UpdateSysProxy(_config, false, error => ConnectionError = error); }
+        string? proxyError = null;
+        try
+        {
+            applied = await SysProxyHandler.UpdateSysProxy(_config, false, error => proxyError = error);
+            if (proxyError != null) await SetApplyErrorAsync(proxyError);
+        }
         catch (Exception ex)
         {
-            ConnectionError = ex.Message;
+            await SetApplyErrorAsync(ex.Message);
             if (blChange) ReportTransition(new(ConnectionStage.Failed, EnableTun, ex.Message, UpdatingProxy: true) { OperationId = operationId });
             throw;
         }
         if (blChange) ReportTransition(new(applied ? ConnectionStage.Completed : ConnectionStage.Failed,
             EnableTun, ConnectionError, UpdatingProxy: true) { OperationId = operationId });
 
+        await UiThread.RunAsync(() =>
+        {
         BlSystemProxyClear = type == ESysProxyType.ForcedClear;
         BlSystemProxySet = type == ESysProxyType.ForcedChange;
         BlSystemProxyNothing = type == ESysProxyType.Unchanged;
         BlSystemProxyPac = type == ESysProxyType.Pac;
+        });
 
         if (blChange)
         {
@@ -452,9 +561,11 @@ public partial class StatusBarViewModel : MyReactiveObject
     {
         var routings = await AppManager.Instance.RoutingItems();
 
-        RoutingItems.ReplaceRange(routings);
-
-        SelectedRouting = routings.FirstOrDefault(t => t.IsActive == true);
+        await UiThread.RunAsync(() =>
+        {
+            RoutingItems.ReplaceRange(routings);
+            SelectedRouting = routings.FirstOrDefault(t => t.IsActive == true);
+        });
     }
 
     private async Task RoutingSelectedChangedAsync()
@@ -504,8 +615,9 @@ public partial class StatusBarViewModel : MyReactiveObject
     private readonly TaskCompletionSource _authorizationUiReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
     public void MarkAuthorizationUiReady() => _authorizationUiReady.TrySetResult();
 
-    internal async Task<bool> EnsureTunAuthorizationAsync()
+    internal async Task<bool> EnsureTunAuthorizationAsync(Func<string?, Task>? reportError = null, CancellationToken token = default)
     {
+        reportError ??= error => SetApplyErrorAsync(error);
         if (!_config.TunModeItem.EnableTun) return true;
         if (Utils.IsWindows())
         {
@@ -513,25 +625,31 @@ public partial class StatusBarViewModel : MyReactiveObject
             await AppManager.Instance.RebootAsAdmin();
             return false;
         }
-        var token = AppManager.Instance.ExitToken;
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(token, AppManager.Instance.ExitToken);
+        token = cancellation.Token;
         await _authorizationUiReady.Task.WaitAsync(token);
         if (AppManager.Instance.LinuxSudoPwd.IsNotEmpty())
         {
             if (await CoreAdminManager.ValidateAuthorizationAsync(AppManager.Instance.LinuxSudoPwd, token)) return true;
             AppManager.Instance.LinuxSudoPwd = string.Empty;
         }
-        ConnectionError = "等待 TUN 授权，设置尚未应用 / Waiting for TUN authorization; settings not applied.";
+        await reportError("等待 TUN 授权，设置尚未应用 / Waiting for TUN authorization; settings not applied.");
         var result = await _tunAuthorization.RequestAsync(
-            async () => await PasswordInputInteraction.HandleSafe(RxVoid.Default), CoreAdminManager.ValidateAuthorizationAsync, token);
+            async () =>
+            {
+                string? password = null;
+                await UiThread.RunTaskAsync(async () => password = await PasswordInputInteraction.HandleSafe(RxVoid.Default));
+                return password;
+            }, CoreAdminManager.ValidateAuthorizationAsync, token);
         if (result.State == TunAuthorizationState.Authorized && _config.TunModeItem.EnableTun && !AppManager.Instance.IsExiting)
         {
             AppManager.Instance.LinuxSudoPwd = result.Password!;
-            ConnectionError = null;
+            await reportError(null);
             return true;
         }
-        ConnectionError = result.State == TunAuthorizationState.Failed
+        await reportError(result.State == TunAuthorizationState.Failed
             ? "TUN 授权失败；设置尚未应用，点击重启服务重试 / TUN authorization failed; restart service to retry."
-            : "TUN 授权已取消或过期；设置尚未应用，点击重启服务重试 / TUN authorization cancelled or superseded; restart service to retry.";
+            : "TUN 授权已取消或过期；设置尚未应用，点击重启服务重试 / TUN authorization cancelled or superseded; restart service to retry.");
         return false;
     }
 
@@ -565,20 +683,21 @@ public partial class StatusBarViewModel : MyReactiveObject
             sb.Append($",{AppManager.Instance.GetLocalPort(EInboundProtocol.socks2)}");
         }
         sb.Append(']');
-        InboundDisplay = $"{ResUI.LabLocal}:{sb}";
+        var inbound = $"{ResUI.LabLocal}:{sb}";
+        string inboundLan;
 
         if (_config.Inbound.First().AllowLANConn)
         {
             var lan = _config.Inbound.First().NewPort4LAN
                 ? $"[{EInboundProtocol.mixed}:{AppManager.Instance.GetLocalPort(EInboundProtocol.socks3)}]"
                 : $"[{EInboundProtocol.mixed}:{AppManager.Instance.GetLocalPort(EInboundProtocol.socks)}]";
-            InboundLanDisplay = $"{ResUI.LabLAN}:{lan}";
+            inboundLan = $"{ResUI.LabLAN}:{lan}";
         }
         else
         {
-            InboundLanDisplay = $"{ResUI.LabLAN}:{Global.None}";
+            inboundLan = $"{ResUI.LabLAN}:{Global.None}";
         }
-        await Task.CompletedTask;
+        await UiThread.RunAsync(() => { InboundDisplay = inbound; InboundLanDisplay = inboundLan; });
     }
 
     public async Task UpdateStatistics(ServerSpeedItem update)

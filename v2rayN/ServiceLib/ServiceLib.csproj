@@ -38,6 +38,8 @@
         <EmbeddedResource Include="Sample\ssh_install_key.sh" />
         <EmbeddedResource Include="Sample\udpgw-assets.json" />
         <EmbeddedResource Include="Sample\udpgw-bootstrap.sh" />
+        <EmbeddedResource Include="Sample\ssh-dns-bootstrap.sh" />
+        <EmbeddedResource Include="Sample\ssh-dns-helper.py" />
 		<EmbeddedResource Include="Sample\clash_mixin_yaml" />
 		<EmbeddedResource Include="Sample\clash_tun_yaml" />
 		<EmbeddedResource Include="Sample\custom_routing_black" />

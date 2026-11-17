@@ -96,6 +96,10 @@
                 </StackPanel>
 
                 <StackPanel Margin="{StaticResource MarginLeftRight8}" VerticalAlignment="Center">
+                    <Button x:Name="btnRestartCore" Margin="0,2" HorizontalAlignment="Left" />
+                    <Button x:Name="btnServerPicker" Margin="0,2" HorizontalAlignment="Left" />
+                    <TextBlock x:Name="txtCoreRuntimeState" Style="{StaticResource StatusbarItem}" />
+                    <TextBlock x:Name="txtBackgroundUpdateError" MaxWidth="320" TextTrimming="CharacterEllipsis" Style="{StaticResource StatusbarItem}" />
                     <TextBlock x:Name="txtRunningServerDisplay" Style="{StaticResource StatusbarItem}" />
                     <Border Margin="1" />
                     <TextBlock x:Name="txtRunningInfoDisplay" Style="{StaticResource StatusbarItem}" />

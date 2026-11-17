@@ -220,7 +220,7 @@ public class SpeedtestService(Config config, Func<SpeedTestResult, Task> updateF
                 {
                     var responseTime = await GetTcpingTime(item.Address, item.Port, innerCt);
 
-                    ProfileExManager.Instance.SetTestDelay(item.IndexId, responseTime);
+                    ProfileExManager.Instance.SetTcpDelay(item.IndexId, responseTime);
                     await UpdateFunc(item.IndexId, responseTime.ToString());
                     completedIds.TryAdd(item.IndexId, 0);
                 }

@@ -5,21 +5,21 @@ public static class ProxySettingLinux
 {
     private static readonly string _proxySetFileName = $"{Global.ProxySetLinuxShellFileName.Replace(Global.NamespaceSample, "")}.sh";
 
-    public static async Task SetProxy(string host, int port, string exceptions, Action<string>? onFailure = null)
+    public static async Task SetProxy(string host, int port, string exceptions, Action<string>? onFailure = null, CancellationToken token = default, string? customScript = null)
     {
         List<string> args = ["manual", host, port.ToString(), exceptions];
-        await ExecCmd(args, onFailure);
+        await ExecCmd(args, onFailure, token, customScript);
     }
 
-    public static async Task UnsetProxy(Action<string>? onFailure = null)
+    public static async Task UnsetProxy(Action<string>? onFailure = null, CancellationToken token = default, string? customScript = null)
     {
         List<string> args = ["none"];
-        await ExecCmd(args, onFailure);
+        await ExecCmd(args, onFailure, token, customScript);
     }
 
-    private static async Task ExecCmd(List<string> args, Action<string>? onFailure)
+    private static async Task ExecCmd(List<string> args, Action<string>? onFailure, CancellationToken token, string? customScript)
     {
-        var customSystemProxyScriptPath = AppManager.Instance.Config.SystemProxyItem?.CustomSystemProxyScriptPath;
+        var customSystemProxyScriptPath = customScript;
         var fileName = (customSystemProxyScriptPath.IsNotEmpty() && File.Exists(customSystemProxyScriptPath))
             ? customSystemProxyScriptPath
             : await FileUtils.CreateLinuxShellFile(_proxySetFileName, EmbedUtils.GetEmbedText(Global.ProxySetLinuxShellFileName), false);
@@ -27,7 +27,6 @@ public static class ProxySettingLinux
         // TODO: temporarily notify which script is being used
         NoticeManager.Instance.SendMessage(fileName);
 
-        if (onFailure == null) await Utils.GetCliWrapOutput(fileName, args);
-        else await SystemProxyCommand.Run(fileName, args, onFailure);
+        await SystemProxyCommand.Run(fileName, args, onFailure, token);
     }
 }

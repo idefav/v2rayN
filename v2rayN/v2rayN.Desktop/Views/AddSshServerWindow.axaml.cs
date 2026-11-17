@@ -71,6 +71,8 @@ public partial class AddSshServerWindow : WindowBase<AddSshServerViewModel>
             this.BindCommand(ViewModel, vm => vm.StopOperationCmd, v => v.btnStopOperation).DisposeWith(disposables);
             ViewModel.ConfirmDeploymentInteraction.RegisterHandler(async interaction =>
                 interaction.SetOutput(await UI.ShowYesNo(interaction.Input, SshStrings.DeployGateway) == ButtonResult.Yes)).DisposeWith(disposables);
+            ViewModel.ConfirmDnsInteraction.RegisterHandler(async interaction =>
+                interaction.SetOutput(await UI.ShowYesNo(interaction.Input, SshStrings.DnsTitle) == ButtonResult.Yes)).DisposeWith(disposables);
             ViewModel.SetupKeyInteraction.RegisterHandler(async interaction =>
             {
                 var window = new SshKeySetupWindow(interaction.Input);

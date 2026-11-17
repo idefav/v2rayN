@@ -4,7 +4,9 @@ namespace ServiceLib.Tests.Services;
 public class ProcessLifecycleTests
 {
     [Test]
-    public async Task DisconnectRemembersOwnedElevatedEndpointsForLaterOrdinaryConnection()
+    [Arguments(false)]
+    [Arguments(true)]
+    public async Task DisconnectRemembersOwnedElevatedEndpointsForLaterOrdinaryConnection(bool markerPending)
     {
         if (!OperatingSystem.IsMacOS()) { Skip.Test("macOS cross-user handoff metadata"); return; }
         using var process = await Sleep();
@@ -12,6 +14,7 @@ public class ProcessLifecycleTests
         { child.Kill(); await child.WaitForExitAsync(); }
         // Only our exited ordinary child is marked elevated; no sudo or root process is used.
         process.IsElevated = true;
+        if (markerPending) typeof(ProcessService).GetProperty("CoreIdentity", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(process, null);
         var config = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".json");
         process.ConfigPath = config;
         var manager = new CoreManager(_ => throw new InvalidOperationException("Disconnect must never launch"));
@@ -171,7 +174,8 @@ public class ProcessLifecycleTests
         reserved.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, false);
         var port = ((IPEndPoint)reserved.LocalEndPoint!).Port;
         var attempts = 0;
-        var manager = new CoreManager(_ => { attempts++; return ("missing-test-core", ""); });
+        var manager = new CoreManager(_ => (OperatingSystem.IsWindows() ? Environment.ProcessPath! : "/bin/sleep", ""),
+            (_, _, _, _, _) => Task.FromResult<string?>(null)) { ProcessStarted = _ => attempts++ };
         var config = Utils.GetBinConfigPath(Global.CoreConfigFileName);
         var before = File.Exists(config) ? await File.ReadAllBytesAsync(config) : null;
         var source = Path.Combine(Path.GetTempPath(), "bound-core-" + Guid.NewGuid() + ".json");
@@ -206,7 +210,8 @@ public class ProcessLifecycleTests
         using var main = await Sleep();
         using var pre = await Sleep();
         var launchAttempts = 0;
-        var manager = new CoreManager(_ => { launchAttempts++; return ("/bin/false", ""); });
+        var manager = new CoreManager(_ => ("/bin/sleep", ""), (_, _, _, _, _) => Task.FromResult<string?>(null))
+        { ProcessStarted = _ => launchAttempts++ };
         Field("_processService").SetValue(manager, main);
         Field("_processPreService").SetValue(manager, pre);
         var identities = (ConcurrentDictionary<int, ProcessIdentity>)typeof(ProcessService)
@@ -322,7 +327,8 @@ public class ProcessLifecycleTests
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var launchAttempts = 0;
         var paused = false;
-        var manager = new CoreManager(_ => { launchAttempts++; return ("missing-test-core", ""); });
+        var manager = new CoreManager(_ => (OperatingSystem.IsWindows() ? Environment.ProcessPath! : "/bin/sleep", ""),
+            (_, _, _, _, _) => Task.FromResult<string?>(null)) { ProcessStarted = _ => launchAttempts++ };
         Field("_updateFunc").SetValue(manager, (Func<bool, string, Task>)(async (_, message) =>
         {
             if (!paused && message.Contains("[主代理重载]"))

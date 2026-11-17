@@ -36,7 +36,10 @@ internal sealed class SshGatewayRemote : IDisposable
         return (arch, lines[3], lines[2] == "0");
     }
 
-    internal async Task UploadAsync(string stage, string helper, string binary, Action created, CancellationToken token)
+    internal Task UploadAsync(string stage, string helper, string binary, Action created, CancellationToken token)
+        => UploadFilesAsync(stage, [(helper, "helper"), (binary, "udpgw-server")], created, token);
+
+    internal async Task UploadFilesAsync(string stage, (string Local, string Name)[] files, Action created, CancellationToken token)
     {
         var info = new ConnectionInfo(_target.Address, _target.Port, _target.Username, _auth) { Timeout = TimeSpan.FromSeconds(12) };
         foreach (var algorithm in info.HostKeyAlgorithms.Keys.Where(a => a != _target.HostKey.Algorithm).ToArray()) info.HostKeyAlgorithms.Remove(algorithm);
@@ -50,9 +53,10 @@ internal sealed class SshGatewayRemote : IDisposable
             sftp.CreateDirectory(stage);
             created();
             sftp.ChangePermissions(stage, 700);
-            foreach (var file in new[] { (helper, "helper"), (binary, "udpgw-server") })
+            foreach (var file in files)
             {
                 token.ThrowIfCancellationRequested();
+                if (!Regex.IsMatch(file.Name, @"^[a-zA-Z0-9_.-]+$")) throw new SshSetupException("E_STAGE_NAME");
                 using var source = File.OpenRead(file.Item1);
                 sftp.UploadFile(source, stage + "/" + file.Item2, false);
                 sftp.ChangePermissions(stage + "/" + file.Item2, 700);
@@ -130,7 +134,7 @@ internal sealed class SshGatewayRemote : IDisposable
         }
     }
 
-    private static async Task HandleSudoAsync(Stream stream, Stream input, string password, CancellationTokenSource deadline)
+    private static async Task HandleSudoAsync(Stream stream, Stream input, string password, CancellationTokenSource deadline, string prompt = "V2RAYN_UDPGW_SUDO:")
     {
         var buffer = new byte[256]; var tail = ""; var total = 0; var sent = false;
         try
@@ -140,7 +144,7 @@ internal sealed class SshGatewayRemote : IDisposable
             {
                 if ((total += n) > 16384) throw new SshSetupException("E_REMOTE_OUTPUT");
                 tail += Encoding.ASCII.GetString(buffer, 0, n);
-                if (tail.Contains("V2RAYN_UDPGW_SUDO:", StringComparison.Ordinal))
+                if (tail.Contains(prompt, StringComparison.Ordinal))
                 {
                     if (sent || password.Length == 0 || password.Contains('\n') || password.Contains('\r')) throw new SshSetupException("E_SUDO_PASSWORD");
                     sent = true; tail = "";
@@ -176,6 +180,57 @@ internal sealed class SshGatewayRemote : IDisposable
         using var client = await ConnectAsync(token);
         // Only the random stage created by this object is removed.
         using var command = client.CreateCommand("rm -f -- " + Quote(stage + "/helper") + " " + Quote(stage + "/udpgw-server") + " && rmdir -- " + Quote(stage));
+        await command.ExecuteAsync(token);
+    }
+
+    internal async Task<JsonObject> DnsHelperAsync(string stageId, string hash, bool root, string password, object request, CancellationToken token)
+    {
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
+        deadline.CancelAfter(TimeSpan.FromMinutes(5));
+        var ct = deadline.Token;
+        using var client = await ConnectAsync(ct);
+        var prefix = root ? "" : "sudo -S -p 'V2RAYN_DNS_SUDO:' -- ";
+        using var command = client.CreateCommand(prefix + "sh -c " + Quote(SshGatewayAssets.Resource("ssh-dns-bootstrap.sh"))
+            + " v2rayn " + Quote(stageId) + " " + Quote(hash));
+        using var cancel = ct.Register(() => { try { command.Dispose(); client.Disconnect(); } catch { } });
+        var execution = command.ExecuteAsync(ct);
+        var input = command.CreateInputStream();
+        var errors = HandleSudoAsync(command.ExtendedOutputStream, input, password, deadline, "V2RAYN_DNS_SUDO:");
+        using var reader = new StreamReader(command.OutputStream, Encoding.UTF8, false, 1024, true);
+        try
+        {
+            if (await ReadLineAsync(reader, ct) != "V2RAYN_DNS_READY") throw new SshSetupException("E_REMOTE_BOOTSTRAP");
+            await input.WriteAsync(SerializeDnsRequest(request), ct);
+            await input.FlushAsync(ct);
+            var reply = JsonNode.Parse(await ReadLineAsync(reader, ct))!.AsObject();
+            await execution.WaitAsync(ct);
+            await errors;
+            if (command.ExitStatus != 0 || reply["version"]?.GetValue<int>() != 1) throw new SshSetupException("E_REMOTE_PROTOCOL");
+            if (reply["state"]?.GetValue<string>() != "ok") throw new SshSetupException(SafeCode(reply["error"]?.GetValue<string>()));
+            return reply["result"]!.AsObject();
+        }
+        catch
+        {
+            if (deadline.IsCancellationRequested && !token.IsCancellationRequested)
+            { try { await errors; } catch (SshSetupException) { throw; } catch { } }
+            throw;
+        }
+        finally
+        {
+            try { input.Dispose(); } catch { }
+            command.Dispose();
+            try { await execution; } catch { }
+            try { await errors; } catch { }
+        }
+    }
+
+    internal static byte[] SerializeDnsRequest(object request) =>
+        Encoding.UTF8.GetBytes(JsonSerializer.Serialize(request, new JsonSerializerOptions(JsonSerializerDefaults.Web)) + "\n");
+
+    internal async Task RemoveDnsStageAsync(string stage, CancellationToken token)
+    {
+        using var client = await ConnectAsync(token);
+        using var command = client.CreateCommand("rm -f -- " + Quote(stage + "/helper.py") + " && rmdir -- " + Quote(stage));
         await command.ExecuteAsync(token);
     }
 

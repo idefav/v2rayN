@@ -6,6 +6,7 @@ public class TaskManager
     public static TaskManager Instance => _instance.Value;
     private Config _config;
     private Func<bool, string, Task>? _updateFunc;
+    private readonly SubscriptionUpdateSchedule _subscriptions = new();
 
     public void RegUpdateTask(Config config, Func<bool, string, Task> updateFunc)
     {
@@ -21,8 +22,9 @@ public class TaskManager
 
         using var timer = new PeriodicTimer(TimeSpan.FromMinutes(1));
         var numOfExecuted = 1;
-        while (await timer.WaitForNextTickAsync().ConfigureAwait(false))
+        while (!AppManager.Instance.IsExiting && await timer.WaitForNextTickAsync().ConfigureAwait(false))
         {
+            if (AppManager.Instance.IsExiting) break;
             //Execute once 1 minute
             try
             {
@@ -32,6 +34,7 @@ public class TaskManager
             {
                 Logging.SaveLog("ScheduledTasks - UpdateTaskRunSubscription", ex);
             }
+            if (AppManager.Instance.IsExiting) break;
 
             //Execute once 20 minute
             if (numOfExecuted % 20 == 0)
@@ -86,33 +89,19 @@ public class TaskManager
 
     private async Task UpdateTaskRunSubscription()
     {
-        var updateTime = ((DateTimeOffset)DateTime.Now).ToUnixTimeSeconds();
-        var lstSubs = (await AppManager.Instance.SubItems())?
-            .Where(t => t.AutoUpdateInterval > 0)
-            .Where(t => updateTime - t.UpdateTime >= t.AutoUpdateInterval * 60)
-            .ToList();
-
-        if (lstSubs is not { Count: > 0 })
-        {
-            return;
-        }
-
-        Logging.SaveLog("Execute update subscription");
-
-        foreach (var item in lstSubs)
-        {
-            await SubscriptionHandler.UpdateProcess(_config, item.Id, true, async (success, msg) =>
+        await _subscriptions.RunAsync(await AppManager.Instance.SubItems(),
+            async (item, token) =>
             {
-                await _updateFunc?.Invoke(success, msg);
-                if (success)
-                {
-                    Logging.SaveLog($"Update subscription end. {msg}");
-                }
-            });
-            item.UpdateTime = updateTime;
-            await ConfigHandler.AddSubItem(_config, item);
-            await Task.Delay(1000);
-        }
+                Logging.SaveLog("Execute update subscription");
+                return await SubscriptionHandler.UpdateWithResultAsync(_config, item.Id, true,
+                    (success, msg) => _updateFunc?.Invoke(success, msg) ?? Task.CompletedTask, token);
+            },
+            async (id, time) => { await SQLiteHelper.Instance.SetSubscriptionUpdateTimeAsync(id, time); },
+            async (result, token) =>
+            {
+                token.ThrowIfCancellationRequested();
+                if (_updateFunc != null) await _updateFunc(result.Imported, ResUI.MsgUpdateSubscriptionEnd);
+            }, Logging.SaveLog, AppManager.Instance.ExitToken);
     }
 
     private async Task UpdateTaskRunGeo(int hours)

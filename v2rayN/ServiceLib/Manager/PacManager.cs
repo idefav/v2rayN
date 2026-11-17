@@ -5,13 +5,22 @@ public class PacManager
     private const string Tag = "PacManager";
     private CancellationTokenSource? _cts;
     private int _pacPort;
+    private int _httpPort;
+    private string? _customPath;
     private TcpListener? _tcpListener;
     private byte[] _writeContent = [];
 
-    public async Task StartAsync(int httpPort, int pacPort)
+    internal bool Matches(int httpPort, int pacPort, string? customPath)
+        => _tcpListener != null && _cts?.IsCancellationRequested == false && _httpPort == httpPort
+            && _pacPort == pacPort && _customPath == customPath;
+
+    public async Task StartAsync(int httpPort, int pacPort, string? customPath = null, CancellationToken token = default)
     {
-        var content = await InitText(httpPort);
+        var content = await InitText(httpPort, customPath, token);
+        token.ThrowIfCancellationRequested();
         _writeContent = content;
+        _httpPort = httpPort;
+        _customPath = customPath;
 
         if (_tcpListener is not null && _pacPort == pacPort)
         {
@@ -25,13 +34,14 @@ public class PacManager
 
         _cts = cts;
         _pacPort = pacPort;
+        _httpPort = httpPort;
+        _customPath = customPath;
         _tcpListener = listener;
         _ = ListenLoopAsync(listener, cts.Token);
     }
 
-    private async Task<byte[]> InitText(int httpPort)
+    private async Task<byte[]> InitText(int httpPort, string? customSystemProxyPacPath, CancellationToken token)
     {
-        var customSystemProxyPacPath = AppManager.Instance.Config.SystemProxyItem.CustomSystemProxyPacPath;
         var fileName = customSystemProxyPacPath.IsNotEmpty() && File.Exists(customSystemProxyPacPath)
             ? customSystemProxyPacPath
             : Path.Combine(Utils.GetConfigPath(), "pac.txt");
@@ -42,10 +52,10 @@ public class PacManager
         if (!File.Exists(fileName))
         {
             var pac = EmbedUtils.GetEmbedText(Global.PacFileName);
-            await File.AppendAllTextAsync(fileName, pac);
+            await File.AppendAllTextAsync(fileName, pac, token);
         }
 
-        var pacText = await File.ReadAllTextAsync(fileName);
+        var pacText = await File.ReadAllTextAsync(fileName, token);
         pacText = pacText.Replace("__PROXY__", $"PROXY 127.0.0.1:{httpPort};DIRECT;");
 
         var sb = new StringBuilder();
@@ -92,6 +102,8 @@ public class PacManager
         _cts?.Dispose();
         _cts = null;
         _pacPort = 0;
+        _httpPort = 0;
+        _customPath = null;
         _tcpListener = null;
     }
 }

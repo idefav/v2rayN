@@ -12,7 +12,7 @@ public partial class CoreConfigV2rayService
 
             _coreConfig.stats = new Stats4Ray();
 
-            metricsObj.listen = $"{Global.Loopback}:{AppManager.Instance.StatePort}";
+            metricsObj.listen = $"{Global.Loopback}:{context.StatisticsPort ?? AppManager.Instance.StatePort}";
             _coreConfig.metrics = metricsObj;
 
             policySystemSetting.statsOutboundDownlink = true;

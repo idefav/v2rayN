@@ -99,6 +99,7 @@ public partial class AddSshServerViewModel : MyReactiveObject, ICloseable
             if (!_closed && !string.IsNullOrEmpty(path)) PrivateKeyPath = path;
         });
         InitializeUdp(capabilityService, deploymentService);
+        InitializeDns();
     }
 
     public void CancelOperation()
@@ -169,7 +170,7 @@ public partial class AddSshServerViewModel : MyReactiveObject, ICloseable
     private async Task TestConnectionAsync()
     {
         IsTesting = true;
-        InvalidateTest();
+        InvalidateTest(clearDns: false);
         if (SshProfileService.Validate(CreateDraftSnapshot(), requireTrust: false) is { } error)
         { Status = error; return; }
         if (_trustedKey == null) await ConfirmAsync(true);
@@ -195,11 +196,17 @@ public partial class AddSshServerViewModel : MyReactiveObject, ICloseable
         }
     }
 
-    private void InvalidateTest()
+    private void InvalidateTest(bool clearDns = true)
     {
         _testRevision++;
         LastTestResult = null;
         TestStatus = "";
+        if (clearDns)
+        {
+            DnsStatus = "";
+            DnsDetails = "";
+            DnsDeploymentStatus = SshStrings.DnsDeploymentPhase(null);
+        }
     }
 
     private async Task ConfirmAsync(bool fetch)

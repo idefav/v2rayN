@@ -3,8 +3,9 @@ using CliWrap.Buffered;
 
 namespace ServiceLib.Services;
 
-internal sealed record CoreListener(IPAddress Address, int Port, ProtocolType Protocol, bool Socks = false, bool Authentication = false)
+internal sealed record CoreListener(IPAddress Address, int Port, ProtocolType Protocol, bool Socks = false, bool Authentication = false, bool SocksUdp = false)
 {
+    internal string Source { get; init; } = "listener";
     public override string ToString() => $"{Protocol} {new IPEndPoint(Address, Port)}";
     internal IPAddress ProbeAddress => Address.Equals(IPAddress.Any) ? IPAddress.Loopback
         : Address.Equals(IPAddress.IPv6Any) ? IPAddress.IPv6Loopback : Address;
@@ -12,14 +13,23 @@ internal sealed record CoreListener(IPAddress Address, int Port, ProtocolType Pr
 
 internal static class CoreListenerCheck
 {
+    internal static bool Supports(ECoreType core) => core is ECoreType.sing_box or ECoreType.Xray;
+
+    internal static IReadOnlyList<CoreListener> Read(string json, ECoreType core)
+        => core == ECoreType.Xray ? ReadXray(json) : core == ECoreType.sing_box ? Read(json) : [];
+
     internal static IReadOnlyList<CoreListener> Read(string json)
     {
         var root = JsonNode.Parse(json, documentOptions: new() { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true });
+        // Remembered process configurations predate the next target core selection.
+        if (root?["inbounds"] is JsonArray oldInbounds && oldInbounds.OfType<JsonObject>().Any(i => i.ContainsKey("protocol")))
+            return ReadXray(json);
         var listeners = new List<CoreListener>();
         if (root?["inbounds"] is JsonArray inbounds)
             foreach (var item in inbounds.OfType<JsonObject>())
             {
                 var type = item["type"]?.GetValue<string>();
+                var source = item["tag"]?.GetValue<string>() ?? $"inbounds[{inbounds.IndexOf(item)}]";
                 if (item["listen_port"]?.GetValue<int>() is not { } port || port == 0) continue;
                 var address = ParseAddress(item["listen"]?.GetValue<string>() ?? "::");
                 var socks = type is "mixed" or "socks";
@@ -29,9 +39,9 @@ internal static class CoreListenerCheck
                 var bothByDefault = type is "direct" or "shadowsocks" or "tproxy" or "naive";
                 if (!udpOnly && (networks.Length == 0 || networks.Contains("tcp")))
                     listeners.Add(new(address, port, ProtocolType.Tcp, socks && item["tls"]?["enabled"]?.GetValue<bool>() != true,
-                        item["users"] is JsonArray { Count: > 0 }));
+                        item["users"] is JsonArray { Count: > 0 }) { Source = source });
                 if (udpOnly || bothByDefault && (networks.Length == 0 || networks.Contains("udp")))
-                    listeners.Add(new(address, port, ProtocolType.Udp));
+                    listeners.Add(new(address, port, ProtocolType.Udp) { Source = source });
             }
         foreach (var api in new[] { root?["experimental"]?["clash_api"]?["external_controller"], root?["experimental"]?["v2ray_api"]?["listen"] })
         {
@@ -39,9 +49,75 @@ internal static class CoreListenerCheck
             if (string.IsNullOrWhiteSpace(value)) continue;
             if (value.StartsWith(':')) value = "0.0.0.0" + value;
             if (!IPEndPoint.TryParse(value, out var endpoint)) throw new InvalidOperationException("无法识别管理 API 监听地址 / Invalid API listener: " + value);
-            if (endpoint.Port != 0) listeners.Add(new(endpoint.Address, endpoint.Port, ProtocolType.Tcp));
+            if (endpoint.Port != 0) listeners.Add(new(endpoint.Address, endpoint.Port, ProtocolType.Tcp) { Source = "experimental API" });
         }
-        return listeners.Distinct().ToArray();
+        return listeners.ToArray();
+    }
+
+    private static IReadOnlyList<CoreListener> ReadXray(string json)
+    {
+        var root = JsonNode.Parse(json, documentOptions: new() { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true });
+        var listeners = new List<CoreListener>();
+        foreach (var section in new[] { "metrics", "api" })
+        {
+            var value = root?[section]?["listen"]?.GetValue<string>();
+            if (string.IsNullOrWhiteSpace(value)) continue;
+            if (value.StartsWith(':')) value = "0.0.0.0" + value;
+            if (!IPEndPoint.TryParse(value, out var endpoint) || endpoint.Port is < 1 or > 65535)
+                throw new InvalidOperationException("Invalid Xray " + section + ".listen: " + value);
+            listeners.Add(new(endpoint.Address, endpoint.Port, ProtocolType.Tcp) { Source = section + ".listen" });
+        }
+        if (root?["inbounds"] == null) return listeners;
+        if (root["inbounds"] is not JsonArray inbounds) throw new InvalidOperationException("Invalid Xray inbounds.");
+        foreach (var entry in inbounds)
+        {
+            if (entry is not JsonObject item) throw new InvalidOperationException("Invalid Xray inbound.");
+            var protocol = item["protocol"]?.GetValue<string>();
+            if (protocol == "tun") continue; // A device, not a TCP/UDP socket. Verified by CoreListenerPlan.
+            var source = item["tag"]?.GetValue<string>() ?? $"inbounds[{inbounds.IndexOf(item)}]";
+            if (string.IsNullOrEmpty(protocol)) throw new InvalidOperationException("Missing Xray inbound protocol.");
+            if (protocol is not ("mixed" or "socks" or "http" or "dokodemo-door" or "tunnel" or "shadowsocks" or "vmess" or "vless" or "trojan"))
+                throw new InvalidOperationException("Unsupported Xray inbound protocol: " + protocol);
+            var portText = item["port"]?.ToString();
+            if (string.IsNullOrWhiteSpace(portText)) throw new InvalidOperationException("Missing Xray inbound port.");
+            var ports = new List<int>();
+            foreach (var part in portText.Split(','))
+            {
+                var range = part.Split('-');
+                if (range.Length > 2 || !int.TryParse(range[0], out var first) || first is < 1 or > 65535)
+                    throw new InvalidOperationException("Invalid Xray inbound port: " + portText);
+                var last = first;
+                if (range.Length == 2 && (!int.TryParse(range[1], out last) || last < first || last > 65535))
+                    throw new InvalidOperationException("Invalid Xray inbound port range: " + portText);
+                ports.AddRange(Enumerable.Range(first, last - first + 1));
+            }
+            var address = ParseAddress(item["listen"]?.GetValue<string>() ?? "0.0.0.0");
+            var transport = item["streamSettings"]?["network"]?.GetValue<string>() ?? "tcp";
+            var settings = item["settings"];
+            var tcp = true;
+            var udp = false;
+            if (transport is "kcp" or "quic") { tcp = false; udp = true; }
+            else if (transport is not ("tcp" or "raw" or "ws" or "httpupgrade" or "grpc" or "http" or "h2" or "xhttp" or "splithttp"))
+                throw new InvalidOperationException("Unsupported Xray listener transport: " + transport);
+            else if (protocol is "dokodemo-door" or "tunnel" or "shadowsocks")
+            {
+                var networks = (settings?["network"]?.GetValue<string>() ?? (protocol == "shadowsocks" ? "tcp,udp" : "tcp")).Split(',').Select(n => n.Trim()).ToArray();
+                if (networks.Any(n => n is not ("tcp" or "udp"))) throw new InvalidOperationException("Invalid Xray inbound network.");
+                tcp = networks.Contains("tcp"); udp = networks.Contains("udp");
+            }
+            // Xray SOCKS allocates a dynamic UDP socket on UDP ASSOCIATE, not at the TCP listen port.
+            var isSocks = protocol is "socks" or "mixed";
+            var socksUdp = isSocks && settings?["udp"]?.GetValue<bool>() == true;
+            var security = item["streamSettings"]?["security"]?.GetValue<string>();
+            var plainSocks = isSocks && (transport is "raw" or "tcp") && (security == null || security == "none")
+                && item["streamSettings"]?["sockopt"]?["acceptProxyProtocol"]?.GetValue<bool>() != true;
+            foreach (var port in ports)
+            {
+                if (tcp) listeners.Add(new(address, port, ProtocolType.Tcp, plainSocks, settings?["auth"]?.GetValue<string>() == "password", socksUdp) { Source = source });
+                if (udp) listeners.Add(new(address, port, ProtocolType.Udp) { Source = source });
+            }
+        }
+        return listeners.ToArray();
     }
 
     private static IPAddress ParseAddress(string address) => IPAddress.TryParse(address, out var ip) ? ip
@@ -161,7 +237,8 @@ internal static class CoreListenerCheck
         return "占用进程信息不可读取（可能权限不足）；未终止任何未知进程。 / Owner unavailable; no unknown process was terminated.";
     }
 
-    internal static async Task WaitForReadyAsync(ProcessService process, IReadOnlyList<CoreListener> endpoints, CancellationToken token)
+    internal static async Task WaitForReadyAsync(ProcessService process, IReadOnlyList<CoreListener> endpoints, CancellationToken token,
+        Func<CancellationToken, Task<bool>>? additionalReady = null)
     {
         await process.WaitForIdentityAsync(token);
         var consecutive = 0;
@@ -190,14 +267,28 @@ internal static class CoreListenerCheck
                         var reply = new byte[2];
                         await stream.ReadExactlyAsync(reply, attempt.Token);
                         ready &= reply[0] == 5 && reply[1] == (endpoint.Authentication ? 2 : 0);
+                        if (endpoint.SocksUdp && !endpoint.Authentication && ready)
+                        {
+                            await stream.WriteAsync(new byte[] { 5, 3, 0, 1, 0, 0, 0, 0, 0, 0 }, attempt.Token);
+                            var response = new byte[4];
+                            await stream.ReadExactlyAsync(response, attempt.Token);
+                            ready &= response[0] == 5 && response[1] == 0;
+                        }
                     }
                 }
                 catch (Exception ex) when (ex is SocketException or IOException or OperationCanceledException) { ready = false; }
             }
-            if ((ready || endpoints.Count == 0 && process.StartupReported) && !await process.HasExitedAsync(token))
+            if ((ready || endpoints.Count == 0 && process.StartupReported) && !await process.HasExitedAsync(token)
+                && (additionalReady == null || await additionalReady(token)))
             {
                 if (++consecutive >= 2)
                 {
+                    if (!await CoreListenerOwnership.OwnsAsync(process, endpoints, token))
+                    {
+                        consecutive = 0;
+                        await Task.Delay(50, token);
+                        continue;
+                    }
                     if (Utils.IsNonWindows())
                     {
                         var snapshot = await UnixProcessControl.SnapshotAsync(token);

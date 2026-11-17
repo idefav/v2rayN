@@ -387,7 +387,7 @@ public partial class ProfilesViewModel : MyReactiveObject
         else SelectedProfile = new ProfileItemModel();
         SelectedProfiles = (lstModel ?? []).Where(p => selectionIds.Contains(p.IndexId)).ToList();
 
-        await DispatcherRefreshServersBizInteraction.HandleSafe(RxVoid.Default);
+        await DispatcherRefreshServersBizInteraction.HandleIfActive(RxVoid.Default);
     }
 
     public async Task RefreshSubscriptions()
@@ -404,7 +404,7 @@ public partial class ProfilesViewModel : MyReactiveObject
 
     public async Task AdjustMainLvColWidth()
     {
-        await AdjustMainLvColWidthInteraction.HandleSafe(RxVoid.Default);
+        await AdjustMainLvColWidthInteraction.HandleIfActive(RxVoid.Default);
     }
 
     private async Task<List<ProfileItemModel>?> GetProfileItemsEx(string subid, string filter)

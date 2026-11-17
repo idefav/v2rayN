@@ -31,8 +31,8 @@ public static class WorkspaceText
     public static string TableSettings => T("表格设置", "Table settings");
     public static string Actions => T("操作", "Actions");
     public static string Node => T("节点", "Server");
-    public static string ActiveConfiguration => T("● 活动配置", "● Active profile");
-    public static string ActiveBadge => T("● 活动", "● Active");
+    public static string ActiveConfiguration => T("● 所选配置", "● Selected profile");
+    public static string ActiveBadge => T("● 已选择", "● Selected");
     public static string SelectedNode => T("当前选中", "Currently selected");
     public static string SelectionHint => T("选择只用于查看详情，使用“设为活动服务器”应用节点。", "Selection only opens details. Use Set as active server to apply it.");
     public static string CachedExit => T("上次检测（缓存）", "Last check (cached)");

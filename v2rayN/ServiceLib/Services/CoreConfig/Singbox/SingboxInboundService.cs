@@ -7,7 +7,7 @@ public partial class CoreConfigSingboxService
         try
         {
             var listen = "0.0.0.0";
-            var listenPort = AppManager.Instance.GetLocalPort(EInboundProtocol.socks);
+            var listenPort = AppManager.GetLocalPort(_config, EInboundProtocol.socks);
             var isUsingLocalMixedPort = _node.Address == Global.Loopback && _node.Port == listenPort;
             _coreConfig.inbounds = [];
 

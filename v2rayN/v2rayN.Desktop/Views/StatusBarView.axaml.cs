@@ -5,6 +5,7 @@ using v2rayN.Desktop.Common;
 using ServiceLib.Services;
 using Avalonia.Data;
 using Avalonia.Automation;
+using Avalonia.Controls.Templates;
 
 namespace v2rayN.Desktop.Views;
 
@@ -21,9 +22,8 @@ public partial class StatusBarView : ReactiveUserControl<StatusBarViewModel>
     private string? _exitNode;
     private ExitInfoItem? _exitResult;
     private bool _exitStale;
-    private List<ProfileItemModel> _pickerItems = [];
+    private readonly ServerPickerViewModel _picker;
     private int _pickerRevision;
-    private Control? _pickerSelectionToReveal;
     private bool _pickerFullyExpanded;
     private string _renderedPickerSearch = string.Empty;
     private int _renderedPickerScope = -1;
@@ -67,9 +67,27 @@ public partial class StatusBarView : ReactiveUserControl<StatusBarViewModel>
     {
         InitializeComponent();
         SizeChanged += (_, _) => UpdateHomeLayout();
-        serverListScroll.LayoutUpdated += (_, _) => RevealSelectedServer();
         _config = AppManager.Instance.Config;
         _config.UiItem.ConnectionFavorites ??= [];
+        _picker = new(_config);
+        _picker.RowsChanged += () =>
+        {
+            serverRows.ItemsSource = _picker.Rows;
+            btnTestPicker.Content = WorkspaceText.T("检测当前结果", "Test results") + $" ({_picker.VisibleCount})";
+            txtPickerEmpty.IsVisible = _picker.VisibleCount == 0;
+        };
+        _picker.PropertyChanged += (_, _) =>
+        {
+            btnTestPicker.IsEnabled = !_picker.Busy;
+            btnCancelPicker.IsEnabled = _picker.Busy;
+            txtPickerProgress.Text = _picker.Progress;
+        };
+        serverRows.ItemTemplate = new FuncDataTemplate<ServerPickerRow>((row, _) => row == null ? new Border() : BuildPickerRow(row));
+        pickerGroup.SelectionChanged += (_, _) => RenderPicker();
+        btnTestPicker.Click += async (_, _) => await _picker.TestVisibleAsync();
+        btnCancelPicker.Content = WorkspaceText.T("取消", "Cancel");
+        btnCancelPicker.Click += (_, _) => _picker.Cancel();
+        DetachedFromVisualTree += (_, _) => _picker.Close();
         txtSpeedLabel.Text = WorkspaceText.T("实时速度", "Live speed");
         AutomationProperties.SetName(togRealTimeSpeed, txtSpeedLabel.Text);
         AutomationProperties.SetName(togEnableTun, WorkspaceText.T("用户选择的 TUN 模式", "Selected TUN mode"));
@@ -87,11 +105,20 @@ public partial class StatusBarView : ReactiveUserControl<StatusBarViewModel>
             txtSelectionState.Text,
             txtActualServer.IsVisible ? txtActualServer.Text : null
         }.Where(text => !string.IsNullOrEmpty(text)));
-        WorkspaceIcons.SetButton(btnRestart, "refresh", WorkspaceText.T("重启已保存配置", "Restart saved configuration"));
+        btnRestart.Content = WorkspaceText.T("重启内核", "Restart core");
+        btnRestart.FontSize = 11;
+        btnRestart.Padding = new Thickness(8, 0);
+        btnRestart.MinHeight = 44;
+        restartHost.Content = btnRestart;
         WorkspaceIcons.SetButton(btnAvailability, "test", ResUI.menuRealPingServer);
         btnRouting.Click += async (_, _) => { if (RoutingRequested != null) await RoutingRequested(); };
         btnConnectionDiagnostics.Click += async (_, _) => { if (DiagnosticsRequested != null) await DiagnosticsRequested(); };
-        btnRetryConnection.Click += async (_, _) => await ConnectOrDisconnectAsync(retry: true);
+        btnRetryConnection.Click += async (_, _) =>
+        {
+            if (ViewModel is { ConnectionError: null } vm && (vm.BackgroundApplyError != null || vm.BackgroundRefreshError != null))
+                await vm.RetryBackgroundUpdateAsync();
+            else await ConnectOrDisconnectAsync(retry: true);
+        };
         btnApplyPending.Click += async (_, _) => { if (ApplyRequested != null) await ApplyRequested(); };
         ToolTip.SetTip(togRealTimeSpeed, ResUI.TbSettingsDisplayRealTimeSpeed);
         togRealTimeSpeed.IsChecked = _config.GuiItem.DisplayRealTimeSpeed;
@@ -123,31 +150,25 @@ public partial class StatusBarView : ReactiveUserControl<StatusBarViewModel>
         {
             if (CloseConnectionControls()) return;
             var revision = ++_pickerRevision;
-            _pickerItems = [];
-            _pickerSelectionToReveal = null;
             _pickerFullyExpanded = false;
             // Reopening starts at the selected server, even if the previous
             // search or favorites scope would have hidden it.
             txtServerSearch.Text = string.Empty;
             pickerScope.SelectedIndex = 0;
-            serverListScroll.Offset = default;
             IsServerPickerOpen = true;
             btnConnectionControls.Classes.Add("expanded");
             if (PickerVisibilityRequested != null) PickerVisibilityRequested(true);
             else PresentServerDrawer(Bounds.Width, Bounds.Width, 1, true);
             txtPickerEmpty.Text = WorkspaceText.T("正在加载…", "Loading…");
             txtPickerEmpty.IsVisible = true;
-            serverChoices.Children.Clear();
+            serverRows.ItemsSource = null;
             try
             {
-                var items = await AppManager.Instance.ProfileModels(string.Empty, string.Empty) ?? [];
-                var measurements = (await ProfileExManager.Instance.GetProfileExs()).ToDictionary(p => p.IndexId);
+                await _picker.OpenAsync();
                 if (revision != _pickerRevision || !IsServerPickerOpen) return;
-                _pickerItems = items;
-                foreach (var item in _pickerItems)
-                    if (measurements.TryGetValue(item.IndexId, out var measurement))
-                    { item.Delay = measurement.Delay; item.Sort = measurement.Sort; }
-                _pickerItems = _pickerItems.OrderBy(p => p.Sort).ToList();
+                var groupId = _picker.GroupId;
+                pickerGroup.ItemsSource = _picker.Groups;
+                pickerGroup.SelectedItem = _picker.Groups.FirstOrDefault(g => g.Id == groupId);
                 RenderPicker(revealSelection: true);
             }
             catch (Exception ex)
@@ -164,11 +185,6 @@ public partial class StatusBarView : ReactiveUserControl<StatusBarViewModel>
         cmbRoutings2.DisplayMemberBinding = new Binding(nameof(RoutingItem.Remarks));
         TablePresentation.DisplaySelection(cmbRoutings2, WorkspaceText.T("尚无路由规则", "No routing rules"),
             value => (value as RoutingItem)?.Remarks);
-        btnRestart.Click += async (_, _) =>
-        {
-            if (ApplyRequested != null) await ApplyRequested();
-            else ViewModel?.ReloadRequested.Publish(RxVoid.Default);
-        };
         btnAvailability.Click += async (_, _) => { if (ViewModel != null) await ViewModel.TestServerAvailability(); };
         btnCloseConnection.Click += (_, _) => CloseConnectionControls();
         _coreTimer.Tick += (_, _) => UpdateCoreState();
@@ -192,9 +208,9 @@ public partial class StatusBarView : ReactiveUserControl<StatusBarViewModel>
                     UpdateSpeedDisplay();
                 }).DisposeWith(disposables);
             this.OneWayBind(ViewModel, vm => vm.InboundDisplay, v => v.txtInboundDisplay.Text).DisposeWith(disposables);
-            this.WhenAnyValue(v => v.ViewModel!.InboundLanDisplay).Subscribe(value =>
+            this.WhenAnyValue(v => v.ViewModel!.InboundLanDisplay).ObserveOn(RxSchedulers.MainThreadScheduler).Subscribe(value =>
                 txtInboundLanDisplay.Text = value?.Replace(Global.None, "—", StringComparison.OrdinalIgnoreCase)).DisposeWith(disposables);
-            this.WhenAnyValue(v => v.ViewModel!.RunningServerDisplay).Subscribe(value =>
+            this.WhenAnyValue(v => v.ViewModel!.RunningServerDisplay).ObserveOn(RxSchedulers.MainThreadScheduler).Subscribe(value =>
             {
                 txtRunningServerDisplay.Text = string.IsNullOrWhiteSpace(value) ? "—" : value;
                 ToolTip.SetTip(txtRunningServerDisplay, txtRunningServerDisplay.Text);
@@ -212,7 +228,7 @@ public partial class StatusBarView : ReactiveUserControl<StatusBarViewModel>
                     ToolTip.SetTip(txtRunningInfoDisplay, result?.GetValidIp() ?? "—");
                     btnAvailability.IsEnabled = !ViewModel.IsTestingAvailability;
                 }).DisposeWith(disposables);
-            this.WhenAnyValue(v => v.ViewModel!.IsChangingConnection, v => v.ViewModel!.ConnectionError)
+            this.WhenAnyValue(v => v.ViewModel!.IsChangingConnection, v => v.ViewModel!.DisplayConnectionError)
                 .ObserveOn(RxSchedulers.MainThreadScheduler).Subscribe(_ => UpdateControls()).DisposeWith(disposables);
             this.WhenAnyValue(v => v.ViewModel!.HasPendingChanges, v => v.ViewModel!.Transition)
                 .ObserveOn(RxSchedulers.MainThreadScheduler).Subscribe(_ => UpdateControls()).DisposeWith(disposables);
@@ -246,7 +262,8 @@ public partial class StatusBarView : ReactiveUserControl<StatusBarViewModel>
     private async Task ConnectOrDisconnectAsync(bool retry = false)
     {
         if (_reloading || ViewModel?.IsChangingConnection == true) return;
-        if (CoreManager.Instance.HasUnconfirmedProcesses || !retry && await CoreManager.Instance.IsCoreRunningAsync())
+        var state = await CoreManager.Instance.GetRuntimeStateAsync();
+        if (state.Unconfirmed || !retry && (state.MainReady || state.PreReady))
         { if (DisconnectRequested != null) await DisconnectRequested(); }
         else if (string.IsNullOrEmpty(_config.IndexId) || await AppManager.Instance.GetProfileItem(_config.IndexId) == null)
         { if (ManageServersRequested != null) await ManageServersRequested(); }
@@ -268,7 +285,7 @@ public partial class StatusBarView : ReactiveUserControl<StatusBarViewModel>
             txtSpeedProxyDisplay, txtSpeedDirectDisplay, exitSummary, txtRunningInfoDisplay } };
         return _coreControls = new StackPanel { Spacing = 8, Children =
         {
-            new WrapPanel { Children = { btnRestart, btnAvailability } },
+            new WrapPanel { Children = { btnAvailability } },
             new Expander { Header = WorkspaceText.T("实际监听与检测状态", "Actual listeners and checks"), Content = details,
                 HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch }
         } };
@@ -278,8 +295,8 @@ public partial class StatusBarView : ReactiveUserControl<StatusBarViewModel>
     {
         if (!IsServerPickerOpen) return false;
         IsServerPickerOpen = false;
+        _picker.Close();
         _pickerRevision++;
-        _pickerSelectionToReveal = null;
         btnConnectionControls.Classes.Remove("expanded");
         if (PickerVisibilityRequested != null) PickerVisibilityRequested(false);
         else PresentServerDrawer(Bounds.Width, Bounds.Width, 0, true);
@@ -336,84 +353,60 @@ public partial class StatusBarView : ReactiveUserControl<StatusBarViewModel>
 
     private void RenderPicker(bool revealSelection = false)
     {
-        // Subsequent searching/favoriting is user navigation, not another
-        // request to jump back to the selected node.
-        _pickerSelectionToReveal = null;
-        serverChoices.Children.Clear();
-        var search = txtServerSearch.Text?.Trim() ?? string.Empty;
-        _renderedPickerSearch = search;
+        if (_picker == null) return;
+        _renderedPickerSearch = txtServerSearch.Text?.Trim() ?? "";
         _renderedPickerScope = pickerScope.SelectedIndex;
-        foreach (var item in _pickerItems.Where(p => ((p.Remarks ?? "").Contains(search, StringComparison.OrdinalIgnoreCase)
-            || (p.Address ?? "").Contains(search, StringComparison.OrdinalIgnoreCase))
-            && (pickerScope.SelectedIndex != 1 || _config.UiItem.ConnectionFavorites.Contains(p.IndexId))))
-        {
-            var name = string.IsNullOrWhiteSpace(item.Remarks) ? item.Address ?? "—" : item.Remarks;
-            var host = item.Address;
-            if (System.Net.IPAddress.TryParse(host, out var ip) && ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
-                host = $"[{ip}]";
-            var endpoint = string.IsNullOrEmpty(host) ? null : item.Port > 0 ? $"{host}:{item.Port}" : host;
-            var identity = string.Join(" · ", new[] { item.ConfigType.ToString(), endpoint, item.SubRemarks }.Where(value => !string.IsNullOrWhiteSpace(value)));
-            var delay = item.Delay > 0 ? item.Delay + " ms" : item.Delay < 0 ? WorkspaceText.Failed : WorkspaceText.Untested;
-            var selected = item.IndexId == _config.IndexId;
-            var active = _coreRunning && item.IndexId == CoreManager.Instance.RuntimeSummary?.ProfileId;
-            var button = new Button { Name = "select-" + item.IndexId, HorizontalAlignment = HorizontalAlignment.Stretch,
-                HorizontalContentAlignment = HorizontalAlignment.Stretch,
-                Content = new StackPanel { Spacing = 4, Children =
-                {
-                    new TextBlock { Text = name, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap },
-                    new TextBlock { Text = identity + " · " + delay, Classes = { "caption", "muted" }, TextWrapping = TextWrapping.Wrap },
-                    new TextBlock { Text = string.Join(" · ", new[] { active ? WorkspaceText.T("正在使用", "In use") : null,
-                        selected ? WorkspaceText.T("已选中", "Selected") : null }.Where(s => s != null)),
-                        Classes = { "caption" }, IsVisible = selected || active }
-                } } };
-            AutomationProperties.SetName(button, name + " · " + identity + " · " + delay
-                + (selected ? WorkspaceText.T(" · 已选中", " · Selected") : "") + (active ? WorkspaceText.T(" · 正在使用", " · In use") : ""));
-            button.Classes.Set("selectedServer", selected);
-            if (selected && revealSelection) _pickerSelectionToReveal = button;
-            button.Click += (_, _) => { CloseConnectionControls(); ViewModel?.SetDefaultServerRequested.Publish(item.IndexId); };
-            var favorite = new Button { Name = "favorite-" + item.IndexId, Classes = { "rowAction" }, VerticalAlignment = VerticalAlignment.Center };
-            var favored = _config.UiItem.ConnectionFavorites.Contains(item.IndexId);
-            favorite.Content = WorkspaceIcons.Create("favorite", 18, favored ? "WorkspaceAccent" : "WorkspaceMuted");
-            AutomationProperties.SetName(favorite, WorkspaceText.T(favored ? "取消常用：" : "设为常用：", favored ? "Unfavorite: " : "Favorite: ") + name + " · " + identity);
-            favorite.Click += async (_, _) =>
-            {
-                favorite.IsEnabled = false;
-                var previous = _config.UiItem.ConnectionFavorites.ToList();
-                if (!_config.UiItem.ConnectionFavorites.Remove(item.IndexId)) _config.UiItem.ConnectionFavorites.Add(item.IndexId);
-                if (await ConfigHandler.SaveConfig(_config) != 0)
-                {
-                    _config.UiItem.ConnectionFavorites = previous;
-                    NoticeManager.Instance.Enqueue(WorkspaceText.T("常用服务器保存失败，已恢复原选择。", "Could not save favorites; the previous selection was restored."));
-                }
-                RenderPicker();
-                var retained = serverChoices.GetVisualDescendants().OfType<Button>().FirstOrDefault(b => b.Name == favorite.Name);
-                if (retained != null) retained.Focus(); else pickerScope.Focus();
-            };
-            var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
-            Grid.SetColumn(favorite, 1); row.Children.Add(button); row.Children.Add(favorite);
-            serverChoices.Children.Add(row);
-        }
+        _picker.Search = _renderedPickerSearch;
+        _picker.FavoritesOnly = pickerScope.SelectedIndex == 1;
+        if (pickerGroup.SelectedItem is ServerPickerGroup group) _picker.GroupId = group.Id;
+        _picker.Refresh();
         txtPickerEmpty.Text = WorkspaceText.T("没有匹配的服务器，请到服务器管理导入或添加。", "No matching servers. Import or add servers in management.");
-        txtPickerEmpty.IsVisible = serverChoices.Children.Count == 0;
-        RevealSelectedServer();
+        if (revealSelection) RevealSelectedServer();
     }
 
     private void RevealSelectedServer()
     {
-        if (!IsServerPickerOpen || !_pickerFullyExpanded || _pickerSelectionToReveal is not { } target) return;
-        // A dispatcher callback can precede the first measure of async rows.
-        // Use actual content coordinates after layout and reveal only once.
-        if (target.Bounds.Height <= 0 || serverListScroll.Viewport.Height <= 0
-            || serverListScroll.Content is not Control content
-            || target.TranslatePoint(default, content) is not { } point
-            || serverListScroll.Extent.Height < point.Y + target.Bounds.Height) return;
-        _pickerSelectionToReveal = null;
-        var top = point.Y - Math.Max(0, (serverListScroll.Viewport.Height - target.Bounds.Height) / 2);
-        serverListScroll.Offset = new Vector(0, Math.Clamp(top, 0,
-            Math.Max(0, serverListScroll.Extent.Height - serverListScroll.Viewport.Height)));
+        if (!IsServerPickerOpen || !_pickerFullyExpanded) return;
+        if (_picker.Rows.FirstOrDefault(r => !r.IsHeader && r.Node.IndexId == _config.IndexId) is { } selected)
+            serverRows.ScrollIntoView(selected);
     }
 
-    public void SetReloading(bool reloading) { _reloading = reloading; UpdateControls(); }
+    private Control BuildPickerRow(ServerPickerRow item)
+    {
+        if (item.IsHeader) return new TextBlock { Text = item.GroupTitle, FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 8) };
+        var name = new TextBlock { Text = item.Name, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap,
+            MaxLines = 2, TextTrimming = TextTrimming.CharacterEllipsis };
+        var result = new TextBlock { Classes = { "caption", "muted" }, TextWrapping = TextWrapping.Wrap };
+        result.Bind(TextBlock.TextProperty, new Binding(nameof(ServerPickerRow.Results)) { Source = item });
+        var content = new StackPanel { Spacing = 4, Children = { name,
+            new TextBlock { Text = item.Endpoint, Classes = { "caption", "muted" }, TextTrimming = TextTrimming.CharacterEllipsis },
+            new TextBlock { Text = item.Identity, Classes = { "caption", "muted" }, TextTrimming = TextTrimming.CharacterEllipsis },
+            result, new TextBlock { Text = item.Selection, IsVisible = item.Selection.Length > 0, Classes = { "caption" } } } };
+        var select = new Button { Name = "select-" + item.Node.IndexId, Content = content,
+            HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch };
+        select.Classes.Set("selectedServer", item.Node.IndexId == _config.IndexId);
+        ToolTip.SetTip(select, item.Name + "\n" + item.Endpoint + "\n" + item.Identity);
+        AutomationProperties.SetName(select, item.Name + " " + item.Endpoint + " " + item.Selection);
+        select.Click += (_, _) => { CloseConnectionControls(); ViewModel?.SetDefaultServerRequested.Publish(item.Node.IndexId); };
+        var test = new Button { Content = WorkspaceText.T("检测", "Test"), Classes = { "rowAction" } };
+        test.Bind(IsEnabledProperty, new Binding("!Busy") { Source = _picker });
+        test.Click += async (_, _) => await _picker.TestOneAsync(item);
+        var favorite = new Button { Content = item.Favorite ? "★" : "☆", Classes = { "rowAction" } };
+        AutomationProperties.SetName(favorite, WorkspaceText.T("常用", "Favorite") + ": " + item.Name);
+        favorite.Click += async (_, _) => await _picker.ToggleFavoriteAsync(item);
+        var actions = new StackPanel { Children = { favorite, test }, VerticalAlignment = VerticalAlignment.Center };
+        var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 4 };
+        Grid.SetColumn(actions, 1); row.Children.Add(select); row.Children.Add(actions);
+        return row;
+    }
+
+    public void SetReloading(bool reloading)
+    {
+        _reloading = reloading;
+        if (reloading) _picker.Cancel();
+        if (ViewModel != null) ViewModel.CoreReloading = reloading;
+        UpdateControls();
+    }
 
     private void UpdateControls()
     {
@@ -421,13 +414,13 @@ public partial class StatusBarView : ReactiveUserControl<StatusBarViewModel>
             && ViewModel?.IsChangingConnection != true;
         btnConnect.IsEnabled = !_reloading && ViewModel?.IsChangingConnection != true && ViewModel?.Transition is not { IsTerminal: false };
         btnApplyPending.IsEnabled = btnRetryConnection.IsEnabled = btnConnect.IsEnabled;
-        btnRestart.IsEnabled = btnConnect.IsEnabled;
-        var error = ViewModel?.ConnectionError;
+        var error = ViewModel?.DisplayConnectionError;
         var summary = error?.Split('\n', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
         txtConnectionError.Text = summary?.Length > 160 ? summary[..160] + "…" : summary;
         ToolTip.SetTip(txtConnectionError, error);
         connectionErrorPanel.IsVisible = !string.IsNullOrWhiteSpace(error) && ViewModel?.Transition?.Stage != ConnectionStage.Waiting;
-        selectionSummary.IsVisible = !connectionErrorPanel.IsVisible;
+        selectionSummary.IsVisible = true;
+        UpdateHomeLayout();
         UpdateCoreState();
     }
 
@@ -449,7 +442,9 @@ public partial class StatusBarView : ReactiveUserControl<StatusBarViewModel>
         _checkingCore = true;
         try
         {
-            _coreRunning = await CoreManager.Instance.IsCoreRunningAsync();
+            if (ViewModel != null) await ViewModel.RefreshRunningServerAsync();
+            var state = await CoreManager.Instance.GetRuntimeStateAsync();
+            _coreRunning = state.MainReady;
             RenderCoreState();
         }
         catch (Exception ex) { Logging.SaveLog("StatusBar process health", ex); }
@@ -473,6 +468,10 @@ public partial class StatusBarView : ReactiveUserControl<StatusBarViewModel>
         var connectionFailed = CoreManager.Instance.HandoffState != PortHandoffState.Waiting
             && !string.IsNullOrWhiteSpace(ViewModel?.ConnectionError);
         if (connectionFailed) txtRecoveryState.Text = WorkspaceText.T("配置应用失败", "Configuration failed");
+        else if (!string.IsNullOrEmpty(ViewModel?.BackgroundApplyError))
+            txtRecoveryState.Text = WorkspaceText.T("后台配置应用失败", "Background configuration failed");
+        else if (!string.IsNullOrEmpty(ViewModel?.BackgroundRefreshError))
+            txtRecoveryState.Text = WorkspaceText.T("后台刷新失败", "Background refresh failed");
         txtRecoveryState.Classes.Set("error", connectionFailed || recovery?.State == RecoveryState.Failed);
         txtRecoveryState.IsVisible = !string.IsNullOrEmpty(txtRecoveryState.Text);
         ToolTip.SetTip(txtRecoveryState, connectionFailed ? ViewModel?.ConnectionError
@@ -482,18 +481,30 @@ public partial class StatusBarView : ReactiveUserControl<StatusBarViewModel>
                 : recovery?.Error);
         UpdateExitSummary();
         var running = _coreRunning;
+        if (ViewModel != null)
+        {
+            ViewModel.CoreRunning = running && !ViewModel.ConnectionIncomplete && !ViewModel.ExitUnconfirmed;
+            btnRestart.Command = ViewModel.RestartCoreCmd;
+            btnRestart.Content = ViewModel.RestartCoreLabel;
+        }
         var applying = _reloading || ViewModel?.IsChangingConnection == true || ViewModel?.Transition is { IsTerminal: false };
-        var actualTun = running && CoreManager.Instance.RunningTunEnabled == true;
+        var actualTun = running && ViewModel?.ConnectionIncomplete != true && !CoreManager.Instance.HasUnconfirmedProcesses && CoreManager.Instance.RunningTunEnabled == true;
         btnConnect.Classes.Set("tun", actualTun && !applying);
         btnConnect.Classes.Set("transitioning", applying);
-        var unconfirmed = !applying && CoreManager.Instance.HasUnconfirmedProcesses;
+        var unconfirmed = !applying && ViewModel?.ExitUnconfirmed == true;
         txtCoreState.Text = applying
             ? WorkspaceText.T("正在切换…", "Switching…") : unconfirmed ? WorkspaceText.T("退出尚未确认", "Exit not confirmed")
+            : ViewModel?.ConnectionIncomplete == true ? WorkspaceText.T("连接不完整", "Connection incomplete")
+            : running && connectionFailed ? CoreManager.Instance.RuntimeSummary?.ProfileId != _config.IndexId
+                ? WorkspaceText.T("切换失败，原连接仍在运行", "Switch failed; previous connection is running")
+                : WorkspaceText.T("配置未完成，现有连接仍在运行", "Configuration incomplete; current connection is running")
+            : running && !string.IsNullOrEmpty(ViewModel?.BackgroundApplyError)
+                ? WorkspaceText.T("后台应用失败，连接保持", "Apply failed; connected")
             : running ? WorkspaceText.T("内核已就绪", "Core ready") : WorkspaceText.T("未连接", "Disconnected");
         var noSelection = string.IsNullOrEmpty(_config.IndexId);
         var stateIcon = applying ? "switching" : unconfirmed ? "failed" : running ? "connected" : noSelection ? "servers" : "disconnected";
         var stateBrush = applying || unconfirmed ? "WorkspaceWarning" : actualTun ? "ConnectionTunText" : running ? "WorkspaceAccent" : "WorkspaceMuted";
-        var displayKey = stateIcon + stateBrush + ViewModel?.Transition?.Disconnecting + ViewModel?.Transition?.UpdatingProxy;
+        var displayKey = stateIcon + stateBrush + ViewModel?.Transition?.Disconnecting + ViewModel?.Transition?.UpdatingProxy + ViewModel?.ConnectionIncomplete;
         if (_displayedState != displayKey)
         {
             _displayedState = displayKey;
@@ -501,16 +512,18 @@ public partial class StatusBarView : ReactiveUserControl<StatusBarViewModel>
             WorkspaceIcons.SetButton(btnConnect, applying ? "switching" : running || unconfirmed ? "stop" : "connected",
                 applying ? ViewModel?.Transition?.Disconnecting == true ? WorkspaceText.T("正在断开…", "Disconnecting…")
                     : ViewModel?.Transition?.UpdatingProxy == true ? WorkspaceText.T("正在更新代理…", "Updating proxy…") : WorkspaceText.T("正在连接 / 切换…", "Connecting / switching…")
-                : unconfirmed ? WorkspaceText.T("继续确认退出", "Confirm exit") : running ? WorkspaceText.T("断开连接", "Disconnect")
+                : unconfirmed ? WorkspaceText.T("继续确认退出", "Confirm exit") : running || ViewModel?.ConnectionIncomplete == true ? WorkspaceText.T("断开连接", "Disconnect")
                     : noSelection ? WorkspaceText.T("添加服务器", "Add server") : WorkspaceText.T("连接", "Connect"), "WorkspaceOnAccent");
             if (btnConnect.Content is Grid content)
                 foreach (var label in content.Children.OfType<TextBlock>())
                     label.Bind(TextBlock.ForegroundProperty, new Avalonia.Markup.Xaml.MarkupExtensions.DynamicResourceExtension("WorkspaceOnAccent"));
         }
-        txtRuntimeCaption.Text = running ? CoreManager.Instance.RunningTunEnabled == true
+        txtRuntimeCaption.Text = ViewModel?.ConnectionIncomplete == true
+            ? WorkspaceText.T("部分内核已退出，请重启内核。", "A required core exited. Restart the cores.")
+            : running ? actualTun
             ? WorkspaceText.T("TUN 模式正在运行", "TUN mode running") : WorkspaceText.T("普通模式正在运行", "Standard mode running")
             : unconfirmed ? WorkspaceText.T("保留进程记录，请先完成清理。", "Process records retained. Complete cleanup first.") : WorkspaceText.T("内核未运行", "Core stopped");
-        if (running && !actualTun && OperatingSystem.IsMacOS())
+        if (running && !actualTun && ViewModel?.ConnectionIncomplete != true && OperatingSystem.IsMacOS())
         {
             var proxy = (Application.Current as App)?.MenuBar?.Snapshot.Proxy ?? ProxyState.Unknown;
             txtRuntimeCaption.Text += " · " + (proxy == ProxyState.Off ? WorkspaceText.T("系统代理未开启", "System proxy off")
@@ -521,13 +534,15 @@ public partial class StatusBarView : ReactiveUserControl<StatusBarViewModel>
         var runtime = CoreManager.Instance.RuntimeSummary;
         var pending = ViewModel?.HasPendingChanges == true || running && runtime != null
             && (runtime.ProfileId != _config.IndexId || runtime.Tun != _config.TunModeItem.EnableTun);
+        txtNodeLabel.Text = pending ? WorkspaceText.T("所选节点 · 待应用", "Selected server · Pending") : WorkspaceText.T("所选节点", "Selected server");
         txtSelectionState.Text = noSelection ? WorkspaceText.T("先添加或选择一个服务器", "Add or select a server first")
             : pending ? WorkspaceText.T("已选择 / 已保存 · 待应用", "Selected / saved · Pending application")
             : running ? WorkspaceText.T("选择与生效配置一致", "Selection matches the running configuration")
             : WorkspaceText.T("连接时使用所选节点与模式", "Connect using the selected server and mode");
         btnApplyPending.IsVisible = pending && running && !unconfirmed;
-        txtActualServer.IsVisible = pending && running && runtime != null;
-        txtActualServer.Text = runtime == null ? null : WorkspaceText.T("实际连接：", "Running server: ") + runtime.Server;
+        txtActualServer.IsVisible = running && runtime != null;
+        txtActualServer.Text = runtime == null ? null : WorkspaceText.T("实际连接：", "Running server: ")
+            + (runtime.Core is { } core ? ServiceLib.Services.RoutingProtocolPolicy.CoreName(core) + " · " : "") + runtime.Server;
         txtSelectionState.IsVisible = !txtActualServer.IsVisible;
         ToolTip.SetTip(txtSelectionState, txtSelectionState.Text);
         ToolTip.SetTip(txtActualServer, txtActualServer.Text);
@@ -556,7 +571,9 @@ public partial class StatusBarView : ReactiveUserControl<StatusBarViewModel>
             ESysProxyType.Pac => "PAC", _ => "—"
         });
         txtTunMode.Text = WorkspaceText.T("用户选择：", "Selected: ") + (_config.TunModeItem.EnableTun ? WorkspaceText.T("开启", "On") : WorkspaceText.T("关闭", "Off"))
-            + WorkspaceText.T(" · 实际：", " · Actual: ") + (_coreRunning ? CoreManager.Instance.RunningTunEnabled == true ? "TUN" : WorkspaceText.T("普通", "Standard") : WorkspaceText.T("未连接", "Disconnected"));
+            + WorkspaceText.T(" · 实际：", " · Actual: ") + (ViewModel?.ExitUnconfirmed == true ? WorkspaceText.T("未确认", "Unconfirmed")
+                : ViewModel?.ConnectionIncomplete == true ? WorkspaceText.T("连接不完整", "Incomplete")
+                : _coreRunning ? CoreManager.Instance.RunningTunEnabled == true ? "TUN" : WorkspaceText.T("普通", "Standard") : WorkspaceText.T("未连接", "Disconnected"));
         txtRoutingMode.Text = (_coreRunning ? WorkspaceText.T("生效路由：", "Applied routing: ") : WorkspaceText.T("所选路由：", "Selected routing: "))
             + (_coreRunning ? CoreManager.Instance.RuntimeSummary?.Routing ?? "—" : ViewModel?.SelectedRouting?.Remarks ?? "—");
         AutomationProperties.SetName(btnRouting, txtRoutingMode.Text);
@@ -587,14 +604,19 @@ public partial class StatusBarView : ReactiveUserControl<StatusBarViewModel>
     }
 
     private bool? _shortHome;
+    private bool? _homeError;
     private void UpdateHomeLayout()
     {
         // The drawer changes the window width, but never the connection column's geometry.
         // Reserve space for every home action at the supported 360 x 480 minimum.
         var shortHome = Bounds.Height > 0 && Bounds.Height < 560;
-        if (_shortHome == shortHome) return;
+        var hasError = connectionErrorPanel.IsVisible;
+        if (_shortHome == shortHome && _homeError == hasError) return;
         _shortHome = shortHome;
-        homeRows.RowDefinitions = new RowDefinitions(shortHome ? "56,80,44,24,48,48,32" : "64,88,44,24,60,60,36");
+        _homeError = hasError;
+        homeRows.RowDefinitions = new RowDefinitions(shortHome
+            ? hasError ? "56,72,44,52,40,40,28" : "56,80,44,24,48,48,32"
+            : hasError ? "64,88,44,52,60,60,36" : "64,88,44,24,60,60,36");
         homeRows.RowSpacing = shortHome ? 4 : 10;
         homeStack.Margin = shortHome ? new Thickness(12, 8, 12, 0) : new Thickness(20, 12, 20, 0);
         connectionFeedbackHost.Margin = shortHome ? new Thickness(12, 8, 12, 12) : new Thickness(20, 8, 20, 12);

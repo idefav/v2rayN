@@ -10,6 +10,13 @@ public partial class StatusBarView
     {
         InitializeComponent();
         _config = AppManager.Instance.Config;
+        btnServerPicker.Content = ProxyCheckText.T("更换服务器", "Change server");
+        btnServerPicker.Click += (_, _) =>
+        {
+            if (ViewModel == null) return;
+            new ServerPickerWindow(ViewModel, id => ViewModel.SetDefaultServerRequested.Publish(id))
+            { Owner = Window.GetWindow(this) }.ShowDialog();
+        };
 
         menuExit.Click += menuExit_Click;
         txtRunningServerDisplay.PreviewMouseDown += txtRunningInfoDisplay_MouseDoubleClick;
@@ -17,6 +24,23 @@ public partial class StatusBarView
 
         this.WhenActivated(disposables =>
         {
+            var refreshing = false;
+            var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+            timer.Tick += async (_, _) =>
+            {
+                if (refreshing || ViewModel == null) return;
+                refreshing = true;
+                try { await ViewModel.RefreshRunningServerAsync(); }
+                catch (Exception ex) { Logging.SaveLog("Connection runtime state", ex); }
+                finally { refreshing = false; }
+            };
+            timer.Start();
+            new ActionDisposable(timer.Stop).DisposeWith(disposables);
+            this.OneWayBind(ViewModel, vm => vm.RuntimeStateText, v => v.txtCoreRuntimeState.Text).DisposeWith(disposables);
+            this.OneWayBind(ViewModel, vm => vm.DisplayConnectionError, v => v.txtBackgroundUpdateError.Text).DisposeWith(disposables);
+            this.OneWayBind(ViewModel, vm => vm.DisplayConnectionError, v => v.txtBackgroundUpdateError.ToolTip).DisposeWith(disposables);
+            this.BindCommand(ViewModel, vm => vm.RestartCoreCmd, v => v.btnRestartCore).DisposeWith(disposables);
+            this.OneWayBind(ViewModel, vm => vm.RestartCoreLabel, v => v.btnRestartCore.Content).DisposeWith(disposables);
             //system proxy
             this.OneWayBind(ViewModel, vm => vm.BlSystemProxyClear, v => v.menuSystemProxyClear2.Visibility, conversionHint: BooleanToVisibilityHint.UseHidden, viewModelToViewConverterOverride: new BooleanToVisibilityTypeConverter()).DisposeWith(disposables);
             this.OneWayBind(ViewModel, vm => vm.BlSystemProxySet, v => v.menuSystemProxySet2.Visibility, conversionHint: BooleanToVisibilityHint.UseHidden, viewModelToViewConverterOverride: new BooleanToVisibilityTypeConverter()).DisposeWith(disposables);
@@ -51,7 +75,7 @@ public partial class StatusBarView
             //status bar
             this.OneWayBind(ViewModel, vm => vm.InboundDisplay, v => v.txtInboundDisplay.Text).DisposeWith(disposables);
             this.OneWayBind(ViewModel, vm => vm.InboundLanDisplay, v => v.txtInboundLanDisplay.Text).DisposeWith(disposables);
-            this.OneWayBind(ViewModel, vm => vm.RunningServerDisplay, v => v.txtRunningServerDisplay.Text).DisposeWith(disposables);
+            this.OneWayBind(ViewModel, vm => vm.ActualServerDisplay, v => v.txtRunningServerDisplay.Text).DisposeWith(disposables);
             this.OneWayBind(ViewModel, vm => vm.RunningInfoDisplay, v => v.txtRunningInfoDisplay.Text).DisposeWith(disposables);
             this.OneWayBind(ViewModel, vm => vm.SpeedProxyDisplay, v => v.txtSpeedProxyDisplay.Text).DisposeWith(disposables);
             this.OneWayBind(ViewModel, vm => vm.SpeedDirectDisplay, v => v.txtSpeedDirectDisplay.Text).DisposeWith(disposables);

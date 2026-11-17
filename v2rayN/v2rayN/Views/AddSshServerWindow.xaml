@@ -66,6 +66,21 @@
                 <PasswordBox x:Name="txtSudoPassword" />
                 <Button x:Name="btnDeployGateway" Content="{x:Static resx:SshStrings.DeployGateway}" HorizontalAlignment="Left" Margin="0,4" />
                 <TextBlock x:Name="txtDeploymentStatus" TextWrapping="Wrap" Margin="0,4" />
+                <GroupBox Header="{x:Static resx:SshStrings.DnsTitle}" Margin="0,8">
+                    <StackPanel Margin="8">
+                        <TextBlock Text="{x:Static resx:SshStrings.DnsNotice}" TextWrapping="Wrap" />
+                        <TextBlock x:Name="txtDnsDeploymentStatus" TextWrapping="Wrap" />
+                        <WrapPanel Margin="0,8">
+                            <Button x:Name="btnDeployDns" Content="{x:Static resx:SshStrings.DnsDeploy}" Margin="0,0,6,6" />
+                            <Button x:Name="btnCheckDns" Content="{x:Static resx:SshStrings.DnsCheck}" Margin="0,0,6,6" />
+                            <Button x:Name="btnRollbackDns" Content="{x:Static resx:SshStrings.DnsRollback}" Margin="0,0,0,6" />
+                        </WrapPanel>
+                        <TextBlock x:Name="txtDnsStatus" TextWrapping="Wrap" />
+                        <Expander Header="{x:Static resx:SshStrings.DnsDetailsLabel}">
+                            <TextBlock x:Name="txtDnsDetails" TextWrapping="Wrap" />
+                        </Expander>
+                    </StackPanel>
+                </GroupBox>
                 <TextBlock Text="{x:Static resx:SshStrings.UdpModeNotice}" TextWrapping="Wrap" Margin="0,4" />
                 <CheckBox x:Name="chkAllowHttp3" Content="{x:Static resx:SshStrings.AllowHttp3}" Margin="0,6" />
                 <TextBlock Text="{x:Static resx:SshStrings.UdpNotice}" TextWrapping="Wrap" />

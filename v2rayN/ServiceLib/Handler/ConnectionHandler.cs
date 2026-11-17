@@ -15,6 +15,14 @@ public static class ConnectionHandler
         return new AvailabilityCheckResult(time, ip);
     }
 
+    internal static async Task<AvailabilityCheckResult> RunAvailabilityCheck(int port, string pingUrl, string? ipUrl, CancellationToken token)
+    {
+        var proxy = new WebProxy($"socks5://{Global.Loopback}:{port}");
+        var time = await GetRealPingTime(proxy, token, pingUrl);
+        var ip = time > 0 ? await GetIPInfo(proxy, token, ipUrl ?? "") : null;
+        return new(time, ip?.ToString() ?? Global.None);
+    }
+
     /// <summary>
     /// Gets IP information using the default local proxy.
     /// </summary>
@@ -66,9 +74,9 @@ public static class ConnectionHandler
     /// <summary>
     /// Measures response time by sending HTTP requests through proxy.
     /// </summary>
-    public static async Task<int> GetRealPingTime(IWebProxy? webProxy, CancellationToken cancellationToken = default)
+    public static async Task<int> GetRealPingTime(IWebProxy? webProxy, CancellationToken cancellationToken = default, string? testUrl = null)
     {
-        var url = AppManager.Instance.Config.SpeedTestItem.SpeedPingTestUrl;
+        var url = testUrl ?? AppManager.Instance.Config.SpeedTestItem.SpeedPingTestUrl;
         var responseTime = -1;
         try
         {
@@ -108,11 +116,11 @@ public static class ConnectionHandler
     /// <summary>
     /// Gets IP and country information through specified proxy.
     /// </summary>
-    public static async Task<IpInfoResult?> GetIPInfo(IWebProxy? webProxy, CancellationToken cancellationToken = default)
+    public static async Task<IpInfoResult?> GetIPInfo(IWebProxy? webProxy, CancellationToken cancellationToken = default, string? testUrl = null)
     {
         try
         {
-            var url = AppManager.Instance.Config.SpeedTestItem.IPAPIUrl;
+            var url = testUrl ?? AppManager.Instance.Config.SpeedTestItem.IPAPIUrl;
             if (url.IsNullOrEmpty())
             {
                 return null;

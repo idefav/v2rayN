@@ -8,6 +8,32 @@ namespace ServiceLib.Services;
 // own credentials, without starting the core or loading a user's configuration.
 internal static class ListenerBindProbe
 {
+    // Probe only an ephemeral port; never bind a candidate port while the old core is running.
+    // Use the same platform socket semantics as Check, including BSD dual-stack behavior.
+    internal static bool Conflicts(IPAddress first, IPAddress second, ProtocolType protocol)
+    {
+        if (first.Equals(second)) return true;
+        Socket Create(IPAddress address)
+        {
+            var socket = new Socket(address.AddressFamily, protocol == ProtocolType.Tcp ? SocketType.Stream : SocketType.Dgram, protocol);
+            if (address.AddressFamily == AddressFamily.InterNetworkV6)
+                socket.DualMode = address.Equals(IPAddress.IPv6Any) || address.IsIPv4MappedToIPv6;
+            if (OperatingSystem.IsWindows()) socket.ExclusiveAddressUse = false;
+            socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, false);
+            return socket;
+        }
+        using var a = Create(first);
+        a.Bind(new IPEndPoint(first, 0));
+        if (protocol == ProtocolType.Tcp) a.Listen(1);
+        using var b = Create(second);
+        try
+        {
+            b.Bind(new IPEndPoint(second, ((IPEndPoint)a.LocalEndPoint!).Port));
+            if (protocol == ProtocolType.Tcp) b.Listen(1);
+            return false;
+        }
+        catch (SocketException ex) when (ex.SocketErrorCode == SocketError.AddressAlreadyInUse) { return true; }
+    }
     internal const string Command = "check-listener";
     internal const string Marker = "__V2RAYN_BIND_V1__";
 

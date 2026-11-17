@@ -33,7 +33,7 @@ public class CoreConfigContextBuilder
     /// </summary>
     public static async Task<CoreConfigContextBuilderResult> Build(Config config, ProfileItem node, DNSItem? dnsOverride = null)
     {
-        var runCoreType = AppManager.Instance.GetCoreType(node, node.ConfigType);
+        var runCoreType = AppManager.GetCoreType(config, node, node.ConfigType);
         var coreType = runCoreType == ECoreType.sing_box ? ECoreType.sing_box : ECoreType.Xray;
         var context = new CoreConfigContext
         {
@@ -42,6 +42,7 @@ public class CoreConfigContextBuilder
             RunCoreType = runCoreType,
             AllProxiesMap = [],
             AppConfig = config,
+            StatisticsPort = runCoreType == ECoreType.sing_box ? AppManager.Instance.StatePort2 : AppManager.Instance.StatePort,
             FullConfigTemplate = await AppManager.Instance.GetFullConfigTemplateItem(coreType),
             IsTunEnabled = config.TunModeItem.EnableTun,
             SimpleDnsItem = config.SimpleDNSItem,
@@ -55,6 +56,12 @@ public class CoreConfigContextBuilder
             ProtectCoreTypeList = config.TunModeItem.EnableTun ? [ECoreType.Xray, ECoreType.sing_box] : []
         };
         var validatorResult = NodeValidatorResult.Empty();
+        if (node.ConfigType != EConfigType.Custom && context.FullConfigTemplate?.Enabled != true
+            && RoutingProtocolPolicy.ValidateRules(context.RoutingItem, runCoreType) is { } protocolError)
+        {
+            validatorResult.Errors.Add(protocolError);
+            return new CoreConfigContextBuilderResult(context, validatorResult);
+        }
         var (actNode, nodeValidatorResult) = await ResolveNodeAsync(context, node);
         if (!nodeValidatorResult.Success)
         {
@@ -172,6 +179,8 @@ public class CoreConfigContextBuilder
     /// </summary>
     public static async Task<CoreConfigContextBuilderAllResult> BuildAll(Config config, ProfileItem node)
     {
+        config = JsonUtils.DeepCopy(config);
+        node = JsonUtils.DeepCopy(node);
         var mainResult = await Build(config, node);
         if (!mainResult.Success)
         {
@@ -218,7 +227,7 @@ public class CoreConfigContextBuilder
     {
         var config = nodeContext.AppConfig;
         var node = nodeContext.Node;
-        var coreType = AppManager.Instance.GetCoreType(node, node.ConfigType);
+        var coreType = nodeContext.RunCoreType;
 
         var preSocksItem = ConfigHandler.GetPreSocksItem(config, node, coreType);
         if (preSocksItem != null)
@@ -256,7 +265,7 @@ public class CoreConfigContextBuilder
 
         if (includeSubChain)
         {
-            var (virtualChainNode, chainValidatorResult) = await BuildSubscriptionChainNodeAsync(node);
+            var (virtualChainNode, chainValidatorResult) = await BuildSubscriptionChainNodeAsync(context.AppConfig, node);
             if (virtualChainNode != null)
             {
                 context.AllProxiesMap[virtualChainNode.IndexId] = virtualChainNode;
@@ -284,7 +293,7 @@ public class CoreConfigContextBuilder
     ///     Any warnings (e.g. missing prev/next profile) are returned in the validator result.
     /// </summary>
     private static async Task<(ProfileItem? ChainNode, NodeValidatorResult ValidatorResult)>
-        BuildSubscriptionChainNodeAsync(ProfileItem node)
+        BuildSubscriptionChainNodeAsync(Config config, ProfileItem node)
     {
         var result = NodeValidatorResult.Empty();
 
@@ -329,7 +338,7 @@ public class CoreConfigContextBuilder
         {
             IndexId = $"inner-{Utils.GetGuid(false)}",
             ConfigType = EConfigType.ProxyChain,
-            CoreType = AppManager.Instance.GetCoreType(node, node.ConfigType),
+            CoreType = AppManager.GetCoreType(config, node, node.ConfigType),
             Remarks = node.Remarks,
         };
         List<string?> childItems = [prevNode?.IndexId, node.IndexId, nextNode?.IndexId];
