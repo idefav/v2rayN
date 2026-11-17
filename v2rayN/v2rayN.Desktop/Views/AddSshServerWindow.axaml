@@ -21,7 +21,7 @@
     <Button x:Name="btnSave" Classes="primary" Content="{x:Static resx:ResUI.TbConfirm}" MinWidth="110" Margin="4"/>
    </WrapPanel>
   </StackPanel>
-  <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+  <ScrollViewer x:Name="formScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
    <StackPanel x:Name="form" Spacing="12">
     <Border Classes="formGroup">
      <StackPanel Spacing="8">
@@ -60,7 +60,7 @@
       </WrapPanel>
      </StackPanel>
     </Border>
-    <Expander Header="{x:Static ws:WorkspaceText.Advanced}" HorizontalAlignment="Stretch">
+    <Expander x:Name="sshAdvanced" Header="{x:Static ws:WorkspaceText.Advanced}" HorizontalAlignment="Stretch">
      <StackPanel Spacing="8">
       <CheckBox x:Name="chkUdpForwarding" Content="{x:Static resx:SshStrings.UdpForwarding}" />
       <TextBlock Text="{x:Static resx:SshStrings.UdpMode}" />
@@ -90,7 +90,7 @@
          <Button Command="{Binding RollbackDnsCmd}" Content="{x:Static resx:SshStrings.DnsRollback}" Margin="0,0,0,6" />
         </WrapPanel>
         <TextBlock Text="{Binding DnsStatus}" TextWrapping="Wrap" />
-        <Expander Header="{x:Static resx:SshStrings.DnsDetailsLabel}" HorizontalAlignment="Stretch">
+        <Expander x:Name="dnsDetails" Header="{x:Static resx:SshStrings.DnsDetailsLabel}" HorizontalAlignment="Stretch">
          <SelectableTextBlock Text="{Binding DnsDetails}" TextWrapping="Wrap" />
         </Expander>
        </StackPanel>

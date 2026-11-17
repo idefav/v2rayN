@@ -858,27 +858,36 @@ public partial class ReviewApp : v2rayN.Desktop.App
             var editor = new AddSshServerWindow { ViewModel = new AddSshServerViewModel(node, capabilityService: probe) { UdpForwarding = true, AllowHttp3 = true } };
             editor.Show(_main);
             await Task.Delay(250);
-            var advanced = editor.GetLogicalDescendants().OfType<Expander>().Single();
+            var advanced = editor.FindControl<Expander>("sshAdvanced")!;
+            var dnsDetails = editor.FindControl<Expander>("dnsDetails")!;
+            var scroll = editor.FindControl<ScrollViewer>("formScroll")!;
             advanced.IsExpanded = true;
-            await Task.Delay(250);
-            var scroll = editor.GetLogicalDescendants().OfType<ScrollViewer>().First();
-            scroll.Offset = new Vector(0, scroll.Extent.Height);
-            await Task.Delay(250);
-            Check(editor.FindControl<CheckBox>("chkUdpForwarding")!.IsChecked == true, "SSH UDP option reflects enabled model");
-            Check(editor.FindControl<CheckBox>("chkAllowHttp3")!.IsChecked == true, "HTTP3 option reflects enabled model");
             var mode = editor.FindControl<ComboBox>("cmbUdpMode")!;
             var gateway = editor.FindControl<TextBox>("txtUdpGateway")!;
+            await WaitForUiAsync(() => mode.IsEffectivelyVisible && mode.Bounds.Height > 0,
+                "SSH advanced section reveals the bound UDP controls");
+            Check(!dnsDetails.IsExpanded && !ReferenceEquals(advanced, dnsDetails),
+                "opening SSH advanced options leaves the separate DNS details collapsed");
+            await RevealUdpControlAsync(mode);
+            Check(editor.FindControl<CheckBox>("chkUdpForwarding")!.IsChecked == true, "SSH UDP option reflects enabled model");
+            Check(editor.FindControl<CheckBox>("chkAllowHttp3")!.IsChecked == true, "HTTP3 option reflects enabled model");
             Check(mode.SelectedIndex == 0 && !editor.ViewModel!.IsUdpGateway, "old SSH UDP profiles default to custom mode");
             await CaptureAsync("ssh-udp-options", "SSH UDP / HTTP3", editor);
             mode.SelectedIndex = 1;
-            await Task.Delay(100);
+            await WaitForUiAsync(() => editor.ViewModel!.IsUdpGateway && gateway.IsEffectivelyVisible && gateway.Bounds.Height > 0,
+                "tun2proxy selection finishes updating the gateway editor");
             Check(editor.ViewModel!.UdpModeIndex == 1 && editor.ViewModel.IsUdpGateway && gateway.IsEffectivelyVisible,
                 "tun2proxy selection reveals the gateway address");
             gateway.Text = "[::1]:7300";
-            await Task.Delay(100);
+            await WaitForUiAsync(() => editor.ViewModel!.CreateDraftSnapshot().GetProtocolExtra().SshUdpGateway == "[::1]:7300",
+                "gateway text finishes binding before the draft is checked");
             var extra = editor.ViewModel.CreateDraftSnapshot().GetProtocolExtra();
             Check(extra.SshUdpMode == "tun2proxy" && extra.SshUdpGateway == "[::1]:7300", "gateway editor binds to the saved draft");
-            scroll.Offset = new Vector(0, scroll.Extent.Height);
+            editor.ViewModel.DnsDetails = string.Join("\n", Enumerable.Repeat("Isolated DNS details fixture", 30));
+            dnsDetails.IsExpanded = true;
+            await RevealUdpControlAsync(gateway);
+            Check(dnsDetails.IsExpanded && mode.SelectedIndex == 1,
+                "expanded DNS diagnostics do not change the UDP mode or its scroll target");
             await CaptureAsync("ssh-tun2proxy-options", "SSH tun2proxy UDP gateway", editor);
             Check(editor.FindControl<Button>("btnDetectUdp")!.IsEffectivelyVisible && editor.FindControl<Button>("btnDeployGateway")!.IsEffectivelyVisible,
                 "capability refresh and gateway deployment controls are available");
@@ -886,20 +895,37 @@ public partial class ReviewApp : v2rayN.Desktop.App
             await editor.ViewModel.DetectUdpCmd.Execute().ToTask();
             Check(!editor.ViewModel.UdpModes[0].Enabled && editor.ViewModel.UdpModes[1].Enabled,
                 "explicit protocol rejection disables custom mode only");
+            await RevealUdpControlAsync(mode);
             mode.IsDropDownOpen = true;
-            await Task.Delay(150);
+            await WaitForUiAsync(() => mode.ContainerFromIndex(0) is ComboBoxItem,
+                "UDP mode popup realizes its choices");
             Check(mode.ContainerFromIndex(0) is ComboBoxItem { IsEnabled: false }, "custom option is disabled in the actual control");
             mode.IsDropDownOpen = false;
             await CaptureAsync("ssh-udp-unsupported", "SSH capability unavailable; tun2proxy remains selectable", editor);
             editor.ViewModel.Password = "changed-fixture";
+            await WaitForUiAsync(() => editor.ViewModel.UdpModes[0].Enabled,
+                "credential changes invalidate the old capability result");
             Check(editor.ViewModel.UdpModes[0].Enabled && editor.ViewModel.CreateDraftSnapshot().GetProtocolExtra().SshUdpCapability == null,
                 "credential changes invalidate the displayed capability");
             editor.FindControl<CheckBox>("chkUdpForwarding")!.IsChecked = false;
-            await Task.Delay(100);
+            await WaitForUiAsync(() => !mode.IsEnabled && !editor.ViewModel.IsUdpGateway,
+                "disabling UDP updates mode and gateway visibility");
             Check(!mode.IsEnabled && !editor.ViewModel.IsUdpGateway, "disabling UDP hides gateway and disables mode selection");
             editor.Close();
             File.WriteAllText(Path.Combine(Program.Output, "manifest.json"), JsonSerializer.Serialize(new { fixtureData = true, Program.Language, Program.Theme, screenshots = _shots, checks = _checks }, new JsonSerializerOptions { WriteIndented = true }));
+            Console.WriteLine($"PASS: {_checks.Count} SSH UDP checks; {_shots.Count} screenshots.");
             return;
+
+            async Task RevealUdpControlAsync(Control control)
+            {
+                editor.UpdateLayout();
+                control.BringIntoView();
+                await WaitForUiAsync(() => control.TranslatePoint(default, scroll) is { } position
+                    && position.Y >= -1 && position.Y + control.Bounds.Height <= scroll.Viewport.Height + 1,
+                    "SSH form scroll reveals the requested UDP control: " + control.Name);
+                Check(ReferenceEquals(control.GetVisualAncestors().OfType<ScrollViewer>().First(), scroll),
+                    "UDP control uses the SSH form scroll, independently of DNS details: " + control.Name);
+            }
         }
         if (Program.ProxyCheckOnly)
         {

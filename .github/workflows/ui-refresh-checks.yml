@@ -98,6 +98,11 @@ jobs:
         run: |
           dotnet v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll ../artifacts/picker-zh --headless --language=zh-Hans
           dotnet v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll ../artifacts/picker-en --headless --language=en
+      - name: Review SSH UDP controls alongside DNS deployment sections
+        working-directory: v2rayN
+        run: |
+          dotnet v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll ../artifacts/ssh-udp-zh --headless --ssh-udp-only --language=zh-Hans --theme=light
+          dotnet v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll ../artifacts/ssh-udp-en --headless --ssh-udp-only --language=en --theme=dark
       - name: Review core-specific routing protocol selections
         working-directory: v2rayN
         run: dotnet v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll ../artifacts/routing-protocols --headless --routing-protocols-only

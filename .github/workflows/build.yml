@@ -77,6 +77,10 @@ jobs:
         echo "After:"
         dotnet --list-sdks 2>$null; $LASTEXITCODE=0
 
+    - name: Verify dependency download retry policy
+      shell: bash
+      run: python3 packaging/test-download-go-modules.py
+
     - name: Setup .NET
       uses: actions/setup-dotnet@v6
       with:
@@ -117,6 +121,13 @@ jobs:
         core_name=sing-box
         [[ "$core_os" != windows ]] || core_name=sing-box.exe
         bash packaging/build-ssh-core.sh "$core_os" "$core_arch" "$Output/bin/sing_box/$core_name"
+
+    - name: Download pinned proxy-check dependencies
+      shell: bash
+      working-directory: ./proxy-check
+      run: |
+        python3 ../packaging/download-go-modules.py
+        go mod verify
 
     - name: Build bundled proxy-check worker
       shell: bash

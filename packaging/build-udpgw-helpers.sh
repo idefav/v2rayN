@@ -5,6 +5,8 @@ output=${1:?usage: build-udpgw-helpers.sh OUTPUT_DIRECTORY}
 mkdir -p "$output/udpgw-deploy"
 output=$(cd "$output/udpgw-deploy" && pwd)
 cd "$task_root/proxy-check"
+python3 "$task_root/packaging/download-go-modules.py"
+go mod verify
 for arch in amd64 arm64; do
   CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath -ldflags='-s -w' -o "$output/udpgw-deploy-linux-$arch" ./cmd/udpgw-deploy
 done
