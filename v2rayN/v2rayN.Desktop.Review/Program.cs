@@ -619,11 +619,14 @@ public partial class ReviewApp : v2rayN.Desktop.App
             Check(status.Bounds.Width > 500 && status.Bounds.Width <= width, "home remains within window at " + width);
         }
         status.FindControl<Button>("btnConnectionControls")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-        for (var i = 0; i < 50 && status.FindControl<StackPanel>("serverChoices")!.Children.Count == 0; i++) await Task.Delay(20);
+        var choices = PickerList(status);
+        await WaitForPickerAsync(choices, rows => rows.Length > 0, "connection picker finishes loading");
+        await SelectPickerGroupAsync(status, "*");
         Check(picker.IsVisible && status.FindControl<Button>("btnConnectionControls")!.Flyout == null, "server picker opens inline without flyout");
         status.FindControl<TextBox>("txtServerSearch")!.Text = "jp.example.com";
-        await Task.Delay(50);
-        Check(status.FindControl<StackPanel>("serverChoices")!.Children.Count == 1, "inline search filters isolated server fixtures");
+        await WaitForPickerAsync(choices, rows => rows.Length == 1 && rows[0].Node.Address == "jp.example.com",
+            "inline search filters isolated server fixtures across groups");
+        Check(PickerNodes(choices).Length == 1, "inline search counts servers without group headers");
         await CaptureAsync("connection-picker", "Inline server selection", _main);
         Check(status.CloseConnectionControls(), "server picker accepts an independent close");
         await WaitForDrawerAsync();
@@ -667,6 +670,7 @@ public partial class ReviewApp : v2rayN.Desktop.App
         dialog.RetryRequested += () => { retried++; return Task.CompletedTask; };
         dialog.GetVisualDescendants().OfType<Button>().Single(b => b.Content?.ToString() == "重试")
             .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        await WaitForUiAsync(() => retried == 1, "manual retry completes its asynchronous dispatch");
         Check(retried == 1 && !dialog.NoticeVisible, "manual retry dismisses previous result and dispatches once");
         operationId = ConnectionTransition.NewOperationId();
         _vm.StatusBarViewModel.Transition = new(ConnectionStage.ApplyingProxy, false, UpdatingProxy: true) { OperationId = operationId };
@@ -770,7 +774,8 @@ public partial class ReviewApp : v2rayN.Desktop.App
         {
             await ReviewSshDnsPickerAsync();
             File.WriteAllText(Path.Combine(Program.Output, "manifest.json"), JsonSerializer.Serialize(new
-            { fixtureData = true, Program.Language, Program.Theme, screenshots = _shots, checks = _checks }));
+            { fixtureData = true, renderer = Program.Headless ? "Avalonia.Headless + Skia" : "native",
+                Program.Language, Program.Theme, screenshots = _shots, checks = _checks }));
             Console.WriteLine($"PASS: {_checks.Count} SSH DNS / picker checks; {_shots.Count} screenshots.");
             return;
         }

@@ -49,8 +49,10 @@ public partial class ReviewApp
             "hidden home remains activated for runtime and authorization subscriptions");
         _vm.StatusBarViewModel.RunningServerDisplay = savedName;
         await _main.OpenSettingsAsync("Core");
-        Check(_main.WorkspaceWindow.GetVisualDescendants().OfType<Button>().Single(b => b.Name == "btnRestart").IsEffectivelyEnabled,
-            "settings restart action stays enabled independently of hidden home");
+        var restart = status.GetVisualDescendants().OfType<Button>().Single(b => b.Name == "btnRestart");
+        Check(ReferenceEquals(TopLevel.GetTopLevel(restart), _main) && restart.IsEffectivelyVisible
+            && ReferenceEquals(restart.Command, _vm.StatusBarViewModel.RestartCoreCmd) && !restart.IsEffectivelyEnabled,
+            "restart remains bound on connection home while settings are open and is disabled without a running core");
         await _main.OpenSettingsAsync("SystemProxy");
         Check(_main.WorkspaceWindow.GetVisualDescendants().OfType<ComboBox>().Single(c => c.Name == "cmbSystemProxy").IsEffectivelyEnabled,
             "settings proxy mode remains accessible while home is disabled");
@@ -151,7 +153,7 @@ public partial class ReviewApp
             var blocking = coordinator.RunAsync(() => true, () => release.Task, CancellationToken.None);
             var current = true;
             var queued = (Task<bool>)typeof(MainWindowViewModel).GetMethod("ReloadCoreAsync", BindingFlags.Instance | BindingFlags.NonPublic)!
-                .Invoke(_vm, [null, CancellationToken.None, "queued update fixture", false, null, (Func<bool>)(() => current)])!;
+                .Invoke(_vm, [null, CancellationToken.None, "queued update fixture", false, null, (Func<bool>)(() => current), false])!;
             Check(!queued.IsCompleted, "update restart waits for its lifecycle transaction");
             current = false;
             release.SetResult(true);

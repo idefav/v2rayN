@@ -138,32 +138,43 @@ public partial class ReviewApp
             status.FindControl<ComboBox>("pickerScope")!.SelectedIndex = 0;
             status.FindControl<Button>("btnConnectionControls")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             await WaitForDrawerAsync();
+            var choices = PickerList(status);
+            await WaitForPickerAsync(choices, rows => rows.Length > 0, "duplicate-name fixture waits for picker load");
+            await SelectPickerGroupAsync(status, "*");
             // Every open intentionally clears the old filter to reveal the
             // selected server. Enter this test's query after opening the drawer.
             status.FindControl<TextBox>("txtServerSearch")!.Text = first.Remarks;
-            var choices = status.FindControl<StackPanel>("serverChoices")!;
-            for (var i = 0; i < 50 && choices.Children.Count != 2; i++) await Task.Delay(20);
-            Check(choices.Children.Count == 2, "same-name servers both appear in the inline picker");
-            var labels = choices.GetVisualDescendants().OfType<TextBlock>().Select(c => c.Text ?? "").ToArray();
-            Check(labels.Any(t => t.Contains("SSH") && t.Contains("first.example.test:22"))
-                && labels.Any(t => t.Contains("Trojan") && t.Contains("[2001:db8::2]:443")),
-                "same-name picker rows expose their protocol and unambiguous endpoint, including IPv6");
-            var select = choices.GetVisualDescendants().OfType<Button>().Single(b =>
-                b.Name == "select-" + second.IndexId && AutomationProperties.GetName(b)?.Contains("[2001:db8::2]:443") == true);
+            await WaitForPickerAsync(choices, rows => rows.Length == 2 && rows.All(row => row.Name == first.Remarks),
+                "same-name search completes across groups");
+            Check(choices.Items.OfType<ServerPickerRow>().Count(row => row.IsHeader) == 2 && PickerNodes(choices).Length == 2,
+                "same-name servers in distinct groups retain two headings and two selectable rows");
+            foreach (var (id, protocol, endpoint) in new[] { (first.IndexId, "SSH", "first.example.test:22"),
+                         (second.IndexId, "Trojan", "[2001:db8::2]:443") })
+            {
+                var choice = await PickerButtonAsync(choices, id, reveal: true);
+                var labels = choice.GetVisualDescendants().OfType<TextBlock>().Select(c => c.Text ?? "").ToArray();
+                Check(labels.Contains(endpoint) && labels.Any(text => text.StartsWith(protocol + " · "))
+                    && AutomationProperties.GetName(choice)?.Contains(endpoint) == true,
+                    "same-name row separates protocol and endpoint, including IPv6: " + id);
+            }
+            var select = await PickerButtonAsync(choices, second.IndexId, reveal: true);
             await CaptureAsync("v3-interaction-picker", "Same-name servers show protocol, endpoint and group", _main);
             var position = select.TranslatePoint(default, _main)!.Value;
             Check(position.Y >= 68 && position.Y + select.Bounds.Height <= _main.ClientSize.Height + 1,
-                "opening the inline picker scrolls its choices into view without an extra manual scroll");
+                "scrolling a virtualized same-name row brings the complete choice into view");
             status.CloseConnectionControls();
             await WaitForDrawerAsync();
             _main.Width = 800;
             _main.Height = 600;
             status.FindControl<Button>("btnConnectionControls")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             await WaitForDrawerAsync();
+            await WaitForPickerAsync(choices, rows => rows.Length > 0, "small picker finishes reloading");
+            await SelectPickerGroupAsync(status, "*");
             status.FindControl<TextBox>("txtServerSearch")!.Text = first.Remarks;
-            for (var i = 0; i < 50 && choices.Children.Count != 2; i++) await Task.Delay(20);
+            await WaitForPickerAsync(choices, rows => rows.Length == 2 && rows.All(row => row.Name == first.Remarks),
+                "small picker applies the cross-group search");
+            select = await PickerButtonAsync(choices, second.IndexId, reveal: true);
             await CaptureAsync("v3-interaction-picker-small", "Same-name selection at 800x600", _main);
-            select = choices.GetVisualDescendants().OfType<Button>().Single(b => b.Name == "select-" + second.IndexId);
             position = select.TranslatePoint(default, _main)!.Value;
             Check(position.Y >= 68 && position.Y + select.Bounds.Height <= _main.ClientSize.Height + 1,
                 "the complete server choice remains visible at 800x600");

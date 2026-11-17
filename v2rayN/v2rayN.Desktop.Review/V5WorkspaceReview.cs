@@ -32,7 +32,7 @@ public partial class ReviewApp
         await Task.Delay(60);
         var button = bar.FindControl<Button>("btnConnect")!;
         var search = bar.FindControl<TextBox>("txtServerSearch")!;
-        var list = bar.FindControl<StackPanel>("serverChoices")!;
+        var list = PickerList(bar);
         var previousNode = AppManager.Instance.Config.IndexId;
         var previousTun = _vm.StatusBarViewModel.EnableTun;
         var originalSize = _main.ClientSize;
@@ -49,6 +49,7 @@ public partial class ReviewApp
         Check(button.Bounds == buttonRect && button.TranslatePoint(default, _main) == buttonPoint,
             "connection content keeps its exact geometry during a native window resize");
         await Settled();
+        await WaitForPickerAsync(list, rows => rows.Length > 0, "drawer loads server data before filter checks");
         Check(_main.Width == 790 && _main.Height == originalSize.Height, "picker expands the same window 350 points to the right");
         Check(_main.Position == planned.Expanded, "native window expansion uses the planned screen-safe anchor");
         Check(button.Bounds == buttonRect && button.TranslatePoint(default, _main) == buttonPoint,
@@ -62,14 +63,15 @@ public partial class ReviewApp
         await CaptureAsync("v5-drawer-light", "Right-side server picker", _main);
 
         search.Text = "no-such-node-for-review";
-        await Task.Delay(30);
-        Check(list.Children.Count == 0 && bar.FindControl<TextBlock>("txtPickerEmpty")!.IsVisible && manage.IsEffectivelyVisible,
+        await WaitForPickerAsync(list, rows => rows.Length == 0, "unmatched search updates the virtualized picker");
+        Check(bar.FindControl<TextBlock>("txtPickerEmpty")!.IsVisible && manage.IsEffectivelyVisible,
             "empty search retains an explanation and server management");
         search.Text = "";
-        await Task.Delay(30);
-        Check(list.Children.Count > 0, "clearing search restores server choices");
+        await WaitForPickerAsync(list, rows => rows.Length > 0, "clearing search restores server choices");
+        Check(PickerNodes(list).Length > 0, "clearing search restores server choices");
         bar.FindControl<ComboBox>("pickerScope")!.SelectedIndex = 1;
-        Check(list.Children.Count == 0, "empty favorites do not fall back to an unrequested list");
+        await WaitForPickerAsync(list, rows => rows.Length == 0, "empty favorites filter completes");
+        Check(PickerNodes(list).Length == 0, "empty favorites do not fall back to an unrequested list");
         bar.FindControl<ComboBox>("pickerScope")!.SelectedIndex = 0;
         _main.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Escape });
         await Settled();
@@ -212,8 +214,8 @@ public partial class ReviewApp
         var originalFavorites = config.UiItem.ConnectionFavorites.ToList();
         var search = bar.FindControl<TextBox>("txtServerSearch")!;
         var scope = bar.FindControl<ComboBox>("pickerScope")!;
-        var scroll = bar.FindControl<ScrollViewer>("serverListScroll")!;
-        var list = bar.FindControl<StackPanel>("serverChoices")!;
+        var list = PickerList(bar);
+        var scroll = PickerScroll(list);
         var drawer = _main.ServerDrawer!;
         try
         {
@@ -235,6 +237,8 @@ public partial class ReviewApp
             Check(string.IsNullOrEmpty(search.Text) && scope.SelectedIndex == 0,
                 "opening clears stale search and favorites scope so the selected server is discoverable");
             Check(scroll.Offset.Y > 0, "a selected server below the first screen is automatically scrolled into view");
+            Check(list.GetVisualDescendants().OfType<ListBoxItem>().Count() < PickerNodes(list).Length,
+                "selected-server positioning realizes a viewport rather than every server row");
             Check(search.IsKeyboardFocusWithin, "automatic positioning keeps keyboard focus in search");
             await CaptureAsync("picker-selected-below-fold", "Selected server revealed on opening", _main);
 
@@ -242,8 +246,10 @@ public partial class ReviewApp
             await Task.Delay(80);
             Check(scroll.Offset.Y == 0, "manual scrolling after opening is not pulled back to the selected server");
             search.Text = "picker-0.example.com";
-            await Task.Delay(40);
-            Check(list.Children.Count == 1 && !list.GetVisualDescendants().OfType<Button>().Any(b => b.Classes.Contains("selectedServer")),
+            await WaitForPickerAsync(list, rows => rows.Length == 1 && rows[0].Node.IndexId == "review-picker-000",
+                "search filters the large picker without counting group headings");
+            var filtered = await PickerButtonAsync(list, "review-picker-000", reveal: true);
+            Check(!filtered.Classes.Contains("selectedServer"),
                 "subsequent search respects the user's filter rather than forcing the selected row into results");
             bar.CloseConnectionControls(); await Settle();
             drawer.ReduceMotion = () => true;
@@ -254,14 +260,14 @@ public partial class ReviewApp
             config.IndexId = "review-picker-010";
             _main.CanResize = false;
             await OpenAndCheck();
-            Check(list.GetVisualDescendants().OfType<Button>().Single(b => b.Classes.Contains("selectedServer")).Name == "select-review-picker-010",
+            Check((await PickerButtonAsync(list, "review-picker-010")).Classes.Contains("selectedServer"),
                 "narrow fallback locates the current selection instead of remembering the previously selected row");
             bar.CloseConnectionControls(); await Settle(); _main.CanResize = true;
 
             config.IndexId = "review-picker-missing";
             bar.FindControl<Button>("btnConnectionControls")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             await Settle();
-            Check(list.Children.Count >= 80 && scroll.Offset.Y == 0
+            Check(PickerNodes(list).Length >= 80 && scroll.Offset.Y == 0
                 && !list.GetVisualDescendants().OfType<Button>().Any(b => b.Classes.Contains("selectedServer")),
                 "a deleted or missing selection leaves the available server list at the top");
             Check(!await CoreManager.Instance.IsCoreRunningAsync(), "revealing a selected server never starts a core");
@@ -277,8 +283,9 @@ public partial class ReviewApp
 
         async Task Settle()
         {
-            for (var i = 0; i < 100 && (drawer.IsAnimating || bar.IsServerPickerOpen && list.Children.Count < 80); i++)
-                await Task.Delay(10);
+            await WaitForDrawerAsync();
+            if (bar.IsServerPickerOpen)
+                await WaitForPickerAsync(list, rows => rows.Length >= 80, "large picker finishes loading its selected group");
             await Task.Delay(100);
             _main.UpdateLayout();
         }
@@ -286,7 +293,7 @@ public partial class ReviewApp
         {
             bar.FindControl<Button>("btnConnectionControls")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             await Settle();
-            var selected = list.GetVisualDescendants().OfType<Button>().Single(b => b.Name == "select-" + config.IndexId);
+            var selected = await PickerButtonAsync(list, config.IndexId);
             var position = selected.TranslatePoint(default, scroll)!.Value;
             Check(selected.Classes.Contains("selectedServer") && position.Y >= -.5
                 && position.Y + selected.Bounds.Height <= scroll.Viewport.Height + .5,

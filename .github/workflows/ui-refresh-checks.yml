@@ -91,6 +91,13 @@ jobs:
       - name: Service regression tests
         working-directory: v2rayN
         run: dotnet test --project ServiceLib.Tests -c Release --results-directory ../artifacts/tests -- --report-trx
+      - name: Check grouped virtualized picker bindings and concurrency
+        working-directory: v2rayN
+        env:
+          SSH_DNS_PICKER_REVIEW: '1'
+        run: |
+          dotnet v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll ../artifacts/picker-zh --headless --language=zh-Hans
+          dotnet v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll ../artifacts/picker-en --headless --language=en
       - name: Review core-specific routing protocol selections
         working-directory: v2rayN
         run: dotnet v2rayN.Desktop.Review/bin/Release/net10.0/v2rayN.Desktop.Review.dll ../artifacts/routing-protocols --headless --routing-protocols-only
