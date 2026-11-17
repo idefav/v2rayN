@@ -100,6 +100,7 @@ public sealed class SshConnectionTestService(string? corePath = null, string? te
         var directory = Path.Combine(temporaryRoot ?? Path.GetTempPath(), "v2rayn-ssh-test-" + Guid.NewGuid().ToString("N"));
         Process? process = null;
         Task? output = null, errors = null;
+        var stopped = true;
         try
         {
             new SshKeyStore(directory).EnsureDirectory();
@@ -121,6 +122,7 @@ public sealed class SshConnectionTestService(string? corePath = null, string? te
             };
             info.ArgumentList.Add("run"); info.ArgumentList.Add("-c"); info.ArgumentList.Add(path);
             process = Process.Start(info) ?? throw new SshSetupException("coreStart");
+            stopped = false;
             // Drain bounded buffers; raw core diagnostics may echo credentials/configuration, so never retain or log them.
             output = DrainAsync(process.StandardOutput);
             errors = DrainAsync(process.StandardError);
@@ -155,16 +157,18 @@ public sealed class SshConnectionTestService(string? corePath = null, string? te
             {
                 if (process != null)
                 {
+                    using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(8));
                     if (!process.HasExited) process.Kill(true);
-                    await process.WaitForExitAsync();
-                    if (output != null) await output;
-                    if (errors != null) await errors;
+                    await process.WaitForExitAsync(cleanup.Token);
+                    stopped = true;
+                    await Task.WhenAll(output ?? Task.CompletedTask, errors ?? Task.CompletedTask).WaitAsync(cleanup.Token);
                 }
             }
             finally
             {
                 process?.Dispose();
-                if (Directory.Exists(directory)) Directory.Delete(directory, true);
+                // Retain the private configuration if process exit could not be confirmed.
+                if (stopped && Directory.Exists(directory)) Directory.Delete(directory, true);
             }
         }
     }

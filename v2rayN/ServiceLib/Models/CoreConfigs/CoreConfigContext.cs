@@ -11,6 +11,7 @@ public record CoreConfigContext
     public SimpleDNSItem SimpleDnsItem { get; init; } = new();
     public Dictionary<string, ProfileItem> AllProxiesMap { get; init; } = new();
     public Config AppConfig { get; init; } = new();
+    public int? StatisticsPort { get; init; }
     public FullConfigTemplateItem? FullConfigTemplate { get; init; } = new();
 
     public Dictionary<string, string> CustomOutboundContent { get; init; } = new();

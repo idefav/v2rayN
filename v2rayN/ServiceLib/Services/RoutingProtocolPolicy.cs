@@ -2,9 +2,26 @@ using System.Globalization;
 
 namespace ServiceLib.Services;
 
+public sealed record RoutingProtocolConflict(int RuleIndex, string RuleId, string RuleName, ECoreType Core,
+    IReadOnlyList<string> Protocols);
+
 /// <summary>Protocols identified by each core's traffic sniffers, not outbound protocols.</summary>
 public static class RoutingProtocolPolicy
 {
+    public static IReadOnlyList<RoutingProtocolConflict> Conflicts(RoutingItem? routing, ECoreType core)
+    {
+        if (string.IsNullOrWhiteSpace(routing?.RuleSet)) return [];
+        var rules = JsonUtils.Deserialize<List<RulesItem>>(routing.RuleSet)
+            ?? throw new JsonException("Invalid routing rules.");
+        return rules.Select((rule, index) =>
+        {
+            if (rule == null) throw new JsonException("Invalid routing rules.");
+            var unsupported = Unsupported(core, rule.Protocol);
+            return !rule.Enabled || rule.RuleType == ERuleType.DNS || unsupported.Count == 0 ? null
+                : new RoutingProtocolConflict(index, rule.Id, rule.Remarks, core, unsupported);
+        }).OfType<RoutingProtocolConflict>().ToArray();
+    }
+
     // Keep this catalog aligned with the bundled cores' sniffers. Do not add
     // sing-box-only protocols to Xray's shared routing configuration.
     private static readonly IReadOnlyList<string> SingboxProtocols = Array.AsReadOnly<string>(

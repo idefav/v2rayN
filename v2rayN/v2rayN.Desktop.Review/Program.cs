@@ -766,6 +766,14 @@ public partial class ReviewApp : v2rayN.Desktop.App
             Console.WriteLine($"Reviewed {_shots.Count} DNS screens; {_checks.Count} checks passed.");
             return;
         }
+        if (Environment.GetEnvironmentVariable("SSH_DNS_PICKER_REVIEW") == "1")
+        {
+            await ReviewSshDnsPickerAsync();
+            File.WriteAllText(Path.Combine(Program.Output, "manifest.json"), JsonSerializer.Serialize(new
+            { fixtureData = true, Program.Language, Program.Theme, screenshots = _shots, checks = _checks }));
+            Console.WriteLine($"PASS: {_checks.Count} SSH DNS / picker checks; {_shots.Count} screenshots.");
+            return;
+        }
         if (Program.RoutingProtocolsOnly)
         {
             await ReviewRoutingProtocolsAsync();
@@ -2017,6 +2025,29 @@ public partial class ReviewApp : v2rayN.Desktop.App
     }
     private async Task ReviewRoutingProtocolsAsync()
     {
+        await ReviewRoutingCoreDecisionsAsync();
+        foreach (var choice in new[] { RoutingCoreChoice.UseSingbox, RoutingCoreChoice.EditRule, RoutingCoreChoice.Cancel })
+        {
+            var pending = _main.ShowRoutingCorePromptAsync(new RoutingCorePrompt(
+                "STUN PROXY: Xray / stun\n" + RoutingCoreCompatibility.T("此节点已通过 sing-box 配置检查。", "This profile passed the sing-box configuration check."), true, CancellationToken.None));
+            await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
+            var dialog = ((IClassicDesktopStyleApplicationLifetime)ApplicationLifetime!).Windows.Single(w => w != _main && w.IsVisible && w.Title == RoutingCoreCompatibility.T("路由与核心不兼容", "Routing / core compatibility"));
+            var buttons = dialog.GetVisualDescendants().OfType<Button>().ToArray();
+            Check(buttons.Length == 3 && buttons.All(button => button.IsEnabled), "compatibility: three explicit actions are available");
+            if (choice == RoutingCoreChoice.UseSingbox) await CaptureAsync("routing-core-compatible", "Compatible core choice", dialog);
+            buttons[choice == RoutingCoreChoice.UseSingbox ? 0 : choice == RoutingCoreChoice.EditRule ? 1 : 2].RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Check(await pending == choice, "compatibility: explicit action returns " + choice);
+        }
+        using (var obsolete = new CancellationTokenSource())
+        {
+            var pending = _main.ShowRoutingCorePromptAsync(new RoutingCorePrompt("STUN PROXY: Xray / stun\nxhttp: sing-box unsupported", false, obsolete.Token));
+            await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
+            var dialog = ((IClassicDesktopStyleApplicationLifetime)ApplicationLifetime!).Windows.Single(w => w != _main && w.IsVisible && w.Title == RoutingCoreCompatibility.T("路由与核心不兼容", "Routing / core compatibility"));
+            Check(!dialog.GetVisualDescendants().OfType<Button>().First().IsEnabled, "compatibility: incompatible alternative cannot be selected");
+            await CaptureAsync("routing-core-incompatible", "Unsupported transport choice", dialog);
+            obsolete.Cancel();
+            Check(await pending == RoutingCoreChoice.Cancel, "compatibility: superseded request closes without applying");
+        }
         foreach (var (core, protocols, id) in new[]
         {
             (ECoreType.sing_box, new[] { "stun", "dtls" }, "routing-singbox"),
@@ -2047,6 +2078,59 @@ public partial class ReviewApp : v2rayN.Desktop.App
         }
     }
 
+    private async Task ReviewRoutingCoreDecisionsAsync()
+    {
+        var config = AppManager.Instance.Config;
+        var selection = config.IndexId;
+        var routing = await ConfigHandler.GetDefaultRouting(config);
+        var savedRouting = JsonUtils.DeepCopy(routing);
+        var profile = new ProfileItem { IndexId = "routing-switch-fixture", ConfigType = EConfigType.VLESS, CoreType = ECoreType.Xray,
+            Address = "127.0.0.1", Port = 443, Password = Guid.NewGuid().ToString(), Network = "raw", Remarks = "routing fixture" };
+        try
+        {
+            routing.RuleSet = JsonUtils.Serialize(new[] { new RulesItem { Id = "stun-fixture", Remarks = "STUN PROXY", Protocol = ["stun"], OutboundTag = Global.ProxyTag } });
+            await ConfigHandler.SaveRoutingItem(config, routing);
+            foreach (var scenario in new[] { "cancel", "stale-selection", "stale-profile", "cancelled", "recheck-failed", "accept" })
+            {
+                config.IndexId = profile.IndexId;
+                await SQLiteHelper.Instance.ReplaceAsync(profile);
+                using var cancellation = new CancellationTokenSource();
+                using var handler = _vm.RoutingCoreInteraction.RegisterHandler(async interaction =>
+                {
+                    Check(interaction.Input.CanUseSingbox, "decision fixture offers checked alternative");
+                    if (scenario == "stale-selection") config.IndexId = selection;
+                    if (scenario == "stale-profile")
+                    {
+                        var edited = JsonUtils.DeepCopy(profile); edited.Remarks = "changed while dialog open";
+                        await SQLiteHelper.Instance.UpdateAsync(edited);
+                    }
+                    if (scenario == "cancelled") cancellation.Cancel();
+                    interaction.SetOutput(scenario == "cancel" ? RoutingCoreChoice.Cancel : RoutingCoreChoice.UseSingbox);
+                });
+                var checks = 0;
+                ProfileItem? result = null;
+                try
+                {
+                    result = await _vm.ResolveRoutingCoreAsync(profile, true, cancellation.Token,
+                        (_, _, _) => Task.FromResult<string?>(++checks == 2 && scenario == "recheck-failed" ? "fixture changed" : null));
+                    Check(scenario != "cancelled", "cancelled operation must not return a profile");
+                }
+                catch (OperationCanceledException) when (scenario == "cancelled") { }
+                Check((result != null) == (scenario == "accept"), "decision result: " + scenario);
+                var saved = await AppManager.Instance.GetProfileItem(profile.IndexId);
+                Check(saved!.CoreType == (scenario == "accept" ? ECoreType.sing_box : ECoreType.Xray), "only explicit current successful choice persists core: " + scenario);
+                Check((await ConfigHandler.GetDefaultRouting(config)).RuleSet == routing.RuleSet, "decision preserves STUN rule: " + scenario);
+            }
+        }
+        finally
+        {
+            config.IndexId = selection;
+            await ConfigHandler.SaveRoutingItem(config, savedRouting);
+            await SQLiteHelper.Instance.DeleteAsync(profile);
+            _vm.StatusBarViewModel.ConnectionError = null;
+        }
+    }
+
     private async Task ShowAsync(string id, string title, object model)
     {
         var view = SimpleViewLocator.Instance.Build(model);
@@ -2071,7 +2155,8 @@ public partial class ReviewApp : v2rayN.Desktop.App
     }
     private async Task CaptureAsync(string id, string title, Window window, double scale = 1)
     {
-        if (ReferenceEquals(window, _main) && !Program.WorkspaceV4Only && !Program.WorkspaceV5Only && !Program.WorkspaceV6Only && !Program.WorkspaceV7Only) window = _main.WorkspaceWindow;
+        if (ReferenceEquals(window, _main) && !Program.WorkspaceV4Only && !Program.WorkspaceV5Only && !Program.WorkspaceV6Only && !Program.WorkspaceV7Only
+            && Environment.GetEnvironmentVariable("SSH_DNS_PICKER_REVIEW") != "1") window = _main.WorkspaceWindow;
         if (Program.Width < 1000 && window != _main && window.Width > Program.Width)
             window.Width = Math.Max(window.MinWidth, Program.Width);
         await Task.Delay(250);

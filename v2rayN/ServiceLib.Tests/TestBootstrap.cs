@@ -9,5 +9,8 @@ internal static class TestBootstrap
     // No test class should depend on another class running first.
     [ModuleInitializer]
     internal static void InitializeReactiveUI()
-        => RxAppBuilder.CreateReactiveUIBuilder().WithCoreServices().BuildApp();
+    {
+        SysProxyHandler.ChangesEnabled = false;
+        RxAppBuilder.CreateReactiveUIBuilder().WithCoreServices().BuildApp();
+    }
 }

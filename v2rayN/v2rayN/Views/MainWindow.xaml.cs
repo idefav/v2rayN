@@ -92,6 +92,11 @@ public partial class MainWindow
                 .Subscribe(vm => ViewHost.Show(contentStatusBarView, vm))
                 .DisposeWith(disposables);
 
+            ViewModel.RoutingCoreInteraction.RegisterHandler(interaction =>
+            {
+                interaction.SetOutput(ShowRoutingCorePrompt(interaction.Input));
+            }).DisposeWith(disposables);
+
             ViewModel.ReadTextFromClipboardInteraction.RegisterHandler(interaction =>
             {
                 var clipboardData = WindowsUtils.GetClipboardData();

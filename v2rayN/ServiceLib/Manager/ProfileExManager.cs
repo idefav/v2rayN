@@ -4,7 +4,10 @@ public class ProfileExManager
 {
     private static readonly Lazy<ProfileExManager> _instance = new(() => new());
     private ConcurrentBag<ProfileExItem> _lstProfileEx = [];
-    private readonly Queue<string> _queIndexIds = new();
+    private readonly ConcurrentQueue<string> _queIndexIds = new();
+    private readonly ConcurrentDictionary<string, byte> _queuedIds = new();
+    private readonly SemaphoreSlim _saveGate = new(1, 1);
+    private readonly object _itemsGate = new();
     public static ProfileExManager Instance => _instance.Value;
     private static readonly string _tag = "ProfileExHandler";
 
@@ -32,7 +35,7 @@ public class ProfileExManager
 
     private void IndexIdEnqueue(string indexId)
     {
-        if (indexId.IsNotEmpty() && !_queIndexIds.Contains(indexId))
+        if (indexId.IsNotEmpty() && _queuedIds.TryAdd(indexId, 0))
         {
             _queIndexIds.Enqueue(indexId);
         }
@@ -49,7 +52,8 @@ public class ProfileExManager
 
             for (var i = 0; i < cnt; i++)
             {
-                var id = _queIndexIds.Dequeue();
+                if (!_queIndexIds.TryDequeue(out var id)) break;
+                _queuedIds.TryRemove(id, out _);
                 var item = lstExists.FirstOrDefault(t => t.IndexId == id);
                 var itemNew = _lstProfileEx?.FirstOrDefault(t => t.IndexId == id);
                 if (itemNew is null)
@@ -81,6 +85,7 @@ public class ProfileExManager
             }
             catch (Exception ex)
             {
+                foreach (var item in lstInserts.Concat(lstUpdates)) IndexIdEnqueue(item.IndexId);
                 Logging.SaveLog(_tag, ex);
             }
         }
@@ -103,7 +108,7 @@ public class ProfileExManager
 
     private ProfileExItem GetProfileExItem(string? indexId)
     {
-        return _lstProfileEx.FirstOrDefault(t => t.IndexId == indexId) ?? AddProfileEx(indexId);
+        lock (_itemsGate) return _lstProfileEx.FirstOrDefault(t => t.IndexId == indexId) ?? AddProfileEx(indexId);
     }
 
     public async Task ClearAll()
@@ -114,6 +119,7 @@ public class ProfileExManager
 
     public async Task SaveTo()
     {
+        await _saveGate.WaitAsync();
         try
         {
             await SaveQueueIndexIds();
@@ -122,6 +128,7 @@ public class ProfileExManager
         {
             Logging.SaveLog(_tag, ex);
         }
+        finally { _saveGate.Release(); }
     }
 
     public void SetTestDelay(string indexId, int delay)
@@ -129,6 +136,27 @@ public class ProfileExManager
         var profileEx = GetProfileExItem(indexId);
 
         profileEx.Delay = delay;
+        IndexIdEnqueue(indexId);
+    }
+
+    public void SetProbeResult(ServerProbeResult result)
+    {
+        var item = GetProfileExItem(result.NodeId);
+        item.ProbeIdentity = result.Identity;
+        item.TcpProbe = JsonSerializer.Serialize(result.Tcp);
+        item.ProxyProbe = JsonSerializer.Serialize(result.Proxy);
+        item.ProbeCheckedAt = result.CheckedAt.ToUnixTimeSeconds();
+        if (result.Proxy.State is ServerProbeState.Passed or ServerProbeState.Responded)
+            item.Delay = (int)Math.Max(1, result.Proxy.Milliseconds);
+        else if (result.Proxy.State is ServerProbeState.Failed or ServerProbeState.Timeout) item.Delay = -1;
+        IndexIdEnqueue(result.NodeId);
+    }
+
+    public void SetTcpDelay(string indexId, int delay)
+    {
+        var item = GetProfileExItem(indexId);
+        item.TcpProbe = JsonSerializer.Serialize(new ServerProbeStage(
+            delay >= 0 ? ServerProbeState.Passed : ServerProbeState.Failed, Math.Max(0, delay)));
         IndexIdEnqueue(indexId);
     }
 

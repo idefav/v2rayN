@@ -70,6 +70,14 @@ public partial class AddSshServerWindow
             this.WhenAnyValue(v => v.ViewModel.SudoPassword).Subscribe(value => { if (txtSudoPassword.Password != value) txtSudoPassword.Password = value; }).DisposeWith(disposables);
             ViewModel.ConfirmDeploymentInteraction.RegisterHandler(interaction =>
                 interaction.SetOutput(UI.ShowYesNo(interaction.Input) == MessageBoxResult.Yes)).DisposeWith(disposables);
+            this.BindCommand(ViewModel, vm => vm.DeployDnsCmd, v => v.btnDeployDns).DisposeWith(disposables);
+            this.BindCommand(ViewModel, vm => vm.CheckDnsCmd, v => v.btnCheckDns).DisposeWith(disposables);
+            this.BindCommand(ViewModel, vm => vm.RollbackDnsCmd, v => v.btnRollbackDns).DisposeWith(disposables);
+            this.OneWayBind(ViewModel, vm => vm.DnsStatus, v => v.txtDnsStatus.Text).DisposeWith(disposables);
+            this.OneWayBind(ViewModel, vm => vm.DnsDeploymentStatus, v => v.txtDnsDeploymentStatus.Text).DisposeWith(disposables);
+            this.OneWayBind(ViewModel, vm => vm.DnsDetails, v => v.txtDnsDetails.Text).DisposeWith(disposables);
+            ViewModel.ConfirmDnsInteraction.RegisterHandler(interaction =>
+                interaction.SetOutput(UI.ShowYesNo(interaction.Input) == MessageBoxResult.Yes)).DisposeWith(disposables);
             this.WhenAnyValue(v => v.ViewModel.Password).Subscribe(value => { if (txtPassword.Password != value) txtPassword.Password = value; }).DisposeWith(disposables);
             this.WhenAnyValue(v => v.ViewModel.Passphrase).Subscribe(value => { if (txtPassphrase.Password != value) txtPassphrase.Password = value; }).DisposeWith(disposables);
             ViewModel.SetupKeyInteraction.RegisterHandler(interaction =>

@@ -5,7 +5,8 @@ public static class ProxySettingOSX
 {
     private static readonly string _proxySetFileName = $"{Global.ProxySetOSXShellFileName.Replace(Global.NamespaceSample, "")}.sh";
 
-    public static async Task<bool> SetProxy(string host, int port, string exceptions, Action<string>? onFailure = null, CancellationToken cancellationToken = default)
+    public static async Task<bool> SetProxy(string host, int port, string exceptions, Action<string>? onFailure = null, CancellationToken cancellationToken = default,
+        string? customScript = null)
     {
         List<string> args = ["set", host, port.ToString()];
         if (exceptions.IsNotEmpty())
@@ -13,18 +14,18 @@ public static class ProxySettingOSX
             args.AddRange(exceptions.Split(','));
         }
 
-        return await ExecCmd(args, onFailure, cancellationToken);
+        return await ExecCmd(args, onFailure, cancellationToken, customScript);
     }
 
-    public static async Task<bool> UnsetProxy(Action<string>? onFailure = null, CancellationToken cancellationToken = default)
+    public static async Task<bool> UnsetProxy(Action<string>? onFailure = null, CancellationToken cancellationToken = default, string? customScript = null)
     {
         List<string> args = ["clear"];
-        return await ExecCmd(args, onFailure, cancellationToken);
+        return await ExecCmd(args, onFailure, cancellationToken, customScript);
     }
 
-    private static async Task<bool> ExecCmd(List<string> args, Action<string>? onFailure, CancellationToken cancellationToken)
+    private static async Task<bool> ExecCmd(List<string> args, Action<string>? onFailure, CancellationToken cancellationToken, string? customScript)
     {
-        var customSystemProxyScriptPath = AppManager.Instance.Config.SystemProxyItem?.CustomSystemProxyScriptPath;
+        var customSystemProxyScriptPath = customScript;
         var fileName = (customSystemProxyScriptPath.IsNotEmpty() && File.Exists(customSystemProxyScriptPath))
             ? customSystemProxyScriptPath
             : await FileUtils.CreateLinuxShellFile(_proxySetFileName, EmbedUtils.GetEmbedText(Global.ProxySetOSXShellFileName), true);

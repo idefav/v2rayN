@@ -26,8 +26,11 @@
        <Button x:Name="btnConnectionControls" Grid.Column="1" Classes="serverPickerAction" FontSize="11" Padding="6,6" VerticalAlignment="Center" />
       </Grid>
      </Border>
-     <Button x:Name="btnConnect" Grid.Row="2" Classes="primary connectionAction" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" MinHeight="44" Height="44" />
-     <Grid Grid.Row="3">
+     <Grid Grid.Row="2" ColumnDefinitions="*,Auto" ColumnSpacing="8">
+      <Button x:Name="btnConnect" Classes="primary connectionAction" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" MinHeight="44" Height="44" />
+      <ContentControl x:Name="restartHost" Grid.Column="1" VerticalAlignment="Stretch" />
+     </Grid>
+     <StackPanel Grid.Row="3" Spacing="4">
       <Grid x:Name="selectionSummary" ColumnDefinitions="*,Auto" ColumnSpacing="4">
        <TextBlock x:Name="txtSelectionState" Classes="muted caption" FontSize="11" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
        <TextBlock x:Name="txtActualServer" Classes="muted caption" FontSize="11" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" IsVisible="False" />
@@ -40,7 +43,7 @@
         <Button x:Name="btnConnectionDiagnostics" Grid.Column="2" Classes="rowAction" FontSize="11" MinHeight="24" Padding="4,0" />
        </Grid>
       </StackPanel>
-     </Grid>
+     </StackPanel>
      <StackPanel x:Name="connectionFields" Grid.Row="4">
       <Border BorderThickness="0,1,0,0" BorderBrush="{DynamicResource WorkspaceBorder}" Padding="0,9,0,0">
        <DockPanel x:Name="spEnableTun" LastChildFill="True">
@@ -77,10 +80,19 @@
            BorderBrush="{DynamicResource WorkspaceBorder}" BorderThickness="1,0,0,0" Padding="16" IsVisible="False">
     <Grid RowDefinitions="Auto,Auto,*,Auto" RowSpacing="12">
      <DockPanel><Button x:Name="btnCloseConnection" DockPanel.Dock="Right" Classes="serverPickerAction" /><TextBlock x:Name="txtPickerTitle" Classes="sectionTitle" VerticalAlignment="Center" /></DockPanel>
-     <StackPanel Grid.Row="1" Spacing="10"><TextBox x:Name="txtServerSearch" /><ComboBox x:Name="pickerScope" MinWidth="110" HorizontalAlignment="Left" /></StackPanel>
-     <ScrollViewer Grid.Row="2" x:Name="serverListScroll" HorizontalScrollBarVisibility="Disabled">
-      <StackPanel Spacing="12"><TextBlock x:Name="txtPickerEmpty" Classes="muted" IsVisible="False" TextWrapping="Wrap" /><StackPanel x:Name="serverChoices" Spacing="6" /></StackPanel>
-     </ScrollViewer>
+     <StackPanel Grid.Row="1" Spacing="8">
+      <TextBox x:Name="txtServerSearch" />
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8"><ComboBox x:Name="pickerGroup" HorizontalAlignment="Stretch" /><ComboBox x:Name="pickerScope" Grid.Column="1" MinWidth="90" /></Grid>
+      <WrapPanel><Button x:Name="btnTestPicker" Margin="0,0,6,0" /><Button x:Name="btnCancelPicker" /></WrapPanel>
+      <TextBlock x:Name="txtPickerProgress" Classes="muted caption" />
+     </StackPanel>
+     <Grid Grid.Row="2">
+      <ListBox x:Name="serverRows" Background="Transparent" BorderThickness="0" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+       <ListBox.ItemsPanel><ItemsPanelTemplate><VirtualizingStackPanel /></ItemsPanelTemplate></ListBox.ItemsPanel>
+       <ListBox.Styles><Style Selector="ListBoxItem"><Setter Property="Padding" Value="0,3" /><Setter Property="HorizontalContentAlignment" Value="Stretch" /></Style></ListBox.Styles>
+      </ListBox>
+      <TextBlock x:Name="txtPickerEmpty" Classes="muted" IsVisible="False" TextWrapping="Wrap" />
+     </Grid>
      <Border Grid.Row="3" BorderBrush="{DynamicResource WorkspaceBorder}" BorderThickness="0,1,0,0" Padding="0,12,0,0">
       <Button x:Name="btnManageServers" HorizontalAlignment="Stretch" />
      </Border>

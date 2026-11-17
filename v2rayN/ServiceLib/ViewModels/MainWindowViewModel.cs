@@ -2,6 +2,7 @@ namespace ServiceLib.ViewModels;
 
 public partial class MainWindowViewModel : MyReactiveObject
 {
+    public Interaction<RoutingCorePrompt, RoutingCoreChoice> RoutingCoreInteraction { get; } = new();
     public Interaction<RxVoid, string?> ReadTextFromClipboardInteraction { get; } = new();
     public Interaction<RxVoid, byte[]?> ScanScreenInteraction { get; } = new();
     public Interaction<RxVoid, string?> BrowseImageFileInteraction { get; } = new();
@@ -295,6 +296,9 @@ public partial class MainWindowViewModel : MyReactiveObject
                 .SubscribeAsync(async _ => await ReloadSelectedConfigurationAsync());
         }
 
+        StatusBarViewModel.RestartCore = () => Reload("用户重启内核", onlyIfChanged: false);
+        StatusBarViewModel.RetryBackgroundUpdate = () => UpdateTaskHandler(true, "重试后台更新结果 / Retry background update results", true);
+
         StatusBarViewModel.AddServerViaScanRequested
             .AsObservable()
             .ObserveOn(RxSchedulers.MainThreadScheduler)
@@ -373,20 +377,29 @@ public partial class MainWindowViewModel : MyReactiveObject
 
     private Task UpdateTaskHandler(bool success, string msg) => UpdateTaskHandler(success, msg, false);
 
-    private async Task UpdateTaskHandler(bool success, string msg, bool subscriptionUpdate)
+    internal async Task UpdateTaskHandler(bool success, string msg, bool subscriptionUpdate)
     {
         NoticeManager.Instance.SendMessageEx(msg);
         if (success)
         {
-            await RefreshServersDispatcherAsync();
+            var revision = Interlocked.Read(ref _connectionRevision);
+            bool Current() => revision == Interlocked.Read(ref _connectionRevision) && !AppManager.Instance.IsExiting;
+            try
+            {
+                await RefreshServersDispatcherAsync();
+                if (_config.UiItem.EnableAutoAdjustMainLvColWidth)
+                    await UiThread.RunTaskAsync(ProfilesViewModel.AdjustMainLvColWidth, Current);
+                await UiThread.RunAsync(() => StatusBarViewModel.BackgroundRefreshError = null, Current);
+            }
+            catch (Exception ex)
+            {
+                Logging.SaveLog("Background subscription refresh", ex);
+                await UiThread.RunAsync(() => StatusBarViewModel.BackgroundRefreshError = ex.Message, Current);
+            }
             // Compare the whole effective config, including chains and routing-referenced nodes,
             // rather than using the selected subscription group as a reload heuristic.
-            await ReloadSelectedConfigurationAsync(subscriptionUpdate ? "订阅更新完成" : "资源更新完成", onlyIfChanged: subscriptionUpdate);
-
-            if (_config.UiItem.EnableAutoAdjustMainLvColWidth)
-            {
-                await ProfilesViewModel.AdjustMainLvColWidth();
-            }
+            if (Current()) await ReloadSelectedConfigurationAsync(subscriptionUpdate ? "订阅更新完成" : "资源更新完成",
+                onlyIfChanged: subscriptionUpdate, backgroundUpdate: true, expectedRevision: revision);
         }
     }
 
@@ -433,13 +446,7 @@ public partial class MainWindowViewModel : MyReactiveObject
         await _refreshServersSemaphore.WaitAsync();
         try
         {
-            await Signal.FromAsync(async () =>
-            {
-                await RefreshServers();
-                return RxVoid.Default;
-            })
-                .SubscribeOn(RxSchedulers.MainThreadScheduler)
-                .ToTask();
+            await UiThread.RunTaskAsync(RefreshServers);
         }
         finally
         {
@@ -653,20 +660,26 @@ public partial class MainWindowViewModel : MyReactiveObject
             () => wasRunning && !_connectionPaused && !AppManager.Instance.IsExiting
                 && revision == Interlocked.Read(ref _connectionRevision),
             (reason, isCurrent) => ReloadCoreAsync(null, CancellationToken.None, reason, updateIsCurrent: isCurrent),
-            () => RxSchedulers.MainThreadScheduler.Schedule(() => StatusBarViewModel.HasPendingChanges = true));
+            () => RxSchedulers.MainThreadScheduler.Schedule(() =>
+            {
+                if (!AppManager.Instance.IsExiting && revision == Interlocked.Read(ref _connectionRevision))
+                    StatusBarViewModel.HasPendingChanges = true;
+            }));
         return session.RestartAsync;
     }
 
-    internal async Task ReloadSelectedConfigurationAsync(string reason = "用户操作或配置变更", bool onlyIfChanged = false)
+    internal async Task ReloadSelectedConfigurationAsync(string reason = "用户操作或配置变更", bool onlyIfChanged = false,
+        bool backgroundUpdate = false, long? expectedRevision = null)
     {
         if (UseConnectionWorkspace && (CoreManager.Instance.HasUnconfirmedProcesses
             || _connectionPaused || _switchTask is not { IsCompleted: false } && !await CoreManager.Instance.IsCoreRunningAsync()))
         {
-            StatusBarViewModel.HasPendingChanges = true;
+            await UiThread.RunAsync(() => StatusBarViewModel.HasPendingChanges = true,
+                () => expectedRevision == null || expectedRevision == Interlocked.Read(ref _connectionRevision));
             await StatusBarViewModel.RefreshServersBiz();
             return;
         }
-        await Reload(reason, onlyIfChanged);
+        await QueueReloadAsync(reason, onlyIfChanged, backgroundUpdate, expectedRevision);
     }
 
     public async Task ApplySettingsChangesAsync(string section, bool applyConnection = true)
@@ -690,7 +703,7 @@ public partial class MainWindowViewModel : MyReactiveObject
         if (section is "Hotkeys" or "Backup") return;
         if (!applyConnection)
         {
-            StatusBarViewModel.HasPendingChanges = true;
+            await UiThread.RunAsync(() => StatusBarViewModel.HasPendingChanges = true);
             return;
         }
         await ReloadSelectedConfigurationAsync($"设置已修改：{section}", onlyIfChanged: section == "DNS");
@@ -741,7 +754,9 @@ public partial class MainWindowViewModel : MyReactiveObject
     }
 
     private void ReportTransition(ConnectionTransition transition)
-        => StatusBarViewModel.ReportTransition(transition);
+    {
+        StatusBarViewModel.ReportTransition(transition);
+    }
 
     public Task DisconnectAsync() => _disconnectTask is { IsCompleted: false } ? _disconnectTask : _disconnectTask = DisconnectCoreAsync();
 
@@ -755,7 +770,7 @@ public partial class MainWindowViewModel : MyReactiveObject
         {
             await _reloadCoordinator.RunAsync(() => !AppManager.Instance.IsExiting, async () =>
             {
-                SetReloadEnabled(false);
+                await SetReloadEnabledAsync(false);
                 operationId = ConnectionTransition.NewOperationId();
                 ReportTransition(new(ConnectionStage.Stopping, _config.TunModeItem.EnableTun, Disconnecting: true) { OperationId = operationId });
                 var errors = new List<string>();
@@ -770,18 +785,18 @@ public partial class MainWindowViewModel : MyReactiveObject
                     var result = await CoreManager.Instance.CoreStop(deadline.Token);
                     if (!result.Success) errors.Add(result.Error ?? ResUI.FailedToRunCore);
                     var error = errors.Count == 0 ? null : string.Join(Environment.NewLine, errors);
-                    StatusBarViewModel.ConnectionError = error;
+                    await StatusBarViewModel.SetApplyErrorAsync(error);
                     ReportTransition(new(error == null ? ConnectionStage.Completed : ConnectionStage.Failed,
                         _config.TunModeItem.EnableTun, error, Disconnecting: true) { OperationId = operationId });
                     return error == null;
                 }
-                finally { SetReloadEnabled(true); }
+                finally { await FinishReloadAsync(); }
             }, deadline.Token);
         }
         catch (Exception ex)
         {
             Logging.SaveLog("Disconnect", ex);
-            StatusBarViewModel.ConnectionError = ex.Message;
+            await StatusBarViewModel.SetApplyErrorAsync(ex.Message);
             ReportTransition(new(ConnectionStage.Failed, _config.TunModeItem.EnableTun, ex.Message, Disconnecting: true)
                 { OperationId = operationId == 0 ? ConnectionTransition.NewOperationId() : operationId });
         }
@@ -805,24 +820,34 @@ public partial class MainWindowViewModel : MyReactiveObject
     private string? _switchKey;
 
     public Task<bool> ReloadWithResultAsync(string reason, bool onlyIfChanged = true)
+        => QueueReloadAsync(reason, onlyIfChanged, false, null);
+
+    private async Task<bool> QueueReloadAsync(string reason, bool onlyIfChanged, bool backgroundUpdate, long? expectedRevision)
     {
-        _connectionPaused = false;
-        var key = JsonUtils.Serialize(_config);
-        if (_switchTask is { IsCompleted: false } && key == _switchKey
-            && _switchCancellation?.IsCancellationRequested != true) return _switchTask;
-        _switchCancellation?.Cancel();
-        var cancellation = CancellationTokenSource.CreateLinkedTokenSource(AppManager.Instance.ExitToken);
-        _switchCancellation = cancellation;
-        _switchKey = key;
-        return _switchTask = ReloadSwitchAsync(reason, onlyIfChanged, cancellation);
+        Task<bool>? operation = null;
+        await UiThread.RunAsync(() =>
+        {
+            if (expectedRevision != null && expectedRevision != Interlocked.Read(ref _connectionRevision)) return;
+            if (backgroundUpdate && (_connectionPaused || _switchTask is { IsCompleted: false })) return;
+            _connectionPaused = false;
+            var key = JsonUtils.Serialize(_config);
+            if (_switchTask is { IsCompleted: false } && key == _switchKey
+                && _switchCancellation?.IsCancellationRequested != true) { operation = _switchTask; return; }
+            _switchCancellation?.Cancel();
+            var cancellation = CancellationTokenSource.CreateLinkedTokenSource(AppManager.Instance.ExitToken);
+            _switchCancellation = cancellation;
+            _switchKey = key;
+            operation = _switchTask = ReloadSwitchAsync(reason, onlyIfChanged, cancellation, backgroundUpdate);
+        });
+        return operation != null && await operation;
     }
 
-    private async Task<bool> ReloadSwitchAsync(string reason, bool onlyIfChanged, CancellationTokenSource cancellation)
+    private async Task<bool> ReloadSwitchAsync(string reason, bool onlyIfChanged, CancellationTokenSource cancellation, bool backgroundUpdate = false)
     {
         Interlocked.Increment(ref _manualReloads);
         Interlocked.Increment(ref _connectionRevision);
         AppManager.Instance.ConnectionRecovery?.RequestCheck("configuration changed");
-        try { return await ReloadCoreAsync(null, cancellation.Token, reason, onlyIfChanged); }
+        try { return await ReloadCoreAsync(null, cancellation.Token, reason, onlyIfChanged, backgroundUpdate: backgroundUpdate); }
         catch (OperationCanceledException) { return false; }
         finally
         {
@@ -840,7 +865,7 @@ public partial class MainWindowViewModel : MyReactiveObject
 
     private async Task<bool> ReloadCoreAsync(RecoveryContext? expected, CancellationToken token,
         string reason, bool onlyIfChanged = false, Func<CancellationToken, Task<bool>>? recoveryConfirm = null,
-        Func<bool>? updateIsCurrent = null)
+        Func<bool>? updateIsCurrent = null, bool backgroundUpdate = false)
     {
         return await _reloadCoordinator.RunAsync(
             () => !DesignMode && !AppManager.Instance.IsExiting && (expected == null || GetRecoveryContext() == expected), async () =>
@@ -852,41 +877,53 @@ public partial class MainWindowViewModel : MyReactiveObject
         var targetTun = _config.TunModeItem.EnableTun;
         var success = false;
         var transitionStarted = false;
+        var revision = Interlocked.Read(ref _connectionRevision);
+        string? error = null;
+        bool Current() => revision == Interlocked.Read(ref _connectionRevision) && !AppManager.Instance.IsExiting;
+        async Task SetError(string? value)
+        {
+            error = value;
+            await StatusBarViewModel.SetApplyErrorAsync(value, backgroundUpdate, Current);
+        }
         long operationId = 0;
         void ReportOperation(ConnectionTransition transition) => ReportTransition(transition with
-            { OperationId = operationId, IsBackground = expected != null });
+            { OperationId = operationId, IsBackground = expected != null || backgroundUpdate });
         try
         {
-            SetReloadEnabled(false);
-            StatusBarViewModel.ConnectionError = null;
-            StatusBarViewModel.HasPendingChanges = true;
-
-            RxSchedulers.MainThreadScheduler.Schedule(() =>
+            await SetReloadEnabledAsync(false);
+            if (!backgroundUpdate) await SetError(null);
+            await UiThread.RunAsync(() =>
             {
+                StatusBarViewModel.HasPendingChanges = true;
                 if (TabMainSelectedIndex < 0)
                 {
                     TabMainSelectedIndex = 0;
                 }
-            });
+            }, Current);
             var profileItem = await ConfigHandler.GetDefaultServer(_config);
             if (profileItem == null)
             {
-                StatusBarViewModel.ConnectionError = ResUI.CheckServerSettings;
+                await SetError(ResUI.CheckServerSettings);
                 NoticeManager.Instance.Enqueue(ResUI.CheckServerSettings);
                 return false;
             }
+            profileItem = await ResolveRoutingCoreAsync(profileItem, expected == null && !backgroundUpdate, token, reportError: SetError);
+            if (profileItem == null) return false;
             var authorizationRevision = Interlocked.Read(ref _connectionRevision);
-            if (!await StatusBarViewModel.EnsureTunAuthorizationAsync()) return false;
+            if (!await StatusBarViewModel.EnsureTunAuthorizationAsync(reportError: SetError, token: token)) return false;
             token.ThrowIfCancellationRequested();
             if (authorizationRevision != Interlocked.Read(ref _connectionRevision)) return false;
             if (AppManager.Instance.IsExiting) return false;
+            var operationConfig = JsonUtils.DeepCopy(_config);
+            var operationConfigText = JsonUtils.Serialize(operationConfig);
+            targetTun = operationConfig.TunModeItem.EnableTun;
             transitionStarted = true;
             operationId = ConnectionTransition.NewOperationId();
             ReportOperation(new(ConnectionStage.Preparing, targetTun));
-            var allResult = await CoreConfigContextBuilder.BuildAll(_config, profileItem);
+            var allResult = await CoreConfigContextBuilder.BuildAll(operationConfig, profileItem);
             if (NoticeManager.Instance.NotifyValidatorResult(allResult.CombinedValidatorResult) && !allResult.Success)
             {
-                StatusBarViewModel.ConnectionError = string.Join(Environment.NewLine, allResult.CombinedValidatorResult.Errors);
+                await SetError(string.Join(Environment.NewLine, allResult.CombinedValidatorResult.Errors));
                 return false;
             }
 
@@ -909,36 +946,40 @@ public partial class MainWindowViewModel : MyReactiveObject
                 loadResult = await CoreManager.Instance.LoadCore(allResult.MainResult.Context,
                     allResult.PreSocksResult?.Context, onlyIfChanged, reason, token,
                     stageChanged: (stage, seconds) => ReportOperation(new(stage, targetTun, WaitSeconds: seconds)));
-                if (loadResult != CoreLoadResult.Started) return;
-                proxyApplied = await SysProxyHandler.UpdateSysProxy(_config, false, error => StatusBarViewModel.ConnectionError = error);
-                await Task.Delay(1000);
+                if (loadResult == CoreLoadResult.Failed) return;
+                token.ThrowIfCancellationRequested();
+                var runtime = CoreManager.Instance.RuntimeSummary;
+                if (runtime == null) return;
+                ReportOperation(new(ConnectionStage.ApplyingProxy, targetTun, UpdatingProxy: true));
+                var proxyRequest = ProxyApplyRequest.Capture(operationConfig, runtime.ProxyPort);
+                string? proxyError = null;
+                var proxyResult = await SysProxyHandler.ApplyConnectionAsync(proxyRequest,
+                    detail => proxyError = detail,
+                    result => CoreManager.Instance.SetProxyResult(result.Matches, result.Detail, runtime.Generation), token);
+                proxyApplied = proxyResult.Matches == true;
+                await SetError(proxyApplied ? null : proxyError ?? proxyResult.Detail);
             });
             if (loadResult == CoreLoadResult.Unchanged)
             {
-                StatusBarViewModel.HasPendingChanges = false;
-                return success = true;
+                success = proxyApplied && (await CoreManager.Instance.GetRuntimeStateAsync(token)).Ready;
+                if (success) await UiThread.RunAsync(() =>
+                {
+                    StatusBarViewModel.HasPendingChanges = false;
+                    StatusBarViewModel.BackgroundApplyError = null;
+                },
+                    () => Current() && operationConfigText == JsonUtils.Serialize(_config));
+                return success;
             }
             if (loadResult == CoreLoadResult.Failed)
             {
                 token.ThrowIfCancellationRequested();
                 if (updateIsCurrent?.Invoke() == false) return false;
-                StatusBarViewModel.ConnectionError = CoreManager.Instance.LastError ?? ResUI.FailedToRunCore;
+                await SetError(CoreManager.Instance.LastError ?? ResUI.FailedToRunCore);
                 return false;
             }
-            if (expected == null) RxSchedulers.MainThreadScheduler.Schedule(async () =>
+            if (expected == null && !backgroundUpdate) RxSchedulers.MainThreadScheduler.Schedule(async () =>
             {
-                var result = await StatusBarViewModel.TestServerAvailability();
-                if (result == null || profileItem.IndexId.IsNullOrEmpty())
-                {
-                    return;
-                }
-
-                await ProfilesViewModel.SetSpeedTestResult(new()
-                {
-                    IndexId = profileItem.IndexId,
-                    IpInfo = result.Ip,
-                    Delay = result.Time > 0 ? result.Time.ToString() : null
-                });
+                if (Current()) await StatusBarViewModel.TestServerAvailability();
             });
 
             var showClashUI = AppManager.Instance.IsRunningCore(ECoreType.sing_box);
@@ -956,9 +997,18 @@ public partial class MainWindowViewModel : MyReactiveObject
                     .ToTask();
             }
 
-            ReloadResult(showClashUI);
-            success = proxyApplied && await CoreManager.Instance.IsCoreRunningAsync(token);
-            if (success) StatusBarViewModel.HasPendingChanges = false;
+            await UiThread.RunAsync(() =>
+            {
+                ShowClashUI = showClashUI;
+                if (!showClashUI || TabMainSelectedIndex < 0) TabMainSelectedIndex = 0;
+            }, Current);
+            success = proxyApplied && (await CoreManager.Instance.GetRuntimeStateAsync(token)).Ready;
+            if (success) await UiThread.RunAsync(() =>
+            {
+                StatusBarViewModel.HasPendingChanges = false;
+                StatusBarViewModel.BackgroundApplyError = null;
+            },
+                () => Current() && operationConfigText == JsonUtils.Serialize(_config));
             return success;
         }
         catch (OperationCanceledException)
@@ -968,7 +1018,7 @@ public partial class MainWindowViewModel : MyReactiveObject
         }
         catch (Exception ex)
         {
-            StatusBarViewModel.ConnectionError = ex.Message;
+            await SetError(ex.Message);
             Logging.SaveLog("Reload", ex);
             NoticeManager.Instance.Enqueue(ex.Message);
             return false;
@@ -976,30 +1026,102 @@ public partial class MainWindowViewModel : MyReactiveObject
         finally
         {
             _activeTransitionCancellation = null;
-            if (transitionStarted)
-                ReportOperation(new(token.IsCancellationRequested ? ConnectionStage.Cancelled
-                    : success ? ConnectionStage.Completed : ConnectionStage.Failed,
-                    targetTun, token.IsCancellationRequested ? null : StatusBarViewModel.ConnectionError));
-            SetReloadEnabled(true);
+            try
+            {
+                if (transitionStarted)
+                    ReportOperation(new(token.IsCancellationRequested ? ConnectionStage.Cancelled
+                        : success ? ConnectionStage.Completed : ConnectionStage.Failed,
+                        targetTun, token.IsCancellationRequested ? null : error));
+            }
+            finally { await FinishReloadAsync(); }
         }
         }, token);
     }
 
-    private void ReloadResult(bool showClashUI)
+    internal async Task<ProfileItem?> ResolveRoutingCoreAsync(ProfileItem profile, bool interactive, CancellationToken token,
+        Func<Config, ProfileItem, CancellationToken, Task<string?>>? checkAlternative = null,
+        Func<string?, Task>? reportError = null)
     {
-        RxSchedulers.MainThreadScheduler.Schedule(() =>
+        reportError ??= error => StatusBarViewModel.SetApplyErrorAsync(error);
+        checkAlternative ??= RoutingCoreCompatibility.CheckAlternativeAsync;
+        while (true)
         {
-            ShowClashUI = showClashUI;
-            if (!showClashUI || TabMainSelectedIndex < 0)
+            token.ThrowIfCancellationRequested();
+            var core = AppManager.Instance.GetCoreType(profile, profile.ConfigType);
+            var template = await AppManager.Instance.GetFullConfigTemplateItem(core == ECoreType.sing_box ? core : ECoreType.Xray);
+            if (template?.Enabled == true || profile.ConfigType == EConfigType.Custom) return profile;
+            var routing = await ConfigHandler.GetDefaultRouting(_config);
+            var conflicts = RoutingProtocolPolicy.Conflicts(routing, core);
+            if (conflicts.Count == 0) return profile;
+            var rules = JsonUtils.Deserialize<List<RulesItem>>(routing!.RuleSet)!;
+            var message = string.Join(Environment.NewLine, conflicts.Select(c => RoutingProtocolPolicy.ValidateRule(rules[c.RuleIndex], core)));
+            await reportError(message);
+            if (!interactive) return null;
+
+            var configSnapshot = JsonUtils.Serialize(_config);
+            var profileSnapshot = JsonUtils.Serialize(profile);
+            var routingSnapshot = JsonUtils.Serialize(routing);
+            var alternativeError = await checkAlternative(_config, profile, token);
+            token.ThrowIfCancellationRequested();
+            var choice = await RoutingCoreInteraction.HandleSafe(new RoutingCorePrompt(message + Environment.NewLine + Environment.NewLine
+                + (alternativeError ?? RoutingCoreCompatibility.T("此节点已通过 sing-box 配置检查，可仅为该节点切换核心。",
+                    "This profile passed the sing-box configuration check. Only this profile's core will change.")),
+                alternativeError == null, token));
+            token.ThrowIfCancellationRequested();
+            // Profile/routing edits need not change the selected ID. Reject stale dialog results too.
+            async Task<bool> IsCurrent() => configSnapshot == JsonUtils.Serialize(_config)
+                && profileSnapshot == JsonUtils.Serialize(await AppManager.Instance.GetProfileItem(profile.IndexId))
+                && routingSnapshot == JsonUtils.Serialize(await ConfigHandler.GetDefaultRouting(_config));
+            if (!await IsCurrent()) return null;
+            if (choice == RoutingCoreChoice.Cancel) return null;
+            if (choice == RoutingCoreChoice.EditRule)
             {
-                TabMainSelectedIndex = 0;
+                var editor = new RoutingRuleDetailsViewModel(rules[conflicts[0].RuleIndex], core);
+                if (await AppManager.Instance.WindowDialog.ShowDialogAsync(editor) != true) return null;
+                token.ThrowIfCancellationRequested();
+                if (!await IsCurrent()) return null;
+                var updated = JsonUtils.DeepCopy(routing);
+                updated.RuleSet = JsonUtils.Serialize(rules);
+                if (await ConfigHandler.SaveRoutingItem(_config, updated) != 0)
+                    throw new IOException(ResUI.OperationFailed);
+                continue;
             }
-        });
+            if (choice != RoutingCoreChoice.UseSingbox || alternativeError != null) return null;
+            // Recheck immediately before persisting: templates, linked nodes and core files may have changed.
+            alternativeError = await checkAlternative(_config, profile, token);
+            token.ThrowIfCancellationRequested();
+            if (!await IsCurrent()) return null;
+            if (alternativeError != null)
+            {
+                await reportError(alternativeError);
+                return null;
+            }
+            var candidate = JsonUtils.DeepCopy(profile);
+            candidate.CoreType = ECoreType.sing_box;
+            if (!await SQLiteHelper.Instance.TrySetProfileCoreAsync(profile, routing, ECoreType.sing_box,
+                () => !token.IsCancellationRequested && configSnapshot == JsonUtils.Serialize(_config))) return null;
+            token.ThrowIfCancellationRequested();
+            await reportError(null);
+            await ProfilesViewModel.RefreshServers();
+            return candidate;
+        }
     }
 
-    private void SetReloadEnabled(bool enabled)
+    internal Task SetReloadEnabledAsync(bool enabled) => UiThread.RunAsync(() =>
     {
-        RxSchedulers.MainThreadScheduler.Schedule(() => BlReloadEnabled = enabled);
+        StatusBarViewModel.CoreReloading = !enabled;
+        BlReloadEnabled = enabled;
+    });
+
+    internal async Task FinishReloadAsync(Func<Task>? refresh = null)
+    {
+        try { await (refresh ?? StatusBarViewModel.RefreshRunningServerAsync)(); }
+        catch (Exception ex) { Logging.SaveLog("Refresh running state after reload", ex); }
+        finally
+        {
+            try { await SetReloadEnabledAsync(true); }
+            catch (Exception ex) { Logging.SaveLog("Restore reload controls", ex); }
+        }
     }
 
     #endregion core job

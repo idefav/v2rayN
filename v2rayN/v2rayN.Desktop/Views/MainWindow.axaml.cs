@@ -98,6 +98,11 @@ public partial class MainWindow : WindowBase<MainWindowViewModel>
                 .Subscribe(UpdateProxyNavigation)
                 .DisposeWith(disposables);
 
+            ViewModel.RoutingCoreInteraction.RegisterHandler(async interaction =>
+            {
+                interaction.SetOutput(await ShowRoutingCorePromptAsync(interaction.Input));
+            }).DisposeWith(disposables);
+
             ViewModel.ReadTextFromClipboardInteraction.RegisterHandler(async interaction =>
             {
                 var result = await AvaUtils.GetClipboardData(this);

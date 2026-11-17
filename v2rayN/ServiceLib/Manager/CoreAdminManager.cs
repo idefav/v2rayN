@@ -25,7 +25,7 @@ public class CoreAdminManager
     }
 
     public async Task<ProcessService> RunProcessAsLinuxSudo(string fileName, CoreInfo coreInfo, string configPath,
-        Action<ProcessService>? onCreated = null)
+        Action<ProcessService>? onCreated = null, CancellationToken token = default)
     {
         var fullConfig = Utils.GetBinConfigPath(configPath);
         var process = new ProcessService("/usr/bin/sudo", "", Utils.GetBinConfigPath(), true, true, null, _updateFunc)
@@ -46,7 +46,7 @@ public class CoreAdminManager
         process.SetArguments(["-S", "-p", "", "--", "/bin/bash", process.LaunchScriptPath]);
         // Retain the owner before starting: even a startup exception may leave a child.
         onCreated?.Invoke(process);
-        await process.StartAsync(AppManager.Instance.LinuxSudoPwd);
+        await process.StartAsync(AppManager.Instance.LinuxSudoPwd, token);
         return process;
     }
 

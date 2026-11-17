@@ -7,7 +7,7 @@ public partial class CoreConfigV2rayService
         try
         {
             var listen = "0.0.0.0";
-            var listenPort = AppManager.Instance.GetLocalPort(EInboundProtocol.socks);
+            var listenPort = AppManager.GetLocalPort(_config, EInboundProtocol.socks);
             _coreConfig.inbounds = [];
             var inboundConf = _config.Inbound.First();
             var inbound = BuildInbound(inboundConf, EInboundProtocol.socks, true);

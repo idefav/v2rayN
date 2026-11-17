@@ -11,6 +11,14 @@ public class CoreManager
     public static CoreManager Instance => _instance.Value;
     private Config _config;
     private readonly Func<CoreInfo?, (string FileName, string Message)> _resolveExecutable;
+    private readonly Func<string, ECoreType, string, IDictionary<string, string?>, CancellationToken, Task<string?>> _validateConfig;
+    internal Action<ProcessService>? ProcessStarted { get; set; }
+    internal Action<string, string>? ReplaceConfigFile { get; set; }
+    private CoreConfigTransaction? _pendingConfigTransaction;
+    private readonly HashSet<string> _pendingValidationConfigs = [];
+    private bool? _proxyApplied;
+    private string? _proxyDetail;
+    private readonly HashSet<string> _releasedTunInterfaces = [];
 
     public CoreManager() : this(info =>
     {
@@ -18,8 +26,12 @@ public class CoreManager
         return (file, message);
     }) { }
 
-    internal CoreManager(Func<CoreInfo?, (string FileName, string Message)> resolveExecutable)
-        => _resolveExecutable = resolveExecutable;
+    internal CoreManager(Func<CoreInfo?, (string FileName, string Message)> resolveExecutable,
+        Func<string, ECoreType, string, IDictionary<string, string?>, CancellationToken, Task<string?>>? validateConfig = null)
+    {
+        _resolveExecutable = resolveExecutable;
+        _validateConfig = validateConfig ?? RoutingCoreCompatibility.CheckExecutableAsync;
+    }
 
     [SupportedOSPlatform("windows")]
     private WindowsJobService? _processJob;
@@ -32,7 +44,8 @@ public class CoreManager
     internal PortHandoffState HandoffState { get; private set; }
     public bool? RunningTunEnabled { get; private set; }
     public CoreRuntimeSummary? RuntimeSummary { get; private set; }
-    public bool HasUnconfirmedProcesses => _runningConfig == null && (_processService != null || _processPreService != null);
+    public bool HasUnconfirmedProcesses => _pendingValidationConfigs.Count > 0
+        || _runningConfig == null && (_processService != null || _processPreService != null);
     internal bool HandoffNeedsManualRetry => _elevatedHandoff.Count > 0 && HandoffState == PortHandoffState.Failed;
     private EffectiveCoreConfig? _runningConfig;
     // Startup requirements survive a partial launch; effective config is recorded only
@@ -54,6 +67,36 @@ public class CoreManager
             : requirements.PreRequired ? await ReadAsync(pre, token).ConfigureAwait(false) : LocalHealth.Healthy);
     }
     public Task<bool> IsCoreRunningAsync(CancellationToken token = default) => IsRunningAsync(_processService, token);
+
+    internal async Task<ConnectionRuntimeState> GetRuntimeStateAsync(CancellationToken token = default)
+    {
+        var main = await IsRunningAsync(_processService, token);
+        var required = _processRequirements?.PreRequired == true;
+        var pre = await IsRunningAsync(_processPreService, token);
+        var tun = RunningTunEnabled == true && main && (!required || pre) && !HasUnconfirmedProcesses;
+        return new(main, required, pre, HasUnconfirmedProcesses, tun, RuntimeSummary, _proxyApplied, _proxyDetail);
+    }
+
+    internal void SetProxyResult(bool? applied, string? detail, string? generation)
+    {
+        if (RuntimeSummary?.Generation != generation) return;
+        _proxyApplied = applied; _proxyDetail = detail;
+    }
+
+    internal async Task<bool> PublishAvailabilityAsync(CoreRuntimeSummary expected, Action publish, CancellationToken token)
+    {
+        await _lifecycleGate.WaitAsync(token);
+        try
+        {
+            var state = await GetRuntimeStateAsync(token);
+            if (!state.Ready || state.Summary?.Generation != expected.Generation
+                || state.Summary.ProfileId != expected.ProfileId || state.Summary.ProxyPort != expected.ProxyPort) return false;
+            token.ThrowIfCancellationRequested();
+            publish();
+            return true;
+        }
+        finally { _lifecycleGate.Release(); }
+    }
 
     private static async Task<bool> IsRunningAsync(ProcessService? process, CancellationToken token = default)
     {
@@ -130,6 +173,9 @@ public class CoreManager
             return CoreLoadResult.Failed;
         }
 
+        mainContext = Snapshot(mainContext);
+        preContext = preContext == null ? null : Snapshot(preContext);
+        var operationId = Guid.NewGuid().ToString("N");
         var node = mainContext.Node;
         // Generate candidates away from the files in use. A skipped reload must not touch them.
         var fileName = Utils.GetBinConfigPath($"candidate-{Utils.GetGuid(false)}.json");
@@ -137,6 +183,13 @@ public class CoreManager
         var startingNewProcesses = false;
         try
         {
+            await CleanupValidationProcessesAsync(token);
+            if (_pendingConfigTransaction != null)
+            {
+                var cleanup = await CoreStopUnderLock(token: token);
+                if (!cleanup.Success) throw new IOException(cleanup.Error);
+                RestorePendingConfiguration();
+            }
             var result = await CoreConfigHandler.GenerateClientConfig(mainContext, fileName);
             if (result.Success != true)
             {
@@ -155,6 +208,12 @@ public class CoreManager
                     return CoreLoadResult.Failed;
                 }
             }
+            // Parse both candidates before stopping any running process.
+            var mainPlan = CoreListenerPlan.Read(await File.ReadAllTextAsync(fileName, token), mainContext.RunCoreType);
+            var prePlan = preContext == null ? null : CoreListenerPlan.Read(await File.ReadAllTextAsync(preFileName, token), preContext.RunCoreType);
+            CoreListenerPlan.ValidateTogether(mainPlan, prePlan);
+            var mainListeners = mainPlan.Ports;
+            var preListeners = prePlan?.Ports ?? [];
             var candidate = new EffectiveCoreConfig(
                 EffectiveCoreConfig.Fingerprint(await File.ReadAllTextAsync(fileName), node.ConfigType != EConfigType.Custom), mainContext.RunCoreType,
                 preContext == null ? null : EffectiveCoreConfig.Fingerprint(await File.ReadAllTextAsync(preFileName), preContext.Node.ConfigType != EConfigType.Custom),
@@ -166,30 +225,32 @@ public class CoreManager
                 : $"[主代理重载][节点：{nodeName}] 原因：{reason}；{changeReason ?? "主动重载"}。";
             Logging.SaveLog(reloadLog);
             await UpdateFunc(false, reloadLog);
-            if (onlyIfChanged && changeReason == null) return CoreLoadResult.Unchanged;
+            if (onlyIfChanged && changeReason == null)
+            {
+                // Subscription imports may replace IDs without changing either live core.
+                // Keep process identity / generation but rebind equivalent presentation metadata.
+                if (RuntimeSummary is { } runtime)
+                    RuntimeSummary = runtime with { ProfileId = mainContext.SourceNodeId ?? node.IndexId,
+                        Server = node.GetSummary(), Routing = mainContext.RoutingItem?.Remarks };
+                return CoreLoadResult.Unchanged;
+            }
+
+            var mainLaunch = await PrepareLaunchAsync(operationId, mainContext, mainPlan, fileName, token);
+            var preLaunch = preContext == null ? null : await PrepareLaunchAsync(operationId, preContext, prePlan!, preFileName, token);
 
             await UpdateFunc(false, $"{node.GetSummary()}");
             await UpdateFunc(false, $"{Utils.GetRuntimeInfo()}");
             await UpdateFunc(false, string.Format(ResUI.StartService, DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss")));
-            if (OperatingSystem.IsMacOS())
-            {
-                foreach (var old in new[] { _processService, _processPreService })
-                    if (old?.IsElevated == true && old.CoreIdentity != null && old.ConfigPath != null)
-                        _elevatedHandoff.AddRange(CoreListenerCheck.Read(await File.ReadAllTextAsync(old.ConfigPath, token)));
-            }
+            await RememberElevatedAsync(token);
             HandoffState = PortHandoffState.Stopping;
             stageChanged?.Invoke(ConnectionStage.Stopping, 0);
-            var stopped = await CoreStopUnderLock();
+            var stopped = await CoreStopUnderLock(token: token);
             if (!stopped.Success) throw new IOException(stopped.Error);
             token.ThrowIfCancellationRequested();
             var handoff = new List<CoreListener>();
             if (OperatingSystem.IsMacOS() && _elevatedHandoff.Count > 0)
             {
-                if (mainContext.RunCoreType == ECoreType.sing_box && !mainContext.IsTunEnabled)
-                    handoff.AddRange(CoreListenerCheck.Read(await File.ReadAllTextAsync(fileName, token)));
-                if (preContext?.RunCoreType == ECoreType.sing_box && !preContext.IsTunEnabled)
-                    handoff.AddRange(CoreListenerCheck.Read(await File.ReadAllTextAsync(preFileName, token)));
-                handoff = handoff.Where(p => _elevatedHandoff.Any(old => CoreListenerCheck.Overlaps(p, old))).Distinct().ToList();
+                handoff = SelectHandoffTargets(mainContext, preContext, mainListeners, preListeners, _elevatedHandoff).ToList();
             }
             if (handoff.Count > 0)
             {
@@ -197,43 +258,43 @@ public class CoreManager
                 await PortHandoff.WaitAsync(handoff, token, elapsed =>
                 {
                     stageChanged?.Invoke(ConnectionStage.Waiting, (int)elapsed.TotalSeconds);
-                    progress?.Invoke($"已停止 TUN，正在等待普通模式端口可用（{elapsed.TotalSeconds:F0}/90 秒） / Waiting for unprivileged port handoff");
+                    progress?.Invoke($"正在等待目标核心端口可用（{elapsed.TotalSeconds:F0}/90 秒） / Waiting for target core ports");
                 });
                 progress?.Invoke(string.Empty);
             }
             token.ThrowIfCancellationRequested();
             HandoffState = PortHandoffState.Starting;
             stageChanged?.Invoke(ConnectionStage.Starting, 0);
-            if (mainContext.RunCoreType == ECoreType.sing_box)
-                await CoreListenerCheck.EnsureAvailableAsync(CoreListenerCheck.Read(await File.ReadAllTextAsync(fileName)),
+            if (CoreListenerCheck.Supports(mainContext.RunCoreType))
+                await CoreListenerCheck.EnsureAvailableAsync(mainListeners,
                     GetElevatedListenerProbe(mainContext.IsTunEnabled, mainContext.RunCoreType), token);
-            if (preContext?.RunCoreType == ECoreType.sing_box)
-                await CoreListenerCheck.EnsureAvailableAsync(CoreListenerCheck.Read(await File.ReadAllTextAsync(preFileName)),
+            if (preContext != null && CoreListenerCheck.Supports(preContext.RunCoreType))
+                await CoreListenerCheck.EnsureAvailableAsync(preListeners,
                     GetElevatedListenerProbe(preContext.IsTunEnabled, preContext.RunCoreType), token);
             token.ThrowIfCancellationRequested();
             if (AppManager.Instance.IsExiting) throw new OperationCanceledException("应用正在退出，已取消启动 / Application is exiting.");
-            File.Move(fileName, Utils.GetBinConfigPath(Global.CoreConfigFileName), true);
-            if (preContext != null) File.Move(preFileName, Utils.GetBinConfigPath(Global.CorePreConfigFileName), true);
+            var files = new List<(string, string)> { (fileName, Utils.GetBinConfigPath(Global.CoreConfigFileName)) };
+            if (preContext != null) files.Add((preFileName, Utils.GetBinConfigPath(Global.CorePreConfigFileName)));
+            _pendingConfigTransaction = new CoreConfigTransaction(files, ReplaceConfigFile);
+            _pendingConfigTransaction.Publish();
             _processRequirements = new(preContext != null);
             startingNewProcesses = true;
 
             if (Utils.IsWindows() && (mainContext.IsTunEnabled || preContext?.IsTunEnabled == true))
             {
-                await Task.Delay(100);
+                await Task.Delay(100, token);
                 await WindowsUtils.RemoveTunDevice();
             }
 
             token.ThrowIfCancellationRequested();
-            await CoreStart(mainContext);
+            await CoreStart(mainLaunch, token);
             if (!await IsCoreRunningAsync())
                 throw new IOException(LastError ?? ResUI.FailedToRunCore);
-            await WaitForProxyPort(preContext);
+            await WaitForProxyPort(preContext, token);
             token.ThrowIfCancellationRequested();
             if (AppManager.Instance.IsExiting) throw new OperationCanceledException("应用正在退出，已取消启动 / Application is exiting.");
-            await CoreStartPreService(preContext);
+            await CoreStartPreService(preLaunch, token);
             stageChanged?.Invoke(ConnectionStage.Verifying, 0);
-
-            AppManager.Instance.RunningCoreType = preContext?.RunCoreType ?? mainContext.RunCoreType;
 
             if (_processService != null)
             {
@@ -243,31 +304,105 @@ public class CoreManager
                 throw new IOException(LastError ?? ResUI.FailedToRunCore);
             token.ThrowIfCancellationRequested();
             _runningConfig = candidate;
-            _elevatedHandoff.Clear();
+            AppManager.Instance.RunningCoreType = preContext?.RunCoreType ?? mainContext.RunCoreType;
+            var ordinary = new[] { mainLaunch, preLaunch }.OfType<CoreLaunchSnapshot>()
+                .Where(l => !l.Elevated)
+                .SelectMany(l => l.Listeners.Ports).ToArray();
+            _elevatedHandoff.RemoveAll(old => ordinary.Any(p => p.Address.Equals(old.Address) && p.Port == old.Port && p.Protocol == old.Protocol));
+            _pendingConfigTransaction.Commit();
+            _pendingConfigTransaction = null;
             HandoffState = PortHandoffState.Completed;
             RunningTunEnabled = mainContext.IsTunEnabled || preContext?.IsTunEnabled == true;
             RuntimeSummary = new(mainContext.SourceNodeId ?? node.IndexId, node.GetSummary(),
-                mainContext.RoutingItem?.Remarks, RunningTunEnabled == true);
+                mainContext.RoutingItem?.Remarks, RunningTunEnabled == true) { Core = mainContext.RunCoreType,
+                    ProxyPort = mainLaunch.ProxyPort, Generation = operationId };
+            _proxyApplied = null; _proxyDetail = null;
             return CoreLoadResult.Started;
         }
         catch (Exception ex)
         {
-            HandoffState = ex is OperationCanceledException ? PortHandoffState.Cancelled : PortHandoffState.Failed;
-            LastError = ex.Message;
+            var cancelled = token.IsCancellationRequested || ex is OperationCanceledException;
+            HandoffState = cancelled ? PortHandoffState.Cancelled : PortHandoffState.Failed;
+            LastError = cancelled ? "操作已取消 / Operation cancelled. " + ex.Message : ex.Message;
             if (startingNewProcesses)
             {
-                var cleanup = await CoreStopUnderLock(clearRequirements: false);
+                using var cleanupDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(25));
+                var cleanup = await CoreStopUnderLock(clearRequirements: false, token: cleanupDeadline.Token);
                 if (!cleanup.Success) LastError += Environment.NewLine + cleanup.Error;
             }
+            if (_processService == null && _processPreService == null)
+                try { RestorePendingConfiguration(); }
+                catch (Exception restore) { LastError += Environment.NewLine + restore.Message; }
             Logging.SaveLog(_tag + ": " + LastError);
             if (ex is not OperationCanceledException) await UpdateFunc(true, LastError);
             return CoreLoadResult.Failed;
         }
         finally
         {
-            File.Delete(fileName);
-            File.Delete(preFileName);
+            if (!ProcessService.HasUnstoppedConfig(fileName)) File.Delete(fileName);
+            if (!ProcessService.HasUnstoppedConfig(preFileName)) File.Delete(preFileName);
         }
+    }
+
+    private static CoreConfigContext Snapshot(CoreConfigContext context) => context with
+    {
+        AppConfig = JsonUtils.DeepCopy(context.AppConfig), Node = JsonUtils.DeepCopy(context.Node),
+        RoutingItem = context.RoutingItem == null ? null : JsonUtils.DeepCopy(context.RoutingItem),
+        SimpleDnsItem = JsonUtils.DeepCopy(context.SimpleDnsItem),
+        RawDnsItem = context.RawDnsItem == null ? null : JsonUtils.DeepCopy(context.RawDnsItem),
+        FullConfigTemplate = context.FullConfigTemplate == null ? null : JsonUtils.DeepCopy(context.FullConfigTemplate),
+        AllProxiesMap = context.AllProxiesMap.ToDictionary(p => p.Key, p => JsonUtils.DeepCopy(p.Value)),
+        CustomOutboundContent = new(context.CustomOutboundContent), ProtectDomainList = [.. context.ProtectDomainList],
+        ProtectCoreTypeList = [.. context.ProtectCoreTypeList], CustomOutboundMap = new(context.CustomOutboundMap),
+        ServerTestItemMap = new(context.ServerTestItemMap)
+    };
+
+    private async Task<CoreLaunchSnapshot> PrepareLaunchAsync(string operationId, CoreConfigContext context, CoreListenerPlan listeners, string path, CancellationToken token)
+    {
+        var info = CoreInfoManager.Instance.GetCoreInfo(context.RunCoreType) ?? throw new IOException("Unknown core: " + context.RunCoreType);
+        var (executable, error) = _resolveExecutable(info);
+        if (string.IsNullOrEmpty(executable) || !File.Exists(executable)) throw new IOException(error.NullIfEmpty() ?? "Core executable is missing: " + executable);
+        if (CoreListenerCheck.Supports(context.RunCoreType))
+        {
+            string? failure;
+            try { failure = await _validateConfig(executable, context.RunCoreType, path, info.Environment, token); }
+            finally { if (ProcessService.HasUnstoppedConfig(path)) _pendingValidationConfigs.Add(path); }
+            if (failure != null) throw new IOException(failure);
+        }
+        token.ThrowIfCancellationRequested();
+        return new(operationId, context, JsonUtils.DeepCopy(info), executable, listeners,
+            ShouldRunAsSudo(context.IsTunEnabled, context.RunCoreType, Utils.IsNonWindows()), AppManager.GetLocalPort(context.AppConfig, EInboundProtocol.socks));
+    }
+
+    private void RestorePendingConfiguration()
+    {
+        _pendingConfigTransaction?.Rollback();
+        _pendingConfigTransaction = null;
+    }
+
+    private async Task CleanupValidationProcessesAsync(CancellationToken token)
+    {
+        if (_pendingValidationConfigs.Count == 0) return;
+        await ProcessService.RetryFailedConfigStopsAsync(_pendingValidationConfigs, token);
+        foreach (var path in _pendingValidationConfigs.ToArray())
+            if (!ProcessService.HasUnstoppedConfig(path)) { File.Delete(path); _pendingValidationConfigs.Remove(path); }
+        if (_pendingValidationConfigs.Count > 0) throw new IOException("配置检查进程退出未确认 / Configuration checker exit unconfirmed.");
+    }
+
+    private async Task RememberElevatedAsync(CancellationToken token)
+    {
+        if (!OperatingSystem.IsMacOS()) return;
+        foreach (var process in new[] { _processService, _processPreService })
+            // The sudo wrapper may have created the core before its identity marker is read.
+            // Keep the declared ports once any owned process started, even on cancellation.
+            if (process?.IsElevated == true && process.KnownProcesses.Count > 0)
+            {
+                var ports = process.ListenerPlan?.Ports;
+                if (ports == null && process.ConfigPath != null)
+                    ports = CoreListenerCheck.Read(await File.ReadAllTextAsync(process.ConfigPath, token));
+                foreach (var p in ports ?? [])
+                    if (!_elevatedHandoff.Any(old => old.Address.Equals(p.Address) && old.Port == p.Port && old.Protocol == p.Protocol)) _elevatedHandoff.Add(p);
+            }
     }
 
     public async Task<ProcessService?> LoadCoreConfigSpeedtest(List<ServerTestItem> selecteds)
@@ -322,22 +457,19 @@ public class CoreManager
         await _lifecycleGate.WaitAsync(token);
         try
         {
-            // A user can disconnect TUN, then choose ordinary mode while offline.
-            // Preserve the same owned endpoint evidence used by a direct reload.
-            if (OperatingSystem.IsMacOS())
-                foreach (var old in new[] { _processService, _processPreService })
-                    if (old?.IsElevated == true && old.CoreIdentity != null && old.ConfigPath != null)
-                    {
-                        try { _elevatedHandoff.AddRange(CoreListenerCheck.Read(await File.ReadAllTextAsync(old.ConfigPath, token))); }
-                        catch (Exception ex) { Logging.SaveLog("Remember disconnected TUN listeners", ex); }
-                    }
-            return await CoreStopUnderLock(token: token);
+            var result = await CoreStopUnderLock(token: token);
+            try { await CleanupValidationProcessesAsync(token); }
+            catch (Exception ex) { return new(ProcessStopStatus.Failed, RemainingProcesses, ex.Message); }
+            if (result.Success) RestorePendingConfiguration();
+            return result;
         }
         finally { _lifecycleGate.Release(); }
     }
 
     private async Task<ProcessStopResult> CoreStopUnderLock(bool clearRequirements = true, CancellationToken token = default)
     {
+        try { await RememberElevatedAsync(token); }
+        catch (Exception ex) { Logging.SaveLog("Remember stopped core listeners", ex); }
         _runningConfig = null;
         var results = new List<ProcessStopResult>();
         foreach (var process in new[] { _processPreService, _processService })
@@ -345,9 +477,11 @@ public class CoreManager
             if (process == null) continue;
             try
             {
+                var tunInterfaces = process.ReadyTunInterfaces;
                 var result = await process.StopAndWaitAsync(token);
                 results.Add(result);
                 if (!result.Success) continue;
+                if (tunInterfaces != null) _releasedTunInterfaces.UnionWith(tunInterfaces);
                 process.Dispose();
                 if (ReferenceEquals(process, _processPreService)) _processPreService = null;
                 if (ReferenceEquals(process, _processService)) _processService = null;
@@ -358,7 +492,7 @@ public class CoreManager
             }
         }
         var combined = ProcessStopResult.Combine(results);
-        if (combined.Success) { RunningTunEnabled = null; RuntimeSummary = null; }
+        if (combined.Success) { RunningTunEnabled = null; RuntimeSummary = null; _proxyApplied = null; _proxyDetail = null; }
         if (combined.Success && clearRequirements) _processRequirements = null;
         if (!combined.Success) Logging.SaveLog(_tag + ": " + combined.Error);
         return combined;
@@ -366,15 +500,16 @@ public class CoreManager
 
     #region Private
 
-    private async Task CoreStart(CoreConfigContext context)
+    private async Task CoreStart(CoreLaunchSnapshot launch, CancellationToken token)
     {
+        var context = launch.Context;
         var node = context.Node;
-        var coreType = AppManager.Instance.GetCoreType(node, node.ConfigType);
-        var coreInfo = CoreInfoManager.Instance.GetCoreInfo(coreType);
+        var coreInfo = launch.Info;
 
         var displayLog = node.ConfigType != EConfigType.Custom || node.DisplayLog;
         var proc = await RunProcess(coreInfo, Global.CoreConfigFileName, displayLog, true, context.IsTunEnabled,
-            onCreated: process => _processService = process, requireSingboxReady: node.ConfigType != EConfigType.Custom);
+            onCreated: process => _processService = process, requireSingboxReady: node.ConfigType != EConfigType.Custom,
+            token: token, launch: launch);
         if (proc is null)
         {
             return;
@@ -382,14 +517,12 @@ public class CoreManager
         _processService = proc;
     }
 
-    private async Task CoreStartPreService(CoreConfigContext? preContext)
+    private async Task CoreStartPreService(CoreLaunchSnapshot? launch, CancellationToken token)
     {
-        if (preContext != null && await IsCoreRunningAsync())
+        if (launch != null && await IsCoreRunningAsync(token))
         {
-            var preCoreType = preContext?.Node?.CoreType ?? ECoreType.sing_box;
-            var coreInfo = CoreInfoManager.Instance.GetCoreInfo(preCoreType);
-            var proc = await RunProcess(coreInfo, Global.CorePreConfigFileName, true, true, preContext.IsTunEnabled,
-                onCreated: process => _processPreService = process);
+            var proc = await RunProcess(launch.Info, Global.CorePreConfigFileName, true, true, launch.Context.IsTunEnabled,
+                onCreated: process => _processPreService = process, token: token, launch: launch);
             if (proc is null)
             {
                 return;
@@ -403,7 +536,16 @@ public class CoreManager
         if (_updateFunc != null) await _updateFunc(notify, msg);
     }
 
-    private static async Task WaitForProxyPort(CoreConfigContext? preContext)
+    internal static IReadOnlyList<CoreListener> SelectHandoffTargets(CoreConfigContext main, CoreConfigContext? pre,
+        IReadOnlyList<CoreListener> mainListeners, IReadOnlyList<CoreListener> preListeners, IReadOnlyList<CoreListener> previous)
+    {
+        var targets = new List<CoreListener>();
+        if (!ShouldRunAsSudo(main.IsTunEnabled, main.RunCoreType, true)) targets.AddRange(mainListeners);
+        if (pre != null && !ShouldRunAsSudo(pre.IsTunEnabled, pre.RunCoreType, true)) targets.AddRange(preListeners);
+        return targets.Where(p => previous.Any(old => CoreListenerCheck.Overlaps(p, old))).Distinct().ToArray();
+    }
+
+    private static async Task WaitForProxyPort(CoreConfigContext? preContext, CancellationToken token)
     {
         if (preContext is null)
         {
@@ -414,7 +556,8 @@ public class CoreManager
             return;
         }
 
-        using var rootCts = new CancellationTokenSource(Global.LocalFetch);
+        using var rootCts = CancellationTokenSource.CreateLinkedTokenSource(token);
+        rootCts.CancelAfter(Global.LocalFetch);
         var rootToken = rootCts.Token;
 
         var port = preContext.Node.Port;
@@ -435,16 +578,17 @@ public class CoreManager
 
                 await stream.WriteAsync(greeting, linkedToken);
 
-                var read = await stream.ReadAsync(buf.AsMemory(0, 2), linkedToken);
+                await stream.ReadExactlyAsync(buf, linkedToken);
 
                 // Server selection: VER=5, METHOD=0x00 — proxy is fully ready
-                if (read == 2 && buf[0] == 0x05 && buf[1] == 0)
+                if (buf[0] == 0x05 && buf[1] == 0)
                 {
                     return;
                 }
             }
             catch (OperationCanceledException)
             {
+                token.ThrowIfCancellationRequested();
                 if (!rootToken.IsCancellationRequested)
                 {
                     continue;
@@ -460,6 +604,7 @@ public class CoreManager
                 }
                 catch (OperationCanceledException)
                 {
+                    token.ThrowIfCancellationRequested();
                     throw new TimeoutException($"主内核代理端口未就绪 / Proxy port {port} did not become ready.");
                 }
             }
@@ -468,6 +613,7 @@ public class CoreManager
                 // Ignore other exceptions and continue
             }
         }
+        token.ThrowIfCancellationRequested();
         throw new TimeoutException($"主内核代理端口未就绪 / Proxy port {port} did not become ready.");
     }
 
@@ -493,7 +639,7 @@ public class CoreManager
             ? (endpoint, token) => CoreAdminManager.CheckListenerAsSudoAsync(endpoint, token) : null;
 
     private async Task<ProcessService?> RunProcess(CoreInfo? coreInfo, string configPath, bool displayLog, bool mayNeedSudo, bool isTunLaunch = false, string? logPrefix = null,
-        Action<ProcessService>? onCreated = null, bool requireSingboxReady = true)
+        Action<ProcessService>? onCreated = null, bool requireSingboxReady = true, CancellationToken token = default, CoreLaunchSnapshot? launch = null)
     {
         // Keep the context on this process, since independent probes can run concurrently.
         Func<bool, string, Task>? updateFunc = _updateFunc;
@@ -505,7 +651,7 @@ public class CoreManager
                     .Select(line => line.Length == 0 ? line : logPrefix + line))) ?? Task.CompletedTask;
         }
 
-        var (fileName, msg) = _resolveExecutable(coreInfo);
+        var (fileName, msg) = launch == null ? _resolveExecutable(coreInfo) : (launch.Executable, "");
         if (fileName.IsNullOrEmpty())
         {
             if (mayNeedSudo) LastError = msg;
@@ -517,30 +663,42 @@ public class CoreManager
         void Track(ProcessService value)
         {
             process = value;
+            value.CoreType = coreInfo.CoreType;
+            value.ConnectionOperationId = launch?.OperationId;
+            value.ListenerPlan = launch?.Listeners;
+            value.Started += p => ProcessStarted?.Invoke(p);
             if (!mayNeedSudo) value.TemporaryConfigPath = Utils.GetBinConfigPath(configPath);
             onCreated?.Invoke(value);
         }
         try
         {
-            using var startupTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-            var listeners = coreInfo.CoreType == ECoreType.sing_box
-                ? CoreListenerCheck.Read(await File.ReadAllTextAsync(Utils.GetBinConfigPath(configPath))) : [];
-            if (coreInfo.CoreType == ECoreType.sing_box)
+            using var startupTimeout = CancellationTokenSource.CreateLinkedTokenSource(token);
+            startupTimeout.CancelAfter(TimeSpan.FromSeconds(10));
+            var plan = launch?.Listeners ?? CoreListenerPlan.Read(await File.ReadAllTextAsync(Utils.GetBinConfigPath(configPath), token), coreInfo.CoreType);
+            var listeners = plan.Ports;
+            var interfacesBefore = plan.Tuns.Count == 0 ? new HashSet<string>() : CoreListenerPlan.ExistingInterfaces().Except(_releasedTunInterfaces).ToHashSet();
+            if (CoreListenerCheck.Supports(coreInfo.CoreType))
                 await CoreListenerCheck.EnsureAvailableAsync(listeners,
                     mayNeedSudo ? GetElevatedListenerProbe(isTunLaunch, coreInfo.CoreType) : null, startupTimeout.Token);
             startupTimeout.Token.ThrowIfCancellationRequested();
             if (AppManager.Instance.IsExiting) throw new OperationCanceledException("Application is exiting.");
             if (mayNeedSudo
-                && ShouldRunAsSudo(isTunLaunch, coreInfo.CoreType, Utils.IsNonWindows()))
+                && (launch?.Elevated ?? ShouldRunAsSudo(isTunLaunch, coreInfo.CoreType, Utils.IsNonWindows())))
             {
                 await CoreAdminManager.Instance.Init(_config, _updateFunc);
-                process = await CoreAdminManager.Instance.RunProcessAsLinuxSudo(fileName, coreInfo, configPath, Track);
+                process = await CoreAdminManager.Instance.RunProcessAsLinuxSudo(fileName, coreInfo, configPath, Track, startupTimeout.Token);
             }
-            else process = await RunProcessNormal(fileName, coreInfo, configPath, displayLog || coreInfo.CoreType == ECoreType.sing_box,
-                displayLog ? updateFunc : null, Track);
+            else process = await RunProcessNormal(fileName, coreInfo, configPath, displayLog || CoreListenerCheck.Supports(coreInfo.CoreType),
+                displayLog ? updateFunc : null, Track, startupTimeout.Token);
+            process.ListenerPlan = plan;
             await process.WaitForIdentityAsync(startupTimeout.Token);
-            if (coreInfo.CoreType == ECoreType.sing_box && (listeners.Count > 0 || requireSingboxReady))
-                await CoreListenerCheck.WaitForReadyAsync(process, listeners, startupTimeout.Token);
+            if (CoreListenerCheck.Supports(coreInfo.CoreType))
+            {
+                await CoreListenerCheck.WaitForReadyAsync(process, listeners, startupTimeout.Token,
+                    _ => Task.FromResult(plan.TunReady(interfacesBefore)));
+                if (plan.Tuns.Count > 0)
+                    process.ReadyTunInterfaces = plan.MatchingInterfaces().Except(interfacesBefore).ToHashSet();
+            }
             else
             {
                 await Task.Delay(100, startupTimeout.Token);
@@ -553,7 +711,8 @@ public class CoreManager
         catch (Exception ex)
         {
             Logging.SaveLog(_tag, ex);
-            var error = ex is OperationCanceledException
+            var error = token.IsCancellationRequested ? "操作已取消 / Operation cancelled."
+                : ex is OperationCanceledException
                 ? "内核启动超时 / Core startup timed out. " + process?.RecentError : ex.Message;
             if (mayNeedSudo) LastError = error;
             if (onCreated == null && process != null)
@@ -561,13 +720,14 @@ public class CoreManager
                 var stopped = await process.StopAndWaitAsync();
                 if (stopped.Success) process.Dispose();
             }
+            if (token.IsCancellationRequested) throw new OperationCanceledException(token);
             if (updateFunc != null) await updateFunc(mayNeedSudo, error);
             return null;
         }
     }
 
     private async Task<ProcessService> RunProcessNormal(string fileName, CoreInfo? coreInfo, string configPath, bool displayLog, Func<bool, string, Task>? updateFunc,
-        Action<ProcessService> onCreated)
+        Action<ProcessService> onCreated, CancellationToken token)
     {
         var environmentVars = new Dictionary<string, string>();
         foreach (var kv in coreInfo.Environment)
@@ -586,7 +746,7 @@ public class CoreManager
         ) { ConfigPath = Utils.GetBinConfigPath(configPath) };
 
         onCreated(procService);
-        await procService.StartAsync();
+        await procService.StartAsync(token: token);
         AddProcessJob(procService.Handle);
 
         return procService;

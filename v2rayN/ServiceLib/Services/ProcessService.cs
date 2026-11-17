@@ -22,10 +22,16 @@ public class ProcessService : IDisposable
     internal ProcessIdentity? CoreIdentity { get; private set; }
     internal bool IsReady { get; set; }
     internal bool StartupReported { get; private set; }
+    internal CoreListenerPlan? ListenerPlan { get; set; }
+    internal IReadOnlySet<string> ReadyTunInterfaces { get; set; } = new HashSet<string>();
+    internal ECoreType? CoreType { get; set; }
+    internal string? ConnectionOperationId { get; set; }
+    internal event Action<ProcessService>? Started;
     public string LaunchId { get; } = Guid.NewGuid().ToString("N");
     internal IReadOnlyList<ProcessIdentity> KnownProcesses => _identities.Values.ToArray();
     internal static bool HasUnstoppedConfig(string path) => FailedStops.Values.Any(p => p.ConfigPath == path || p.TemporaryConfigPath == path);
     internal string RecentError => string.Join(Environment.NewLine, _recentErrors);
+    internal int ExitCode => _process.ExitCode;
     public int Id => _process.Id;
     public IntPtr Handle => _process.Handle;
     // macOS elevated identity queries perform asynchronous I/O. Never expose a
@@ -87,8 +93,9 @@ public class ProcessService : IDisposable
             _identities.TryAdd(identity.Pid, identity);
     }
 
-    public async Task StartAsync(string? pwd = null)
+    public async Task StartAsync(string? pwd = null, CancellationToken token = default)
     {
+        token.ThrowIfCancellationRequested();
         _process.Start();
         _started = true;
         // An unverified owner still prevents cleanup failures from losing its PID.
@@ -98,6 +105,7 @@ public class ProcessService : IDisposable
             ? "unverified:" + LaunchId : _process.StartTime.ToUniversalTime().Ticks.ToString(), ExpectedExecutable);
         Remember([initialIdentity]);
         if (!IsElevated) CoreIdentity = initialIdentity;
+        Started?.Invoke(this);
         if (_process.StartInfo.RedirectStandardOutput)
         {
             _process.BeginOutputReadLine();
@@ -107,6 +115,8 @@ public class ProcessService : IDisposable
         // must never erase the child's identity.
         if (Utils.IsNonWindows())
         {
+            // Identity capture is a bounded critical section: cancellation after Start must
+            // not leave a provisional PID which cleanup cannot safely signal.
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(3));
             var row = (await UnixProcessControl.SnapshotAsync(timeout.Token)).FirstOrDefault(p => p.Identity.Pid == Id);
             if (!_process.HasExited)
@@ -123,9 +133,11 @@ public class ProcessService : IDisposable
         }
         if (_process.StartInfo.RedirectStandardInput)
         {
-            await _process.StandardInput.WriteLineAsync(pwd);
+            token.ThrowIfCancellationRequested();
+            await _process.StandardInput.WriteLineAsync((pwd ?? "").AsMemory(), token);
             _process.StandardInput.Close(); // A rejected password must not leave sudo waiting forever.
         }
+        token.ThrowIfCancellationRequested();
         Logging.SaveLog($"CoreLifecycle launch={LaunchId} wrapper={Id} elevated={IsElevated} config={ConfigPath}");
     }
 
@@ -157,8 +169,13 @@ public class ProcessService : IDisposable
             }
             return;
         }
-        if (line.Contains("sing-box started (", StringComparison.Ordinal)) StartupReported = true;
-        if (error)
+        if (line.Contains("sing-box started (", StringComparison.Ordinal)
+            || line.Contains("core: Xray", StringComparison.Ordinal) && line.EndsWith(" started", StringComparison.Ordinal)) StartupReported = true;
+        // Xray emits fatal startup diagnostics on stdout. Retain bounded diagnostic lines,
+        // never JSON configuration dumps or ordinary access log traffic.
+        if ((error || Regex.IsMatch(line, "failed|error|fatal|panic", RegexOptions.IgnoreCase))
+            && !line.TrimStart().StartsWith('{') && !line.Contains("\"password\"", StringComparison.OrdinalIgnoreCase)
+            && !line.Contains("\"privateKey\"", StringComparison.OrdinalIgnoreCase))
         {
             _recentErrors.Enqueue(line.Length > 1000 ? line[..1000] : line);
             while (_recentErrors.Count > 6) _recentErrors.TryDequeue(out _);
@@ -254,6 +271,12 @@ public class ProcessService : IDisposable
 
     internal static IReadOnlyList<ProcessIdentity> FailedStopIdentities => FailedStops.Values
         .SelectMany(p => p.KnownProcesses).Distinct().ToArray();
+
+    internal static async Task RetryFailedConfigStopsAsync(IReadOnlySet<string> configs, CancellationToken token)
+    {
+        foreach (var process in FailedStops.Values.Where(p => p.ConfigPath != null && configs.Contains(p.ConfigPath)))
+            if ((await process.StopAndWaitAsync(token)).Success) process.Dispose();
+    }
 
     public void Dispose()
     {
