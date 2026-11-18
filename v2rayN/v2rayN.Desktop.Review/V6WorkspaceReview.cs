@@ -84,8 +84,10 @@ public partial class ReviewApp
         void Send(ConnectionStage stage, string? detail = null, bool proxy = false) => _vm.StatusBarViewModel.ReportTransition(new(stage, false, detail, WaitSeconds: 11, UpdatingProxy: proxy) { OperationId = id });
         Button Action(string name) => feedback.GetVisualDescendants().OfType<Button>().Single(b => b.Name == name);
         void Click(string name) => Action(name).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-        settings.Focus(); Send(ConnectionStage.Preparing); await Task.Delay(550);
-        Check(feedback.NoticeVisible && _main.IsEnabled && lifetime.Windows.Count == windowCount, "connection progress creates no top-level or modal window");
+        settings.Focus(); Send(ConnectionStage.Preparing);
+        await WaitForUiAsync(() => feedback.NoticeVisible, "connection progress notice did not become visible");
+        Check(_main.IsEnabled, "connection progress keeps the main window enabled");
+        Check(lifetime.Windows.Count == windowCount, "connection progress creates no top-level or modal window");
         Check(settings.IsKeyboardFocusWithin, "incoming progress never steals keyboard focus");
         Send(ConnectionStage.Waiting); await Task.Delay(50);
         Check(feedback.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text?.Contains("90") == true)
