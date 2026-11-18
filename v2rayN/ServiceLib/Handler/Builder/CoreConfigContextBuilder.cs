@@ -31,7 +31,11 @@ public class CoreConfigContextBuilder
     ///     Builds a <see cref="CoreConfigContext" /> for the given node, resolves its proxy map,
     ///     and processes outbound nodes referenced by routing rules.
     /// </summary>
-    public static async Task<CoreConfigContextBuilderResult> Build(Config config, ProfileItem node, DNSItem? dnsOverride = null)
+    public static Task<CoreConfigContextBuilderResult> Build(Config config, ProfileItem node, DNSItem? dnsOverride = null)
+        => Build(config, node, dnsOverride, mainContext: null);
+
+    private static async Task<CoreConfigContextBuilderResult> Build(Config config, ProfileItem node, DNSItem? dnsOverride,
+        CoreConfigContext? mainContext, bool buildFrontEnd = false)
     {
         var runCoreType = AppManager.GetCoreType(config, node, node.ConfigType);
         var coreType = runCoreType == ECoreType.sing_box ? ECoreType.sing_box : ECoreType.Xray;
@@ -48,7 +52,8 @@ public class CoreConfigContextBuilder
             SimpleDnsItem = config.SimpleDNSItem,
             ProtectDomainList = [],
             RawDnsItem = dnsOverride ?? await AppManager.Instance.GetDNSItem(coreType),
-            RoutingItem = await ConfigHandler.GetDefaultRouting(config),
+            RoutingItem = mainContext == null ? await ConfigHandler.GetDefaultRouting(config) : mainContext.RoutingItem,
+            RoutingCoreType = mainContext?.RunCoreType ?? runCoreType,
             IsWindows = Utils.IsWindows(),
             IsMacOS = Utils.IsMacOS(),
             IsLinux = Utils.IsLinux(),
@@ -56,10 +61,13 @@ public class CoreConfigContextBuilder
             ProtectCoreTypeList = config.TunModeItem.EnableTun ? [ECoreType.Xray, ECoreType.sing_box] : []
         };
         var validatorResult = NodeValidatorResult.Empty();
-        if (node.ConfigType != EConfigType.Custom && context.FullConfigTemplate?.Enabled != true
-            && RoutingProtocolPolicy.ValidateRules(context.RoutingItem, runCoreType) is { } protocolError)
+        // A fronted main core emits its non-TUN template even while the overall connection uses TUN.
+        var frontedTemplate = buildFrontEnd && context.IsTunEnabled && context.FullConfigTemplate?.Enabled == true
+            && ConfigHandler.GetPreSocksItem(config, node, runCoreType) != null;
+        var rules = RoutingProtocolPolicy.ReadActiveRules(frontedTemplate ? context with { IsTunEnabled = false } : context);
+        if (rules == null)
         {
-            validatorResult.Errors.Add(protocolError);
+            validatorResult.Errors.Add(RoutingProtocolPolicy.InvalidRulesMessage);
             return new CoreConfigContextBuilderResult(context, validatorResult);
         }
         var (actNode, nodeValidatorResult) = await ResolveNodeAsync(context, node);
@@ -69,46 +77,33 @@ public class CoreConfigContextBuilder
         }
         context = context with { Node = actNode };
         validatorResult.Warnings.AddRange(nodeValidatorResult.Warnings);
-        if (!(context.RoutingItem?.RuleSet.IsNullOrEmpty() ?? true))
+        foreach (var ruleItem in rules.Where(rule => !Global.OutboundTags.Contains(rule.OutboundTag)))
         {
-            var rules = JsonUtils.Deserialize<List<RulesItem>>(context.RoutingItem?.RuleSet);
-            if (rules == null || rules.Any(rule => rule == null))
+            if (ruleItem.OutboundTag.IsNullOrEmpty())
             {
-                validatorResult.Errors.Add("路由规则格式无效 / Invalid routing rules.");
-                return new CoreConfigContextBuilderResult(context, validatorResult);
+                validatorResult.Warnings.Add(string.Format(ResUI.MsgRoutingRuleEmptyOutboundTag, ruleItem.Remarks));
+                continue;
             }
-            foreach (var ruleItem in rules.Where(ruleItem =>
-                         ruleItem.Enabled && !Global.OutboundTags.Contains(ruleItem.OutboundTag)))
+            var ruleOutboundNode = await AppManager.Instance.GetProfileItemViaRemarks(ruleItem.OutboundTag);
+            if (ruleOutboundNode == null)
             {
-                if (ruleItem.OutboundTag.IsNullOrEmpty())
-                {
-                    validatorResult.Warnings.Add(string.Format(ResUI.MsgRoutingRuleEmptyOutboundTag, ruleItem.Remarks));
-                    ruleItem.OutboundTag = Global.ProxyTag;
-                    continue;
-                }
-                var ruleOutboundNode = await AppManager.Instance.GetProfileItemViaRemarks(ruleItem.OutboundTag);
-                if (ruleOutboundNode == null)
-                {
-                    validatorResult.Warnings.Add(string.Format(ResUI.MsgRoutingRuleOutboundNodeNotFound,
-                        ruleItem.Remarks, ruleItem.OutboundTag));
-                    ruleItem.OutboundTag = Global.ProxyTag;
-                    continue;
-                }
-
-                var (actRuleNode, ruleNodeValidatorResult) = await ResolveNodeAsync(context, ruleOutboundNode, false);
-                validatorResult.Warnings.AddRange(ruleNodeValidatorResult.Warnings.Select(w =>
-                    string.Format(ResUI.MsgRoutingRuleOutboundNodeWarning, ruleItem.Remarks, ruleItem.OutboundTag, w)));
-                if (!ruleNodeValidatorResult.Success)
-                {
-                    validatorResult.Warnings.AddRange(ruleNodeValidatorResult.Errors.Select(e =>
-                        string.Format(ResUI.MsgRoutingRuleOutboundNodeError, ruleItem.Remarks, ruleItem.OutboundTag,
-                            e)));
-                    ruleItem.OutboundTag = Global.ProxyTag;
-                    continue;
-                }
-
-                context.AllProxiesMap[$"remark:{ruleItem.OutboundTag}"] = actRuleNode;
+                validatorResult.Warnings.Add(string.Format(ResUI.MsgRoutingRuleOutboundNodeNotFound,
+                    ruleItem.Remarks, ruleItem.OutboundTag));
+                continue;
             }
+
+            var (actRuleNode, ruleNodeValidatorResult) = await ResolveNodeAsync(context, ruleOutboundNode, false);
+            validatorResult.Warnings.AddRange(ruleNodeValidatorResult.Warnings.Select(w =>
+                string.Format(ResUI.MsgRoutingRuleOutboundNodeWarning, ruleItem.Remarks, ruleItem.OutboundTag, w)));
+            if (!ruleNodeValidatorResult.Success)
+            {
+                validatorResult.Warnings.AddRange(ruleNodeValidatorResult.Errors.Select(e =>
+                    string.Format(ResUI.MsgRoutingRuleOutboundNodeError, ruleItem.Remarks, ruleItem.OutboundTag,
+                        e)));
+                continue;
+            }
+
+            context.AllProxiesMap[$"remark:{ruleItem.OutboundTag}"] = actRuleNode;
         }
 
         if (coreType == ECoreType.sing_box && context.RawDnsItem?.Enabled != true && context.FullConfigTemplate?.Enabled != true
@@ -181,7 +176,7 @@ public class CoreConfigContextBuilder
     {
         config = JsonUtils.DeepCopy(config);
         node = JsonUtils.DeepCopy(node);
-        var mainResult = await Build(config, node);
+        var mainResult = await Build(config, node, null, mainContext: null, buildFrontEnd: true);
         if (!mainResult.Success)
         {
             return new CoreConfigContextBuilderAllResult(mainResult, null);
@@ -232,7 +227,7 @@ public class CoreConfigContextBuilder
         var preSocksItem = ConfigHandler.GetPreSocksItem(config, node, coreType);
         if (preSocksItem != null)
         {
-            var preSocksResult = await Build(nodeContext.AppConfig, preSocksItem);
+            var preSocksResult = await Build(config, preSocksItem, null, nodeContext);
 
             var protectCoreTypeList = new HashSet<ECoreType>(nodeContext.ProtectCoreTypeList) { nodeContext.RunCoreType };
 

@@ -5,6 +5,7 @@ public partial class CoreConfigSingboxService(CoreConfigContext context)
     private static readonly string _tag = "CoreConfigSingboxService";
     private readonly Config _config = context.AppConfig;
     private readonly ProfileItem _node = context.Node;
+    private List<RulesItem> _routingRules = [];
 
     private SingboxConfig _coreConfig = new();
 
@@ -28,12 +29,13 @@ public partial class CoreConfigSingboxService(CoreConfigContext context)
                 return ret;
             }
 
-            if (context.FullConfigTemplate?.Enabled != true
-                && RoutingProtocolPolicy.ValidateRules(context.RoutingItem, ECoreType.sing_box) is { } protocolError)
+            var rules = RoutingProtocolPolicy.ReadActiveRules(context);
+            if (rules == null && context.ActiveTemplate == null)
             {
-                ret.Msg = protocolError;
+                ret.Msg = RoutingProtocolPolicy.InvalidRulesMessage;
                 return ret;
             }
+            _routingRules = rules ?? [];
 
             ret.Msg = ResUI.InitialConfiguration;
 

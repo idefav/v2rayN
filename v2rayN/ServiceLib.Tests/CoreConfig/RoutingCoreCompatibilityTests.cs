@@ -4,90 +4,99 @@ namespace ServiceLib.Tests.CoreConfig;
 public class RoutingCoreCompatibilityTests
 {
     [Test]
-    public async Task ConflictsKeepRuleIdentityAndAllUnsupportedValuesWithoutMutation()
-    {
-        var routing = new RoutingItem { RuleSet = JsonUtils.Serialize(new[]
-        {
-            new RulesItem { Id = "disabled", Enabled = false, Protocol = ["stun"] },
-            new RulesItem { Id = "dns", RuleType = ERuleType.DNS, Protocol = ["stun"] },
-            new RulesItem { Id = "mixed", Remarks = "STUN PROXY", Protocol = ["tls", "stun", "future-protocol"] }
-        }) };
-        var before = routing.RuleSet;
-        var conflicts = RoutingProtocolPolicy.Conflicts(routing, ECoreType.Xray);
-        await conflicts.Should().HaveCount(1);
-        await conflicts[0].RuleIndex.Should().BeEqualTo(2);
-        await conflicts[0].RuleId.Should().BeEqualTo("mixed");
-        await conflicts[0].Protocols.SequenceEqual(["stun", "future-protocol"]).Should().BeTrue();
-        await routing.RuleSet.Should().BeEqualTo(before);
-        await RoutingProtocolPolicy.Conflicts(routing, ECoreType.sing_box)[0].Protocols.SequenceEqual(["future-protocol"]).Should().BeTrue();
-    }
-
-    [Test]
-    [Arguments("xhttp")]
-    [Arguments("raw")]
-    [Arguments("unknown-protocol")]
-    [Arguments("core-rejects")]
-    public async Task AlternativeChecksCopiesAndNeverPersistsChanges(string scenario)
+    [Arguments(false)]
+    [Arguments(true)]
+    public async Task SwitchingCoresReusesStoredRulesInOrderAndSkipsUnsupportedOutbounds(bool frontTun)
     {
         var config = CoreConfigTestFactory.CreateConfig();
+        config.TunModeItem.EnableTun = frontTun;
+        config.TunModeItem.EnableLegacyProtect = frontTun;
         CoreConfigTestFactory.BindAppManagerConfig(config);
-        SQLiteHelper.Instance.CreateTable<RoutingItem>();
-        SQLiteHelper.Instance.CreateTable<ProfileItem>();
-        SQLiteHelper.Instance.CreateTable<SubItem>();
-        SQLiteHelper.Instance.CreateTable<DNSItem>();
-        SQLiteHelper.Instance.CreateTable<FullConfigTemplateItem>();
-        await SQLiteHelper.Instance.DeleteAllAsync<RoutingItem>();
-        var routing = new RoutingItem { Id = "compatibility-routing", IsActive = true, Remarks = "fixture",
-            RuleSet = JsonUtils.Serialize(new[] { new RulesItem { Id = "stun", Remarks = "STUN PROXY",
-                Protocol = [scenario == "unknown-protocol" ? "future-protocol" : "stun"], OutboundTag = Global.ProxyTag } }) };
-        await SQLiteHelper.Instance.ReplaceAsync(routing);
-        var profile = CoreConfigTestFactory.CreateVmessNode(ECoreType.Xray);
-        profile.Network = scenario == "xhttp" ? "xhttp" : "raw";
-        await SQLiteHelper.Instance.ReplaceAsync(profile);
-        var before = JsonUtils.Serialize(profile);
-        var configBefore = JsonUtils.Serialize(config);
-        string? candidatePath = null;
+        var db = SQLiteHelper.Instance;
+        db.CreateTable<RoutingItem>();
+        db.CreateTable<ProfileItem>();
+        db.CreateTable<SubItem>();
+        db.CreateTable<DNSItem>();
+        db.CreateTable<FullConfigTemplateItem>();
+        var previous = await db.TableAsync<RoutingItem>().FirstOrDefaultAsync(item => item.IsActive);
+        var originalTemplate = await AppManager.Instance.GetFullConfigTemplateItem(ECoreType.Xray);
+        var template = new FullConfigTemplateItem { Id = originalTemplate?.Id ?? Guid.NewGuid().ToString(),
+            CoreType = ECoreType.Xray, Enabled = true, TunConfig = "{}" };
+        var linked = CoreConfigTestFactory.CreateSocksNode(ECoreType.sing_box, Guid.NewGuid().ToString(), "STUN test outbound");
+        linked.Address = "stun-outbound.example";
+        var json = JsonUtils.Serialize(new RulesItem[]
+        {
+            new() { Protocol = ["tls"], OutboundTag = Global.DirectTag },
+            new() { Remarks = "STUN PROXY", Protocol = ["stun"], OutboundTag = Global.ProxyTag },
+            new() { Domain = ["full:skipped.example"], Protocol = ["tls", "stun"], OutboundTag = linked.Remarks },
+            new() { Domain = ["full:kept.example"], OutboundTag = Global.DirectTag },
+            new() { Port = "12345", OutboundTag = Global.ProxyTag },
+            new() { Protocol = ["future-protocol"], OutboundTag = "missing outbound for skipped rule" }
+        });
+        var routing = new RoutingItem { Id = previous?.Id ?? Guid.NewGuid().ToString(), IsActive = true, RuleSet = json };
         try
         {
-            var original = await CoreConfigContextBuilder.BuildAll(config, profile);
-            await original.Success.Should().BeFalse();
-            await original.CombinedValidatorResult.Errors[0].Should().Contain("STUN PROXY");
-            var result = await RoutingCoreCompatibility.CheckAlternativeAsync(config, profile, CancellationToken.None, async (context, path, token) =>
+            await db.ReplaceAsync(routing);
+            await db.InsertAsync(linked);
+            if (frontTun) await db.ReplaceAsync(template);
+            foreach (var core in new[] { ECoreType.sing_box, ECoreType.Xray, ECoreType.sing_box })
             {
-                candidatePath = path;
-                await context.RunCoreType.Should().BeEqualTo(ECoreType.sing_box);
-                var generated = await File.ReadAllTextAsync(path, token);
-                await generated.Should().Contain("stun");
-                return scenario == "core-rejects" ? "fixture core rejection" : null;
-            });
-            await (result == null).Should().BeEqualTo(scenario == "raw");
-            await (candidatePath != null).Should().BeEqualTo(scenario is "raw" or "core-rejects");
-            if (candidatePath != null) await File.Exists(candidatePath).Should().BeFalse();
-            await JsonUtils.Serialize(profile).Should().BeEqualTo(before);
-            await JsonUtils.Serialize(await AppManager.Instance.GetProfileItem(profile.IndexId)).Should().BeEqualTo(before);
-            await JsonUtils.Serialize(config).Should().BeEqualTo(configBefore);
-            await (await ConfigHandler.GetDefaultRouting(config)).RuleSet.Should().BeEqualTo(routing.RuleSet);
+                var node = CoreConfigTestFactory.CreateVmessNode(core, indexId: "");
+                var built = await CoreConfigContextBuilder.BuildAll(config, node);
+                await built.Success.Should().BeTrue();
+                await built.CombinedValidatorResult.Warnings.Should().BeEmpty();
+                await built.MainResult.Context.RunCoreType.Should().BeEqualTo(core);
+                await built.MainResult.Context.AllProxiesMap.ContainsKey($"remark:{linked.Remarks}").Should().BeEqualTo(core == ECoreType.sing_box);
+                await (built.PreSocksResult != null).Should().BeEqualTo(frontTun && core == ECoreType.Xray);
+                if (built.PreSocksResult is { } front)
+                {
+                    await front.Context.AllProxiesMap.ContainsKey($"remark:{linked.Remarks}").Should().BeFalse();
+                    var preConfig = await CoreConfigHandler.GenerateClientConfig(front.Context, null);
+                    await preConfig.Success.Should().BeTrue();
+                    await preConfig.Data!.ToString()!.Should().NotContain("skipped.example");
+                    await preConfig.Data!.ToString()!.Should().NotContain("\"stun\"");
+                }
+                var result = await CoreConfigHandler.GenerateClientConfig(built.MainResult.Context, null);
+                await result.Success.Should().BeTrue();
+                var document = JsonNode.Parse(result.Data!.ToString()!)!;
+                var ruleArray = (document["route"] ?? document["routing"])!["rules"]!.AsArray();
+                var rules = ruleArray.Select(rule => rule!.ToJsonString()).ToList();
+                var tls = rules.FindIndex(rule => rule.Contains("\"tls\""));
+                var stun = rules.FindIndex(rule => rule.Contains("\"stun\""));
+                var domain = rules.FindIndex(rule => rule.Contains("kept.example"));
+                var port = rules.FindIndex(rule => rule.Contains("12345"));
+                await (tls >= 0 && tls < domain && domain < port).Should().BeTrue();
+                if (core == ECoreType.sing_box)
+                {
+                    var sniff = rules.FindIndex(rule => rule.Contains("\"sniff\""));
+                    await (sniff >= 0 && sniff < stun && tls < stun && stun < domain).Should().BeTrue();
+                    await ruleArray[stun]!["outbound"]!.GetValue<string>().Should().BeEqualTo(Global.ProxyTag);
+                }
+                else await stun.Should().BeEqualTo(-1);
+                await rules.Any(rule => rule.Contains("skipped.example")).Should().BeEqualTo(core == ECoreType.sing_box);
+                await document["dns"]!.ToJsonString().Contains("skipped.example").Should().BeEqualTo(core == ECoreType.sing_box);
+                await document["outbounds"]!.ToJsonString().Contains(linked.Address).Should().BeEqualTo(core == ECoreType.sing_box);
+                await (await ConfigHandler.GetDefaultRouting(config)).RuleSet.Should().BeEqualTo(json);
+            }
         }
         finally
         {
-            await SQLiteHelper.Instance.DeleteAsync(routing);
-            await SQLiteHelper.Instance.DeleteAsync(profile);
+            if (frontTun)
+            {
+                if (originalTemplate == null) await db.DeleteAsync(template);
+                else await db.ReplaceAsync(originalTemplate);
+            }
+            await db.DeleteAsync(linked);
+            if (previous == null) await db.DeleteAsync(routing);
+            else await db.ReplaceAsync(previous);
         }
     }
 
     [Test]
-    public async Task CertificatePinsAndVlessEncryptionCannotDisappearDuringConversion()
-    {
-        var node = CoreConfigTestFactory.CreateVmessNode(ECoreType.Xray);
-        node.CertSha = "fixture-pin";
-        await RoutingCoreCompatibility.ConversionError(node)!.Should().Contain("CertSha");
-        node.CertSha = "";
-        node.SetProtocolExtra(new() { VlessEncryption = "unsupported-encryption" });
-        await RoutingCoreCompatibility.ConversionError(node)!.Should().Contain("VlessEncryption");
-    }
-
-    [Test]
-    public async Task IncompatibleRouteDoesNotStopTheExistingProcessOrLaunchAnother()
+    [Arguments("{")]
+    [Arguments("[null]")]
+    [Arguments("""[{"Protocol":[null]}]""")]
+    public async Task InvalidRuleSetDoesNotStopTheExistingProcessOrLaunchAnother(string invalidJson)
     {
         if (OperatingSystem.IsWindows()) { Skip.Test("Unix owned-process fixture."); return; }
         var config = CoreConfigTestFactory.CreateConfig();
@@ -95,17 +104,17 @@ public class RoutingCoreCompatibilityTests
         using var process = new ProcessService("/bin/sleep", "30", Path.GetTempPath(), false, false, null, null);
         await process.StartAsync();
         process.IsReady = true;
-        var manager = new CoreManager(_ => throw new Exception("An incompatible route must not launch a core"));
+        var manager = new CoreManager(_ => throw new Exception("An invalid rule set must not launch a core"));
         typeof(CoreManager).GetField("_processService", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(manager, process);
         var node = CoreConfigTestFactory.CreateVmessNode(ECoreType.Xray);
         var context = CoreConfigTestFactory.CreateContext(config, node, ECoreType.Xray) with
         {
-            RoutingItem = new RoutingItem { RuleSet = JsonUtils.Serialize(new[] { new RulesItem { Remarks = "STUN PROXY", Protocol = ["stun"] } }) }
+            RoutingItem = new RoutingItem { RuleSet = invalidJson }
         };
         try
         {
             await (await manager.LoadCore(context, null)).Should().BeEqualTo(CoreLoadResult.Failed);
-            await manager.LastError!.Should().Contain("STUN PROXY");
+            await manager.LastError!.Should().Contain(RoutingProtocolPolicy.InvalidRulesMessage);
             await (await manager.IsCoreRunningAsync()).Should().BeTrue();
             await (await process.HasExitedAsync()).Should().BeFalse();
         }

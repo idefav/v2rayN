@@ -310,7 +310,6 @@ public partial class CoreConfigSingboxService
             .Where(s => s.tag?.StartsWith(Global.SingboxRemoteDNSTagPrefix) == true).ToList();
         if (ManagedEgress) remoteDnsList = DnsForEgress(DefaultDnsEgress());
 
-        var rules = JsonUtils.Deserialize<List<RulesItem>>(routing?.RuleSet) ?? [];
         var expectedIPCidr = new HashSet<string>();
         var expectedIPsRegions = new HashSet<string>();
         var regionName = string.Empty;
@@ -342,9 +341,9 @@ public partial class CoreConfigSingboxService
             }
         }
 
-        foreach (var item in rules)
+        foreach (var item in _routingRules)
         {
-            if (!item.Enabled || item.Domain is null || item.Domain.Count == 0)
+            if (item.Domain is null || item.Domain.Count == 0)
             {
                 continue;
             }
@@ -728,24 +727,15 @@ public partial class CoreConfigSingboxService
 
     private bool UseDirectDns()
     {
-        var routing = context.RoutingItem;
-        var useDirectDns = false;
-        if (routing == null)
+        if (_routingRules.LastOrDefault() is not { OutboundTag: Global.DirectTag } lastRule)
         {
-            return useDirectDns;
-        }
-        var rules = JsonUtils.Deserialize<List<RulesItem>>(routing.RuleSet) ?? [];
-
-        if (rules?.LastOrDefault() is not { OutboundTag: Global.DirectTag } lastRule)
-        {
-            return useDirectDns;
+            return false;
         }
         var noDomain = lastRule.Domain == null || lastRule.Domain.Count == 0;
         var noProcess = lastRule.Process == null || lastRule.Process.Count == 0;
         var isAnyIp = lastRule.Ip == null || lastRule.Ip.Count == 0 || lastRule.Ip.Contains("0.0.0.0/0");
         var isAnyPort = string.IsNullOrEmpty(lastRule.Port) || lastRule.Port == "0-65535";
         var isAnyNetwork = string.IsNullOrEmpty(lastRule.Network) || lastRule.Network == "tcp,udp";
-        useDirectDns = noDomain && noProcess && isAnyIp && isAnyPort && isAnyNetwork;
-        return useDirectDns;
+        return noDomain && noProcess && isAnyIp && isAnyPort && isAnyNetwork;
     }
 }

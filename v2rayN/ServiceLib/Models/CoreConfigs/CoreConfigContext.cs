@@ -6,6 +6,8 @@ public record CoreConfigContext
     // Stable selected profile identity, before a subscription wraps it in a virtual chain.
     public string? SourceNodeId { get; init; }
     public required ECoreType RunCoreType { get; init; }
+    // A TUN front end uses the selected node's core to decide which user rules are active.
+    public ECoreType? RoutingCoreType { get; init; }
     public RoutingItem? RoutingItem { get; init; }
     public DNSItem? RawDnsItem { get; init; }
     public SimpleDNSItem SimpleDnsItem { get; init; } = new();
@@ -13,6 +15,9 @@ public record CoreConfigContext
     public Config AppConfig { get; init; } = new();
     public int? StatisticsPort { get; init; }
     public FullConfigTemplateItem? FullConfigTemplate { get; init; } = new();
+    internal string? ActiveTemplate => FullConfigTemplate is { Enabled: true } template
+        ? (IsTunEnabled ? template.TunConfig : template.Config).NullIfEmpty()
+        : null;
 
     public Dictionary<string, string> CustomOutboundContent { get; init; } = new();
 

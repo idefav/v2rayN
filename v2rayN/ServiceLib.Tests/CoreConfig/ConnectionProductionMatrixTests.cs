@@ -34,7 +34,11 @@ public class ConnectionProductionMatrixTests
         CoreConfigTestFactory.BindAppManagerConfig(live);
         SQLiteHelper.Instance.CreateTable<RoutingItem>(); SQLiteHelper.Instance.CreateTable<SubItem>();
         SQLiteHelper.Instance.CreateTable<FullConfigTemplateItem>(); SQLiteHelper.Instance.CreateTable<DNSItem>();
-        var route = new RoutingItem { Id = "matrix-" + Guid.NewGuid(), RuleSet = "[]" };
+        var route = new RoutingItem { Id = "matrix-" + Guid.NewGuid(), RuleSet = JsonUtils.Serialize(new RulesItem[]
+        {
+            new() { Protocol = ["stun"], OutboundTag = Global.ProxyTag },
+            new() { Protocol = ["tls", "stun"], Domain = ["full:skipped.example"], OutboundTag = Global.DirectTag }
+        }) };
         config.RoutingBasicItem.RoutingIndexId = route.Id;
         await SQLiteHelper.Instance.ReplaceAsync(route);
         var node = CoreConfigTestFactory.CreateVmessNode(ECoreType.Xray, indexId: "");
@@ -57,7 +61,10 @@ public class ConnectionProductionMatrixTests
                 var path = Path.Combine(dir, i + ".json");
                 var result = await CoreConfigHandler.GenerateClientConfig(context, path);
                 if (!result.Success) throw new Exception(result.Msg);
-                var plan = CoreListenerPlan.Read(await File.ReadAllTextAsync(path), context.RunCoreType);
+                var generated = await File.ReadAllTextAsync(path);
+                await generated.Should().NotContain("\"stun\"");
+                await generated.Should().NotContain("skipped.example");
+                var plan = CoreListenerPlan.Read(generated, context.RunCoreType);
                 plans.Add(plan);
                 await plan.Tuns.Count.Should().BeEqualTo(context.IsTunEnabled ? 1 : 0);
                 var binary = context.RunCoreType == ECoreType.Xray ? xray : singbox;

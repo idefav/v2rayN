@@ -2056,29 +2056,6 @@ public partial class ReviewApp : v2rayN.Desktop.App
     }
     private async Task ReviewRoutingProtocolsAsync()
     {
-        await ReviewRoutingCoreDecisionsAsync();
-        foreach (var choice in new[] { RoutingCoreChoice.UseSingbox, RoutingCoreChoice.EditRule, RoutingCoreChoice.Cancel })
-        {
-            var pending = _main.ShowRoutingCorePromptAsync(new RoutingCorePrompt(
-                "STUN PROXY: Xray / stun\n" + RoutingCoreCompatibility.T("此节点已通过 sing-box 配置检查。", "This profile passed the sing-box configuration check."), true, CancellationToken.None));
-            await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
-            var dialog = ((IClassicDesktopStyleApplicationLifetime)ApplicationLifetime!).Windows.Single(w => w != _main && w.IsVisible && w.Title == RoutingCoreCompatibility.T("路由与核心不兼容", "Routing / core compatibility"));
-            var buttons = dialog.GetVisualDescendants().OfType<Button>().ToArray();
-            Check(buttons.Length == 3 && buttons.All(button => button.IsEnabled), "compatibility: three explicit actions are available");
-            if (choice == RoutingCoreChoice.UseSingbox) await CaptureAsync("routing-core-compatible", "Compatible core choice", dialog);
-            buttons[choice == RoutingCoreChoice.UseSingbox ? 0 : choice == RoutingCoreChoice.EditRule ? 1 : 2].RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            Check(await pending == choice, "compatibility: explicit action returns " + choice);
-        }
-        using (var obsolete = new CancellationTokenSource())
-        {
-            var pending = _main.ShowRoutingCorePromptAsync(new RoutingCorePrompt("STUN PROXY: Xray / stun\nxhttp: sing-box unsupported", false, obsolete.Token));
-            await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
-            var dialog = ((IClassicDesktopStyleApplicationLifetime)ApplicationLifetime!).Windows.Single(w => w != _main && w.IsVisible && w.Title == RoutingCoreCompatibility.T("路由与核心不兼容", "Routing / core compatibility"));
-            Check(!dialog.GetVisualDescendants().OfType<Button>().First().IsEnabled, "compatibility: incompatible alternative cannot be selected");
-            await CaptureAsync("routing-core-incompatible", "Unsupported transport choice", dialog);
-            obsolete.Cancel();
-            Check(await pending == RoutingCoreChoice.Cancel, "compatibility: superseded request closes without applying");
-        }
         foreach (var (core, protocols, id) in new[]
         {
             (ECoreType.sing_box, new[] { "stun", "dtls" }, "routing-singbox"),
@@ -2091,74 +2068,102 @@ public partial class ReviewApp : v2rayN.Desktop.App
             var window = new RoutingRuleDetailsWindow { ViewModel = model };
             window.Show(_main);
             await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
-            var list = window.FindControl<ListBox>("clbProtocol")!;
-            Check(list.Items.Cast<string>().SequenceEqual(RoutingProtocolPolicy.EditorOptions(core, protocols)), $"{id}: options match profile core");
-            Check(list.SelectedItems!.Cast<string>().Order().SequenceEqual(protocols.Order()), $"{id}: existing selections survive opening");
+            var list = window.FindControl<ItemsControl>("clbProtocol")!;
+            var boxes = list.GetVisualDescendants().OfType<CheckBox>().ToDictionary(box => (string)box.Content!);
+            Check(boxes.Keys.SequenceEqual(RoutingProtocolPolicy.EditorOptions(protocols)), $"{id}: all protocols are visible");
+            Check(boxes.All(pair => pair.Value.IsEffectivelyEnabled == RoutingProtocolPolicy.Supported(core).Contains(pair.Key)),
+                $"{id}: only protocols supported by the active core are enabled");
+            Check(boxes.Where(pair => pair.Value.IsChecked == true).Select(pair => pair.Key).Order().SequenceEqual(protocols.Order()), $"{id}: existing selections survive opening");
             Check(model.ProtocolItems.Order().SequenceEqual(protocols.Order()), $"{id}: selection events preserve the draft");
+            if (id == "routing-unsupported")
+            {
+                var skipText = RoutingCoreCompatibility.T("使用 Xray 时将跳过整条规则", "The entire rule is skipped with Xray");
+                Check(window.GetVisualDescendants().OfType<TextBlock>().Any(text => text.Text?.Contains(skipText) == true),
+                    $"{id}: rule details explain why Xray skips the rule");
+            }
             if (core == ECoreType.sing_box)
             {
-                list.SelectedItems!.Add("ntp");
+                boxes["ntp"].IsChecked = true;
                 Check(model.ProtocolItems.Contains("ntp"), "sing-box: selecting another protocol preserves STUN");
-                list.SelectedItems.Remove("ntp");
+                boxes["ntp"].IsChecked = false;
             }
             await CaptureAsync(id, id, window);
-            foreach (var item in list.GetVisualDescendants().OfType<ListBoxItem>())
-                Check(item.Bounds.Width > 0 && item.Bounds.Right <= list.Bounds.Width + 1, $"{id}: protocol chip fits the list");
+            foreach (var box in boxes.Values)
+                Check(box.Bounds.Width > 0 && box.TranslatePoint(new Point(box.Bounds.Width, 0), list)!.Value.X <= list.Bounds.Width + 1,
+                    $"{id}: protocol checkbox fits the list");
             window.Close();
             Check(source.Protocol!.SequenceEqual(protocols), $"{id}: closing without save preserves the original rule");
         }
+        if (Environment.GetEnvironmentVariable("HANDOFF_TEST_XRAY") is { Length: > 0 } xray
+            && Environment.GetEnvironmentVariable("TUN_TEST_SINGBOX") is { Length: > 0 } singbox)
+            await ReviewRoutingSwitchAsync(xray, singbox);
     }
 
-    private async Task ReviewRoutingCoreDecisionsAsync()
+    private async Task ReviewRoutingSwitchAsync(string xray, string singbox)
     {
         var config = AppManager.Instance.Config;
-        var selection = config.IndexId;
-        var routing = await ConfigHandler.GetDefaultRouting(config);
-        var savedRouting = JsonUtils.DeepCopy(routing);
-        var profile = new ProfileItem { IndexId = "routing-switch-fixture", ConfigType = EConfigType.VLESS, CoreType = ECoreType.Xray,
-            Address = "127.0.0.1", Port = 443, Password = Guid.NewGuid().ToString(), Network = "raw", Remarks = "routing fixture" };
+        var saved = JsonUtils.DeepCopy(config);
+        var originalRouting = await ConfigHandler.GetDefaultRouting(config);
+        var routing = JsonUtils.DeepCopy(originalRouting);
+        routing.RuleSet = JsonUtils.Serialize(new RulesItem[] { new() { Protocol = ["stun"], OutboundTag = Global.ProxyTag } });
+        var xrayInfo = CoreInfoManager.Instance.GetCoreInfo(ECoreType.Xray)!;
+        var singboxInfo = CoreInfoManager.Instance.GetCoreInfo(ECoreType.sing_box)!;
+        var originalXray = xrayInfo.CoreExes;
+        var originalSingbox = singboxInfo.CoreExes;
+        var design = _vm.DesignMode;
+        var workspace = _vm.UseConnectionWorkspace;
+        await using var server = new SubscriptionServer();
+        var profile = new ProfileItem { IndexId = Guid.NewGuid().ToString(), ConfigType = EConfigType.HTTP,
+            Remarks = "Routing switch fixture", Address = "127.0.0.1", Port = new Uri(server.Url).Port };
         try
         {
-            routing.RuleSet = JsonUtils.Serialize(new[] { new RulesItem { Id = "stun-fixture", Remarks = "STUN PROXY", Protocol = ["stun"], OutboundTag = Global.ProxyTag } });
-            await ConfigHandler.SaveRoutingItem(config, routing);
-            foreach (var scenario in new[] { "cancel", "stale-selection", "stale-profile", "cancelled", "recheck-failed", "accept" })
+            await SQLiteHelper.Instance.ReplaceAsync(routing);
+            config.IndexId = profile.IndexId;
+            config.TunModeItem.EnableTun = false;
+            config.SystemProxyItem.SysProxyType = ESysProxyType.Unchanged;
+            config.GuiItem.EnableStatistics = false;
+            config.Inbound[0].LocalPort = Utils.GetFreePort(24561);
+            config.Inbound[0].AllowLANConn = false;
+            config.SpeedTestItem.SpeedPingTestUrl = server.Url + "probe";
+            config.SpeedTestItem.IPAPIUrl = "";
+            xrayInfo.CoreExes = [xray];
+            singboxInfo.CoreExes = [singbox];
+            _vm.DesignMode = false;
+            _vm.UseConnectionWorkspace = false;
+            await CertPemManager.Instance.Init(config);
+            foreach (var core in new[] { ECoreType.sing_box, ECoreType.Xray, ECoreType.sing_box })
             {
-                config.IndexId = profile.IndexId;
+                profile.CoreType = core;
                 await SQLiteHelper.Instance.ReplaceAsync(profile);
-                using var cancellation = new CancellationTokenSource();
-                using var handler = _vm.RoutingCoreInteraction.RegisterHandler(async interaction =>
-                {
-                    Check(interaction.Input.CanUseSingbox, "decision fixture offers checked alternative");
-                    if (scenario == "stale-selection") config.IndexId = selection;
-                    if (scenario == "stale-profile")
-                    {
-                        var edited = JsonUtils.DeepCopy(profile); edited.Remarks = "changed while dialog open";
-                        await SQLiteHelper.Instance.UpdateAsync(edited);
-                    }
-                    if (scenario == "cancelled") cancellation.Cancel();
-                    interaction.SetOutput(scenario == "cancel" ? RoutingCoreChoice.Cancel : RoutingCoreChoice.UseSingbox);
-                });
-                var checks = 0;
-                ProfileItem? result = null;
-                try
-                {
-                    result = await _vm.ResolveRoutingCoreAsync(profile, true, cancellation.Token,
-                        (_, _, _) => Task.FromResult<string?>(++checks == 2 && scenario == "recheck-failed" ? "fixture changed" : null));
-                    Check(scenario != "cancelled", "cancelled operation must not return a profile");
-                }
-                catch (OperationCanceledException) when (scenario == "cancelled") { }
-                Check((result != null) == (scenario == "accept"), "decision result: " + scenario);
-                var saved = await AppManager.Instance.GetProfileItem(profile.IndexId);
-                Check(saved!.CoreType == (scenario == "accept" ? ECoreType.sing_box : ECoreType.Xray), "only explicit current successful choice persists core: " + scenario);
-                Check((await ConfigHandler.GetDefaultRouting(config)).RuleSet == routing.RuleSet, "decision preserves STUN rule: " + scenario);
+                await Task.Run(() => _vm.ReloadSelectedConfigurationAsync("routing switch")).WaitAsync(TimeSpan.FromSeconds(40));
+                var runtime = CoreManager.Instance.RuntimeSummary;
+                Check(runtime?.Core == core && runtime.ProfileId == profile.IndexId && _vm.StatusBarViewModel.ConnectionError == null,
+                    $"manual apply runs {core}: {_vm.StatusBarViewModel.DisplayConnectionError}");
+                var json = await File.ReadAllTextAsync(Utils.GetBinConfigPath(Global.CoreConfigFileName));
+                Check(json.Contains("\"stun\"") == (core == ECoreType.sing_box), $"{core}: installed config reflects STUN support");
+                await Task.Run(() => _vm.ReloadSelectedConfigurationAsync("routing background apply", onlyIfChanged: true, backgroundUpdate: true))
+                    .WaitAsync(TimeSpan.FromSeconds(40));
+                Check(CoreManager.Instance.RuntimeSummary?.Generation == runtime!.Generation && _vm.StatusBarViewModel.BackgroundApplyError == null,
+                    $"{core}: background apply reuses the running compatible config");
+                Check((await ConfigHandler.GetDefaultRouting(config)).RuleSet == routing.RuleSet, $"{core}: saved STUN rule survives both applications");
             }
         }
         finally
         {
-            config.IndexId = selection;
-            await ConfigHandler.SaveRoutingItem(config, savedRouting);
+            _vm.CancelConnectionTransition();
+            await CoreManager.Instance.CoreStop();
+            _vm.DesignMode = design;
+            _vm.UseConnectionWorkspace = workspace;
+            xrayInfo.CoreExes = originalXray;
+            singboxInfo.CoreExes = originalSingbox;
+            config.IndexId = saved.IndexId;
+            config.TunModeItem = saved.TunModeItem;
+            config.SystemProxyItem = saved.SystemProxyItem;
+            config.GuiItem = saved.GuiItem;
+            config.Inbound = saved.Inbound;
+            config.SpeedTestItem = saved.SpeedTestItem;
+            await SQLiteHelper.Instance.ReplaceAsync(originalRouting);
             await SQLiteHelper.Instance.DeleteAsync(profile);
-            _vm.StatusBarViewModel.ConnectionError = null;
         }
     }
 
