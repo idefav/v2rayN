@@ -24,7 +24,6 @@ public partial class RoutingRuleDetailsWindow : WindowBase<RoutingRuleDetailsVie
 
         Loaded += Window_Loaded;
         btnCancel.Click += (s, e) => Close();
-        clbProtocol.SelectionChanged += ClbProtocol_SelectionChanged;
         clbInboundTag.SelectionChanged += ClbInboundTag_SelectionChanged;
 
         cmbOutboundTag.ItemsSource = Global.OutboundTags;
@@ -58,17 +57,11 @@ public partial class RoutingRuleDetailsWindow : WindowBase<RoutingRuleDetailsVie
 
     private void InitializeData(RulesItem rulesItem)
     {
-        clbProtocol.ItemsSource = ViewModel!.AvailableProtocols;
-        clbProtocol.SelectedItems?.Clear();
         clbInboundTag.SelectedItems?.Clear();
         if (rulesItem.Id.IsNullOrEmpty())
         {
             return;
         }
-        rulesItem.Protocol?.ForEach(it =>
-        {
-            clbProtocol?.SelectedItems?.Add(it);
-        });
         rulesItem.InboundTag?.ForEach(it =>
         {
             clbInboundTag?.SelectedItems?.Add(it);
@@ -78,14 +71,6 @@ public partial class RoutingRuleDetailsWindow : WindowBase<RoutingRuleDetailsVie
     private void Window_Loaded(object? sender, RoutedEventArgs e)
     {
         txtRemarks.Focus();
-    }
-
-    private void ClbProtocol_SelectionChanged(object? sender, SelectionChangedEventArgs e)
-    {
-        if (ViewModel != null)
-        {
-            ViewModel.ProtocolItems = clbProtocol.SelectedItems.Cast<string>().ToList();
-        }
     }
 
     private void ClbInboundTag_SelectionChanged(object? sender, SelectionChangedEventArgs e)

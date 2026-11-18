@@ -213,12 +213,9 @@ public partial class CoreConfigV2rayService
             }
         }
 
-        var routing = context.RoutingItem;
-        List<RulesItem>? rules = null;
-        rules = JsonUtils.Deserialize<List<RulesItem>>(routing?.RuleSet) ?? [];
-        foreach (var item in rules)
+        foreach (var item in _routingRules)
         {
-            if (!item.Enabled || item.Domain is null || item.Domain.Count == 0)
+            if (item.Domain is null || item.Domain.Count == 0)
             {
                 continue;
             }
@@ -305,7 +302,7 @@ public partial class CoreConfigV2rayService
 
         var useDirectDns = false;
 
-        if (rules?.LastOrDefault() is { OutboundTag: Global.DirectTag } lastRule)
+        if (_routingRules.LastOrDefault() is { OutboundTag: Global.DirectTag } lastRule)
         {
             var noDomain = lastRule.Domain == null || lastRule.Domain.Count == 0;
             var noProcess = lastRule.Process == null || lastRule.Process.Count == 0;

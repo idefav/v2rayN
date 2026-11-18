@@ -46,14 +46,8 @@ public partial class CoreConfigV2rayService
                     {
                         _coreConfig.routing.domainStrategy = routing.DomainStrategy;
                     }
-                    var rules = JsonUtils.Deserialize<List<RulesItem>>(routing.RuleSet);
-                    foreach (var item in rules)
+                    foreach (var item in _routingRules)
                     {
-                        if (!item.Enabled)
-                        {
-                            continue;
-                        }
-
                         if (item.RuleType == ERuleType.DNS)
                         {
                             continue;

@@ -54,22 +54,6 @@ public sealed class SQLiteHelper
     internal Task<int> SetSubscriptionUpdateTimeAsync(string id, long timestamp)
         => _dbAsync.ExecuteAsync("UPDATE SubItem SET UpdateTime = MAX(UpdateTime, ?) WHERE Id = ?", timestamp, id);
 
-    internal async Task<bool> TrySetProfileCoreAsync(ProfileItem expected, RoutingItem expectedRouting,
-        ECoreType core, Func<bool> isCurrent)
-    {
-        var changed = false;
-        var profileSnapshot = JsonUtils.Serialize(expected);
-        var routingSnapshot = JsonUtils.Serialize(expectedRouting);
-        await _dbAsync.RunInTransactionAsync(connection =>
-        {
-            var profile = connection.Table<ProfileItem>().FirstOrDefault(item => item.IndexId == expected.IndexId);
-            var routing = connection.Table<RoutingItem>().FirstOrDefault(item => item.Id == expectedRouting.Id);
-            if (!isCurrent() || JsonUtils.Serialize(profile) != profileSnapshot || JsonUtils.Serialize(routing) != routingSnapshot) return;
-            changed = connection.Execute("UPDATE ProfileItem SET CoreType = ? WHERE IndexId = ?", core, expected.IndexId) == 1;
-        });
-        return changed;
-    }
-
     public async Task<int> UpdateAllAsync(IEnumerable models)
     {
         return await _dbAsync.UpdateAllAsync(models, runInTransaction: true).ConfigureAwait(false);

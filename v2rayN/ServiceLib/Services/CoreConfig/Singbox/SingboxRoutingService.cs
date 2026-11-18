@@ -254,16 +254,8 @@ public partial class CoreConfigSingboxService
             var ipRules = new List<RulesItem>();
             if (routing != null)
             {
-                var rules = JsonUtils.Deserialize<List<RulesItem>>(routing.RuleSet);
-                if (ManagedEgress && rules == null && !string.IsNullOrWhiteSpace(routing.RuleSet))
-                    throw new SshConfigurationException("路由规则格式无效 / Invalid routing rules.");
-                foreach (var item1 in rules ?? [])
+                foreach (var item1 in _routingRules)
                 {
-                    if (!item1.Enabled)
-                    {
-                        continue;
-                    }
-
                     if (SshUdpPolicy.SkipDefaultUdp443Block(_node, item1)) continue;
 
                     if (item1.RuleType == ERuleType.DNS)
@@ -375,17 +367,17 @@ public partial class CoreConfigSingboxService
             {
                 return;
             }
-            item.OutboundTag = GenRoutingUserRuleOutbound(item.OutboundTag ?? Global.ProxyTag);
+            var outbound = GenRoutingUserRuleOutbound(item.OutboundTag ?? Global.ProxyTag);
             var rules = _coreConfig.route.rules;
 
             var rule = new Rule4Sbox();
-            if (item.OutboundTag == "block")
+            if (outbound == "block")
             {
                 rule.action = "reject";
             }
             else
             {
-                rule.outbound = item.OutboundTag;
+                rule.outbound = outbound;
             }
 
             if (item.Port.IsNotEmpty())

@@ -2,7 +2,6 @@ namespace ServiceLib.ViewModels;
 
 public partial class MainWindowViewModel : MyReactiveObject
 {
-    public Interaction<RoutingCorePrompt, RoutingCoreChoice> RoutingCoreInteraction { get; } = new();
     public Interaction<RxVoid, string?> ReadTextFromClipboardInteraction { get; } = new();
     public Interaction<RxVoid, byte[]?> ScanScreenInteraction { get; } = new();
     public Interaction<RxVoid, string?> BrowseImageFileInteraction { get; } = new();
@@ -907,8 +906,6 @@ public partial class MainWindowViewModel : MyReactiveObject
                 NoticeManager.Instance.Enqueue(ResUI.CheckServerSettings);
                 return false;
             }
-            profileItem = await ResolveRoutingCoreAsync(profileItem, expected == null && !backgroundUpdate, token, reportError: SetError);
-            if (profileItem == null) return false;
             var authorizationRevision = Interlocked.Read(ref _connectionRevision);
             if (!await StatusBarViewModel.EnsureTunAuthorizationAsync(reportError: SetError, token: token)) return false;
             token.ThrowIfCancellationRequested();
@@ -1036,75 +1033,6 @@ public partial class MainWindowViewModel : MyReactiveObject
             finally { await FinishReloadAsync(); }
         }
         }, token);
-    }
-
-    internal async Task<ProfileItem?> ResolveRoutingCoreAsync(ProfileItem profile, bool interactive, CancellationToken token,
-        Func<Config, ProfileItem, CancellationToken, Task<string?>>? checkAlternative = null,
-        Func<string?, Task>? reportError = null)
-    {
-        reportError ??= error => StatusBarViewModel.SetApplyErrorAsync(error);
-        checkAlternative ??= RoutingCoreCompatibility.CheckAlternativeAsync;
-        while (true)
-        {
-            token.ThrowIfCancellationRequested();
-            var core = AppManager.Instance.GetCoreType(profile, profile.ConfigType);
-            var template = await AppManager.Instance.GetFullConfigTemplateItem(core == ECoreType.sing_box ? core : ECoreType.Xray);
-            if (template?.Enabled == true || profile.ConfigType == EConfigType.Custom) return profile;
-            var routing = await ConfigHandler.GetDefaultRouting(_config);
-            var conflicts = RoutingProtocolPolicy.Conflicts(routing, core);
-            if (conflicts.Count == 0) return profile;
-            var rules = JsonUtils.Deserialize<List<RulesItem>>(routing!.RuleSet)!;
-            var message = string.Join(Environment.NewLine, conflicts.Select(c => RoutingProtocolPolicy.ValidateRule(rules[c.RuleIndex], core)));
-            await reportError(message);
-            if (!interactive) return null;
-
-            var configSnapshot = JsonUtils.Serialize(_config);
-            var profileSnapshot = JsonUtils.Serialize(profile);
-            var routingSnapshot = JsonUtils.Serialize(routing);
-            var alternativeError = await checkAlternative(_config, profile, token);
-            token.ThrowIfCancellationRequested();
-            var choice = await RoutingCoreInteraction.HandleSafe(new RoutingCorePrompt(message + Environment.NewLine + Environment.NewLine
-                + (alternativeError ?? RoutingCoreCompatibility.T("此节点已通过 sing-box 配置检查，可仅为该节点切换核心。",
-                    "This profile passed the sing-box configuration check. Only this profile's core will change.")),
-                alternativeError == null, token));
-            token.ThrowIfCancellationRequested();
-            // Profile/routing edits need not change the selected ID. Reject stale dialog results too.
-            async Task<bool> IsCurrent() => configSnapshot == JsonUtils.Serialize(_config)
-                && profileSnapshot == JsonUtils.Serialize(await AppManager.Instance.GetProfileItem(profile.IndexId))
-                && routingSnapshot == JsonUtils.Serialize(await ConfigHandler.GetDefaultRouting(_config));
-            if (!await IsCurrent()) return null;
-            if (choice == RoutingCoreChoice.Cancel) return null;
-            if (choice == RoutingCoreChoice.EditRule)
-            {
-                var editor = new RoutingRuleDetailsViewModel(rules[conflicts[0].RuleIndex], core);
-                if (await AppManager.Instance.WindowDialog.ShowDialogAsync(editor) != true) return null;
-                token.ThrowIfCancellationRequested();
-                if (!await IsCurrent()) return null;
-                var updated = JsonUtils.DeepCopy(routing);
-                updated.RuleSet = JsonUtils.Serialize(rules);
-                if (await ConfigHandler.SaveRoutingItem(_config, updated) != 0)
-                    throw new IOException(ResUI.OperationFailed);
-                continue;
-            }
-            if (choice != RoutingCoreChoice.UseSingbox || alternativeError != null) return null;
-            // Recheck immediately before persisting: templates, linked nodes and core files may have changed.
-            alternativeError = await checkAlternative(_config, profile, token);
-            token.ThrowIfCancellationRequested();
-            if (!await IsCurrent()) return null;
-            if (alternativeError != null)
-            {
-                await reportError(alternativeError);
-                return null;
-            }
-            var candidate = JsonUtils.DeepCopy(profile);
-            candidate.CoreType = ECoreType.sing_box;
-            if (!await SQLiteHelper.Instance.TrySetProfileCoreAsync(profile, routing, ECoreType.sing_box,
-                () => !token.IsCancellationRequested && configSnapshot == JsonUtils.Serialize(_config))) return null;
-            token.ThrowIfCancellationRequested();
-            await reportError(null);
-            await ProfilesViewModel.RefreshServers();
-            return candidate;
-        }
     }
 
     internal Task SetReloadEnabledAsync(bool enabled) => UiThread.RunAsync(() =>

@@ -87,18 +87,13 @@ public partial class CoreConfigSingboxService
 
     private string ApplyFullConfigTemplate(string coreConfigContent)
     {
-        var fullConfigTemplate = context.FullConfigTemplate;
-        if (fullConfigTemplate is not { Enabled: true })
+        var fullConfigTemplateItem = context.ActiveTemplate;
+        if (fullConfigTemplateItem == null)
         {
             return coreConfigContent;
         }
 
-        var fullConfigTemplateItem = context.IsTunEnabled ? fullConfigTemplate.TunConfig : fullConfigTemplate.Config;
-        if (fullConfigTemplateItem.IsNullOrEmpty())
-        {
-            return coreConfigContent;
-        }
-
+        var fullConfigTemplate = context.FullConfigTemplate!;
         var fullConfigTemplateNode = JsonNode.Parse(fullConfigTemplateItem);
         if (fullConfigTemplateNode == null)
         {

@@ -53,7 +53,8 @@ public class RoutingCoreIntegrationTests
             node.Port = serverPort;
             var routing = new RoutingItem { RuleSet = JsonUtils.Serialize(new[]
             {
-                new RulesItem { Remarks = "protocol fixture", Protocol = [core == ECoreType.sing_box ? "stun" : "tls"], OutboundTag = Global.ProxyTag }
+                new RulesItem { Remarks = "STUN PROXY", Protocol = ["stun"], OutboundTag = Global.ProxyTag },
+                new RulesItem { Remarks = "TLS fixture", Protocol = ["tls"], OutboundTag = Global.ProxyTag }
             }) };
             var statisticsPort = FreePort();
             var inboundPorts = new[] { EInboundProtocol.socks, EInboundProtocol.socks2, EInboundProtocol.socks3 }

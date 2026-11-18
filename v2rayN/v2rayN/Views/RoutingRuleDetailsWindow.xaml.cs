@@ -9,7 +9,6 @@ public partial class RoutingRuleDetailsWindow
         InitializeComponent();
 
         Loaded += Window_Loaded;
-        clbProtocol.SelectionChanged += ClbProtocol_SelectionChanged;
         clbInboundTag.SelectionChanged += ClbInboundTag_SelectionChanged;
 
         cmbOutboundTag.ItemsSource = Global.OutboundTags;
@@ -43,17 +42,11 @@ public partial class RoutingRuleDetailsWindow
 
     private void InitializeData(RulesItem rulesItem)
     {
-        clbProtocol.ItemsSource = ViewModel!.AvailableProtocols;
-        clbProtocol.SelectedItems.Clear();
         clbInboundTag.SelectedItems.Clear();
         if (rulesItem.Id.IsNullOrEmpty())
         {
             return;
         }
-        rulesItem.Protocol?.ForEach(it =>
-        {
-            clbProtocol.SelectedItems.Add(it);
-        });
         rulesItem.InboundTag?.ForEach(it =>
         {
             clbInboundTag.SelectedItems.Add(it);
@@ -63,14 +56,6 @@ public partial class RoutingRuleDetailsWindow
     private void Window_Loaded(object sender, RoutedEventArgs e)
     {
         txtRemarks.Focus();
-    }
-
-    private void ClbProtocol_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
-    {
-        if (ViewModel != null)
-        {
-            ViewModel.ProtocolItems = clbProtocol.SelectedItems.Cast<string>().ToList();
-        }
     }
 
     private void ClbInboundTag_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)

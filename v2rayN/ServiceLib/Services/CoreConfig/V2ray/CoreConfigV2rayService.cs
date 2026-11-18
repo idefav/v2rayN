@@ -5,6 +5,7 @@ public partial class CoreConfigV2rayService(CoreConfigContext context)
     private static readonly string _tag = "CoreConfigV2rayService";
     private readonly Config _config = context.AppConfig;
     private readonly ProfileItem _node = context.Node;
+    private List<RulesItem> _routingRules = [];
 
     private V2rayConfig _coreConfig = new();
 
@@ -28,12 +29,13 @@ public partial class CoreConfigV2rayService(CoreConfigContext context)
                 return ret;
             }
 
-            if (context.FullConfigTemplate?.Enabled != true
-                && RoutingProtocolPolicy.ValidateRules(context.RoutingItem, context.RunCoreType) is { } protocolError)
+            var rules = RoutingProtocolPolicy.ReadActiveRules(context);
+            if (rules == null && context.ActiveTemplate == null)
             {
-                ret.Msg = protocolError;
+                ret.Msg = RoutingProtocolPolicy.InvalidRulesMessage;
                 return ret;
             }
+            _routingRules = rules ?? [];
 
             ret.Msg = ResUI.InitialConfiguration;
 
