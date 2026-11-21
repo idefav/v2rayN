@@ -2,6 +2,17 @@ namespace ServiceLib.Services.CoreConfig;
 
 public partial class CoreConfigV2rayService
 {
+    private void ShareRouteTargetObservations()
+    {
+        // Xray injects one Observatory feature into its balancers. Burst reports contain both
+        // latency and the sampling history needed by existing leastLoad/fallback groups.
+        if (_coreConfig.observatory is not { } simple || _coreConfig.burstObservatory is not { } burst
+            || !context.RouteTargets.Values.Any(nodes => nodes.Count > 1)) return;
+        burst.subjectSelector = (burst.subjectSelector ?? []).Union(simple.subjectSelector ?? []).ToList();
+        burst.pingConfig.interval = simple.probeInterval;
+        _coreConfig.observatory = null;
+    }
+
     private void GenObservatory(EMultipleLoad multipleLoad, string baseTagName = Global.ProxyTag)
     {
         // Collect all existing subject selectors from both observatories
@@ -81,7 +92,7 @@ public partial class CoreConfigV2rayService
         }
     }
 
-    private void GenBalancer(EMultipleLoad multipleLoad, string selector = Global.ProxyTag)
+    private void GenBalancer(EMultipleLoad multipleLoad, string selector = Global.ProxyTag, string? fallback = null)
     {
         var strategyType = multipleLoad switch
         {
@@ -109,6 +120,7 @@ public partial class CoreConfigV2rayService
                     : null,
             },
             tag = balancerTag,
+            fallbackTag = fallback,
         };
         _coreConfig.routing.balancers ??= [];
         _coreConfig.routing.balancers.Add(balancer);

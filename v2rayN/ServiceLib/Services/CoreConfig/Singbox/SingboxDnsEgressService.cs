@@ -30,6 +30,7 @@ public partial class CoreConfigSingboxService
         var node = tag == Global.ProxyTag ? _node : context.AllProxiesMap.Values.FirstOrDefault(n =>
             tag == $"{n.IndexId}-{Global.ProxyTag}-{n.Remarks}");
         var overrideId = tag == Global.ProxyTag ? context.SourceNodeId ?? _node.IndexId : node?.IndexId;
+        if (context.RouteTargets.TryGetValue(tag, out var members) && members.Count == 1) overrideId = members[0].IndexId;
         var addresses = overrideId != null && context.SimpleDnsItem.NodeDnsOverrides?.TryGetValue(overrideId, out var custom) == true
             ? custom : context.SimpleDnsItem.RemoteDNS ?? Global.DomainRemoteDNSAddress.First();
         if (DnsEgressPolicy.ValidateUpstreams(addresses, true) is { } error) throw new SshConfigurationException(error);
@@ -51,6 +52,7 @@ public partial class CoreConfigSingboxService
     private List<Server4Sbox> DnsForRule(RulesItem item)
     {
         var target = item.OutboundTag ?? Global.ProxyTag;
+        if (item.OutboundTarget != null) return DnsForEgress(target);
         if (target == Global.ProxyTag) return DnsForEgress(Global.ProxyTag);
         if (!context.AllProxiesMap.TryGetValue("remark:" + target, out var node))
             throw new SshConfigurationException("DNS 分流节点不存在 / DNS route node is missing: " + target);

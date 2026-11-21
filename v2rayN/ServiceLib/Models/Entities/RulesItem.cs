@@ -9,6 +9,7 @@ public class RulesItem
     public string? Network { get; set; }
     public List<string>? InboundTag { get; set; }
     public string? OutboundTag { get; set; }
+    public RouteOutboundTarget? OutboundTarget { get; set; }
     public List<string>? Ip { get; set; }
     public List<string>? Domain { get; set; }
     public List<string>? Protocol { get; set; }

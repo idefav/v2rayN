@@ -46,6 +46,23 @@ public sealed class SQLiteHelper
         });
     }
 
+    internal async Task<List<ProfileItem>> ReplaceSubscriptionAsync(string subId, List<ProfileItem> profiles, CancellationToken token)
+    {
+        List<ProfileItem> previous = [];
+        await _dbAsync.RunInTransactionAsync(connection =>
+        {
+            token.ThrowIfCancellationRequested();
+            if (connection.Find<SubItem>(subId) == null)
+                throw new InvalidOperationException("Subscription was removed during import.");
+            previous = connection.Table<ProfileItem>().Where(p => p.Subid == subId && p.IsSub).ToList();
+            SubscriptionProfileIdentity.Preserve(previous, profiles);
+            connection.Execute("DELETE FROM ProfileItem WHERE Subid = ? AND IsSub = 1", subId);
+            connection.InsertAll(profiles, runInTransaction: false);
+            token.ThrowIfCancellationRequested();
+        });
+        return previous;
+    }
+
     public async Task<int> UpdateAsync(object model)
     {
         return await _dbAsync.UpdateAsync(model);

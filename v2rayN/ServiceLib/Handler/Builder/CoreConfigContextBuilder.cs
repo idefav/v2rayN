@@ -77,7 +77,36 @@ public class CoreConfigContextBuilder
         }
         context = context with { Node = actNode };
         validatorResult.Warnings.AddRange(nodeValidatorResult.Warnings);
-        foreach (var ruleItem in rules.Where(rule => !Global.OutboundTags.Contains(rule.OutboundTag)))
+        foreach (var rule in rules.Where(r => r.OutboundTarget != null))
+        {
+            var target = rule.OutboundTarget!;
+            var tag = target.Tag();
+            if (context.RouteTargets.ContainsKey(tag)) continue;
+            if (mainContext?.RunCoreType == ECoreType.Xray && context.RunCoreType == ECoreType.sing_box
+                && mainContext.Node.ConfigType != EConfigType.Custom)
+            {
+                context.RouteTargets[tag] = mainContext.RouteTargets.GetValueOrDefault(tag) ?? [];
+                continue;
+            }
+            var subscription = target.SubscriptionId;
+            var exists = subscription == null || await AppManager.Instance.GetSubItem(subscription) != null;
+            var profiles = mainContext != null
+                ? mainContext.RouteTargets.GetValueOrDefault(tag) ?? []
+                : subscription == null
+                    ? await AppManager.Instance.GetProfileItemsOrderedByIndexIds(target.ProfileIds ?? [])
+                    : exists && subscription.Length > 0 ? await AppManager.Instance.ProfileItems(subscription) ?? [] : [];
+            var candidates = RouteTargetPolicy.Candidates(target, profiles, exists);
+            var valid = new List<ProfileItem>();
+            foreach (var candidate in candidates)
+            {
+                var (registered, validation) = await ResolveNodeAsync(context, candidate, false);
+                if (validation.Success) valid.Add(registered);
+                else validatorResult.Warnings.AddRange(validation.Errors.Select(error => $"{rule.Remarks} / {candidate.Remarks}: {error}"));
+            }
+            context.RouteTargets[tag] = valid;
+            if (valid.Count == 0) validatorResult.Warnings.Add($"{rule.Remarks}: " + RouteTargetPolicy.Availability(target, exists, candidates.Count, 0, coreType));
+        }
+        foreach (var ruleItem in rules.Where(rule => rule.OutboundTarget == null && !Global.OutboundTags.Contains(rule.OutboundTag)))
         {
             if (ruleItem.OutboundTag.IsNullOrEmpty())
             {
@@ -188,6 +217,13 @@ public class CoreConfigContextBuilder
             return new CoreConfigContextBuilderAllResult(mainResult, null);
         }
 
+        if (mainResult.Context.RunCoreType == ECoreType.Xray && mainResult.Context.Node.ConfigType != EConfigType.Custom
+            && preResult.Context.RunCoreType == ECoreType.sing_box && preResult.Context.RouteTargets.Values.Any(nodes => nodes.Count > 0))
+        {
+            var port = RouteTargetPolicy.BridgePort(AppManager.GetLocalPort(config, EInboundProtocol.socks));
+            mainResult = mainResult with { Context = mainResult.Context with { RouteTargetBridgePort = port } };
+            preResult = preResult with { Context = preResult.Context with { RouteTargetBridgePort = port } };
+        }
         var resolvedMainResult = mainResult with
         {
             Context = mainResult.Context with

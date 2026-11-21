@@ -54,7 +54,7 @@ public partial class CoreConfigV2rayService
                         }
 
                         var item2 = JsonUtils.Deserialize<RulesItem4Ray>(JsonUtils.Serialize(item));
-                        GenRoutingUserRule(item2);
+                        GenRoutingUserRule(item2, item.OutboundTarget != null);
                     }
                 }
                 var balancerTagList = _coreConfig.routing.balancers
@@ -76,7 +76,7 @@ public partial class CoreConfigV2rayService
         }
     }
 
-    private void GenRoutingUserRule(RulesItem4Ray? userRule)
+    private void GenRoutingUserRule(RulesItem4Ray? userRule, bool resolved = false)
     {
         try
         {
@@ -84,7 +84,7 @@ public partial class CoreConfigV2rayService
             {
                 return;
             }
-            userRule.outboundTag = GenRoutingUserRuleOutbound(userRule.outboundTag ?? Global.ProxyTag);
+            if (!resolved) userRule.outboundTag = GenRoutingUserRuleOutbound(userRule.outboundTag ?? Global.ProxyTag);
 
             if (userRule.port.IsNullOrEmpty())
             {
@@ -169,6 +169,39 @@ public partial class CoreConfigV2rayService
         {
             Logging.SaveLog(_tag, ex);
         }
+    }
+
+    private string BuildRouteTarget(string tag, List<ProfileItem> candidates)
+    {
+        if (context.RouteTargetBridgePort is { } port)
+        {
+            var inbound = _coreConfig.inbounds.FirstOrDefault(i => i.tag == RouteTargetPolicy.BridgeTag);
+            if (inbound == null)
+            {
+                inbound = new Inbounds4Ray
+                {
+                    tag = RouteTargetPolicy.BridgeTag, listen = Global.Loopback, port = port,
+                    protocol = "vless", settings = new() { decryption = "none", clients = [] }
+                };
+                _coreConfig.inbounds.Add(inbound);
+            }
+            inbound.settings.clients!.Add(new(RouteTargetPolicy.BridgeUserId(tag), tag));
+            _coreConfig.routing.rules.Insert(0, new RulesItem4Ray
+            {
+                type = "field", inboundTag = [RouteTargetPolicy.BridgeTag], user = [tag], outboundTag = tag
+            });
+        }
+        foreach (var node in candidates)
+        {
+            var member = candidates.Count == 1 ? tag : $"{tag}-{node.IndexId}";
+            _coreConfig.outbounds.AddRange(new CoreConfigV2rayService(context with { Node = node }).BuildAllProxyOutbounds(member));
+        }
+        if (candidates.Count > 1)
+        {
+            GenObservatory(EMultipleLoad.LeastPing, tag);
+            GenBalancer(EMultipleLoad.LeastPing, tag, Global.BlockTag);
+        }
+        return tag;
     }
 
     private string GenRoutingUserRuleOutbound(string outboundTag)

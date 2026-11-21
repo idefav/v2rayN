@@ -781,6 +781,7 @@ public partial class ReviewApp : v2rayN.Desktop.App
         }
         if (Program.RoutingProtocolsOnly)
         {
+            await ReviewRoutePickerAsync();
             await ReviewRoutingProtocolsAsync();
             File.WriteAllText(Path.Combine(Program.Output, "manifest.json"), JsonSerializer.Serialize(new
             {

@@ -49,17 +49,24 @@ public partial class ProfilesSelectViewModel : MyReactiveObject, ICloseable
 
     #region Init
 
-    public ProfilesSelectViewModel()
+    public ProfilesSelectViewModel() : this(null, null) { }
+
+    public ProfilesSelectViewModel(ECoreType? core, RouteOutboundTarget? target, string? legacyName = null)
     {
+        RouteCore = core;
+        _originalTarget = target;
+        _legacyName = legacyName;
+        _chosen = (target?.ProfileIds ?? []).ToHashSet(StringComparer.Ordinal);
+        FollowSubscription = target?.SubscriptionId != null;
         _config = AppManager.Instance.Config;
-        _subIndexId = _config.SubIndexId ?? string.Empty;
+        _subIndexId = IsRoutePicker ? target?.SubscriptionId ?? string.Empty : _config.SubIndexId ?? string.Empty;
 
         #region WhenAnyValue && ReactiveCommand
 
         SaveCmd = ReactiveCommand.Create(() =>
         {
             SelectFinish();
-        });
+        }, IsRoutePicker ? this.WhenAnyValue(x => x.RouteCanConfirm) : null);
 
         this.WhenAnyValue(x => x.SelectedSub)
             .Where(y => y != null && !y.Remarks.IsNullOrEmpty() && _subIndexId != y.Id)
@@ -80,7 +87,8 @@ public partial class ProfilesSelectViewModel : MyReactiveObject, ICloseable
 
         #endregion WhenAnyValue && ReactiveCommand
 
-        _ = Init();
+        this.WhenAnyValue(x => x.FollowSubscription).Subscribe(_ => UpdateRouteStatus());
+        Initialization = IsRoutePicker ? InitRouteAsync() : Init();
     }
 
     private async Task Init()
@@ -109,6 +117,7 @@ public partial class ProfilesSelectViewModel : MyReactiveObject, ICloseable
 
     public bool CanOk()
     {
+        if (IsRoutePicker) return _routeReady && (FollowSubscription ? SelectedSub?.Id.IsNotEmpty() == true : _chosen.Count > 0);
         return SelectedProfile != null && !SelectedProfile.IndexId.IsNullOrEmpty();
     }
 
@@ -128,7 +137,7 @@ public partial class ProfilesSelectViewModel : MyReactiveObject, ICloseable
 
     private async Task SubSelectedChangedAsync()
     {
-        _subIndexId = SelectedSub?.Id;
+        _subIndexId = SelectedSub?.Id ?? string.Empty;
 
         await RefreshServers();
 
@@ -146,6 +155,11 @@ public partial class ProfilesSelectViewModel : MyReactiveObject, ICloseable
 
     public async Task RefreshServers()
     {
+        if (IsRoutePicker)
+        {
+            ApplyRouteFilter();
+            return;
+        }
         await Signal.FromAsync(async () =>
         {
             await RefreshServersBiz();
@@ -174,14 +188,14 @@ public partial class ProfilesSelectViewModel : MyReactiveObject, ICloseable
 
         SubItems.ReplaceRange(subItems);
 
-        SelectedSub = (_config.SubIndexId.IsNotEmpty()
-                        ? subItems.FirstOrDefault(t => t.Id == _config.SubIndexId)
+        SelectedSub = (_subIndexId.IsNotEmpty()
+                        ? subItems.FirstOrDefault(t => t.Id == _subIndexId)
                         : null) ?? subItems.FirstOrDefault();
     }
 
     private async Task<List<ProfileItemModel>?> GetProfileItemsEx(string subid, string filter)
     {
-        var lstModel = await AppManager.Instance.ProfileModels(_subIndexId, filter);
+        var lstModel = await AppManager.Instance.ProfileModels(subid, filter);
         var lstProfileExs = await ProfileExManager.Instance.GetProfileExs();
         lstModel = (from t in lstModel
                     join t3 in lstProfileExs on t.IndexId equals t3.IndexId into t3b

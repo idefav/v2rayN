@@ -4,6 +4,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:conv="using:v2rayN.Desktop.Converters"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:dto="clr-namespace:ServiceLib.Models.Dto;assembly=ServiceLib"
     xmlns:dd="clr-namespace:v2rayN.Desktop.DesignData"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:resx="clr-namespace:ServiceLib.Resx;assembly=ServiceLib"
@@ -43,11 +44,19 @@
         <Grid>
             <DockPanel>
                 <!--  Top tools  -->
+                <StackPanel x:Name="routeControls" DockPanel.Dock="Top" Margin="4" IsVisible="False">
+                    <StackPanel Orientation="Horizontal">
+                        <ComboBox x:Name="routeMode" MinWidth="160" />
+                        <Button x:Name="clearRoute" Margin="8,0" Content="{Binding ClearLabel}" />
+                    </StackPanel>
+                    <TextBlock Margin="0,4" Text="{Binding RouteStatus}" TextWrapping="Wrap" />
+                </StackPanel>
                 <WrapPanel Margin="{StaticResource Margin4}" DockPanel.Dock="Top">
                     <ListBox
                         x:Name="lstGroup"
                         Margin="{StaticResource MarginLr4}"
                         DisplayMemberBinding="{Binding Remarks}"
+                        SelectedItem="{Binding SelectedSub, Mode=TwoWay}"
                         ItemsSource="{Binding SubItems}"
                         Theme="{DynamicResource ButtonRadioGroupListBox}">
                         <ListBox.ItemsPanel>
@@ -160,6 +169,16 @@
                             Binding="{Binding SpeedVal, Mode=OneWay, Converter={StaticResource UnknownTextConverter}}"
                             Header="{x:Static resx:ResUI.LvTestSpeed}"
                             Tag="Speed" />
+                        <DataGridTemplateColumn Width="52" CanUserSort="False" IsVisible="False">
+                            <DataGridTemplateColumn.Header>
+                                <CheckBox x:Name="routeAll" HorizontalAlignment="Center" AutomationProperties.Name="{x:Static resx:ResUI.menuSelectAll}" />
+                            </DataGridTemplateColumn.Header>
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="dto:ProfileItemModel">
+                                    <CheckBox HorizontalAlignment="Center" AutomationProperties.Name="{Binding Remarks}" IsChecked="{Binding RouteChoice.Selected, Mode=TwoWay}" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
                     </DataGrid.Columns>
                 </DataGrid>
             </DockPanel>

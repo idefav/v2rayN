@@ -44,10 +44,19 @@
         </StackPanel>
         <Grid>
             <DockPanel>
+                <StackPanel x:Name="routeControls" DockPanel.Dock="Top" Margin="4" Visibility="Collapsed">
+                    <StackPanel Orientation="Horizontal">
+                        <ComboBox x:Name="routeMode" MinWidth="160" />
+                        <Button x:Name="clearRoute" Margin="8,0" Content="{Binding ClearLabel}" />
+                    </StackPanel>
+                    <TextBlock Margin="0,4" Text="{Binding RouteStatus}" TextWrapping="Wrap" />
+                </StackPanel>
                 <WrapPanel Margin="{StaticResource Margin4}" DockPanel.Dock="Top">
                     <ListBox
                         x:Name="lstGroup"
                         MaxHeight="200"
+                        ItemsSource="{Binding SubItems}"
+                        SelectedItem="{Binding SelectedSub, Mode=TwoWay}"
                         AutomationProperties.Name="{x:Static resx:ResUI.menuSubscription}"
                         FontSize="{DynamicResource StdFontSize}"
                         ItemContainerStyle="{StaticResource MyChipListBoxItem}"
@@ -177,6 +186,16 @@
                                 </Style>
                             </DataGridTextColumn.ElementStyle>
                         </base:MyDGTextColumn>
+                        <DataGridTemplateColumn x:Name="routeColumn" Width="52" CanUserSort="False" Visibility="Collapsed">
+                            <DataGridTemplateColumn.Header>
+                                <CheckBox x:Name="routeAll" HorizontalAlignment="Center" AutomationProperties.Name="{x:Static resx:ResUI.menuSelectAll}" />
+                            </DataGridTemplateColumn.Header>
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <CheckBox HorizontalAlignment="Center" AutomationProperties.Name="{Binding Remarks}" IsChecked="{Binding RouteChoice.Selected, Mode=TwoWay}" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
                     </DataGrid.Columns>
                 </DataGrid>
             </DockPanel>

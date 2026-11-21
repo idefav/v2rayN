@@ -367,7 +367,7 @@ public partial class CoreConfigSingboxService
             {
                 return;
             }
-            var outbound = GenRoutingUserRuleOutbound(item.OutboundTag ?? Global.ProxyTag);
+            var outbound = item.OutboundTarget != null ? item.OutboundTag : GenRoutingUserRuleOutbound(item.OutboundTag ?? Global.ProxyTag);
             var rules = _coreConfig.route.rules;
 
             var rule = new Rule4Sbox();
@@ -603,6 +603,34 @@ public partial class CoreConfigSingboxService
             rule.ip_cidr?.Add(address);
         }
         return true;
+    }
+
+    private string BuildRouteTarget(string tag, List<ProfileItem> candidates)
+    {
+        if (context.RouteTargetBridgePort is { } port)
+        {
+            _coreConfig.outbounds.Add(new Outbound4Sbox
+            {
+                type = "vless", tag = tag, server = Global.Loopback, server_port = port,
+                uuid = RouteTargetPolicy.BridgeUserId(tag), packet_encoding = "xudp"
+            });
+            return tag;
+        }
+        var members = new List<string>();
+        foreach (var node in candidates)
+        {
+            var member = candidates.Count == 1 ? tag : $"{tag}-{node.IndexId}";
+            var outbounds = new CoreConfigSingboxService(context with { Node = node }).BuildAllProxyOutbounds(member);
+            FillRangeProxy(outbounds, _coreConfig, false);
+            members.Add(member);
+        }
+        if (members.Count > 1)
+            _coreConfig.outbounds.Add(new Outbound4Sbox
+            {
+                type = "urltest", tag = tag, outbounds = members, url = _config.SpeedTestItem.SpeedPingTestUrl,
+                interval = "3m", tolerance = 1, interrupt_exist_connections = false
+            });
+        return tag;
     }
 
     private string GenRoutingUserRuleOutbound(string outboundTag)

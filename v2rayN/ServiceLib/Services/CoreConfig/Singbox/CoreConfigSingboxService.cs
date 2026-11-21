@@ -63,6 +63,7 @@ public partial class CoreConfigSingboxService(CoreConfigContext context)
             GenInbounds();
 
             GenOutbounds();
+            RouteTargetPolicy.Materialize(_routingRules, context, BuildRouteTarget);
 
             GenRouting();
 
