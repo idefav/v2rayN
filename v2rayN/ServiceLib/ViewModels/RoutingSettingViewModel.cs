@@ -131,7 +131,8 @@ public partial class RoutingSettingViewModel : MyReactiveObject
                 return;
             }
         }
-        var routingRuleSettingViewModel = new RoutingRuleSettingViewModel(item);
+        var subscriptions = await AppManager.Instance.SubItems();
+        var routingRuleSettingViewModel = new RoutingRuleSettingViewModel(item, subscriptions.ToDictionary(s => s.Id, s => s.Remarks));
         if (await AppManager.Instance.WindowDialog.ShowDialogAsync(routingRuleSettingViewModel) == true)
         {
             await RefreshRoutingItems();

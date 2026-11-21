@@ -80,6 +80,7 @@ public class Inboundsettings4Ray
     public bool? allowTransparent { get; set; }
 
     public List<AccountsItem4Ray>? accounts { get; set; }
+    public List<RouteBridgeClient>? clients { get; set; }
 
     public string? name { get; set; }
 
@@ -97,6 +98,8 @@ public class Inboundsettings4Ray
 
     public List<string>? autoSystemWfpBlockLeak { get; set; }
 }
+
+public record RouteBridgeClient(string id, string email);
 
 public class Sniffing4Ray
 {
@@ -239,6 +242,7 @@ public class RulesItem4Ray
     public string? outboundTag { get; set; }
 
     public string? balancerTag { get; set; }
+    public List<string>? user { get; set; }
 
     public List<string>? ip { get; set; }
 
@@ -251,6 +255,7 @@ public class RulesItem4Ray
 
 public class BalancersItem4Ray
 {
+    public string? fallbackTag { get; set; }
     public List<string>? selector { get; set; }
     public BalancersStrategy4Ray? strategy { get; set; }
     public string? tag { get; set; }

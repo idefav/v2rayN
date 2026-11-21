@@ -550,7 +550,7 @@ public static class ConfigHandler
     /// <param name="profileItem">Profile item with the file path in Address</param>
     /// <param name="blDelete">Whether to delete the source file after copying</param>
     /// <returns>0 if successful, -1 if failed</returns>
-    public static async Task<int> AddCustomServer(Config config, ProfileItem profileItem, bool blDelete)
+    public static async Task<int> AddCustomServer(Config config, ProfileItem profileItem, bool blDelete, bool toFile = true)
     {
         var fileName = profileItem.Address;
         if (!File.Exists(fileName))
@@ -582,7 +582,7 @@ public static class ConfigHandler
             profileItem.Remarks = $"import custom@{DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss")}";
         }
 
-        await AddServerCommon(config, profileItem, true);
+        await AddServerCommon(config, profileItem, toFile);
 
         return 0;
     }
@@ -1265,19 +1265,14 @@ public static class ConfigHandler
             profileItem.Network = Global.DefaultNetwork;
         }
 
-        var maxSort = -1;
         if (profileItem.IndexId.IsNullOrEmpty())
         {
             profileItem.IndexId = Utils.GetGuid(false);
-            maxSort = ProfileExManager.Instance.GetMaxSort();
-        }
-        if (!toFile && maxSort < 0)
-        {
-            maxSort = ProfileExManager.Instance.GetMaxSort();
-        }
-        if (maxSort > 0)
-        {
-            ProfileExManager.Instance.SetSort(profileItem.IndexId, maxSort + 1);
+            if (toFile)
+            {
+                var maxSort = ProfileExManager.Instance.GetMaxSort();
+                if (maxSort > 0) ProfileExManager.Instance.SetSort(profileItem.IndexId, maxSort + 1);
+            }
         }
 
         if (toFile)
@@ -1666,7 +1661,7 @@ public static class ConfigHandler
     /// <param name="subid">Subscription ID to associate with the servers</param>
     /// <param name="isSub">Whether this is from a subscription</param>
     /// <returns>Number of successfully imported servers or -1 if failed</returns>
-    private static async Task<int> AddBatchServersCommon(Config config, string strData, string subid, bool isSub)
+    private static async Task<int> AddBatchServersCommon(Config config, string strData, string subid, bool isSub, List<ProfileItem> batch)
     {
         if (strData.IsNullOrEmpty())
         {
@@ -1680,7 +1675,7 @@ public static class ConfigHandler
         }
 
         var countServers = 0;
-        List<ProfileItem> lstAdd = [];
+        var excludedByFilter = false;
         var arrData = strData.Split(Environment.NewLine.ToCharArray()).Where(t => !t.IsNullOrEmpty());
         if (isSub)
         {
@@ -1708,6 +1703,7 @@ public static class ConfigHandler
             {
                 if (!Utils.IsRegexMatch(profileItem.Remarks, subFilter))
                 {
+                    excludedByFilter = true;
                     continue;
                 }
             }
@@ -1734,17 +1730,11 @@ public static class ConfigHandler
             if (addStatus == 0)
             {
                 countServers++;
-                lstAdd.Add(profileItem);
+                batch.Add(profileItem);
             }
         }
 
-        if (lstAdd.Count > 0)
-        {
-            await SQLiteHelper.Instance.InsertAllAsync(lstAdd);
-        }
-
-        await SaveConfig(config);
-        return countServers;
+        return countServers > 0 || excludedByFilter ? countServers : -1;
     }
 
     /// <summary>
@@ -1756,7 +1746,7 @@ public static class ConfigHandler
     /// <param name="subid">Subscription ID to associate with the servers</param>
     /// <param name="isSub">Whether this is from a subscription</param>
     /// <returns>Number of successfully imported servers or -1 if failed</returns>
-    private static async Task<int> AddBatchServers4Custom(Config config, string strData, string subid, bool isSub)
+    private static async Task<int> AddBatchServers4Custom(Config config, string strData, string subid, bool isSub, List<ProfileItem> batch)
     {
         if (strData.IsNullOrEmpty())
         {
@@ -1767,10 +1757,10 @@ public static class ConfigHandler
 
         if (subItem?.CustomCoreType is null)
         {
-            return await AddBatchServersDefaultCustom(config, strData, subid, isSub, subItem);
+            return await AddBatchServersDefaultCustom(config, strData, subid, isSub, subItem, batch);
         }
 
-        return await AddBatchServersSpecificCustom(config, strData, subid, isSub, subItem);
+        return await AddBatchServersSpecificCustom(config, strData, subid, isSub, subItem, batch);
     }
 
     private static async Task<int> AddBatchServersDefaultCustom(
@@ -1778,7 +1768,7 @@ public static class ConfigHandler
         string strData,
         string subid,
         bool isSub,
-        SubItem? subItem)
+        SubItem? subItem, List<ProfileItem> batch)
     {
         var subRemarks = subItem?.Remarks;
         // Prioritize using complete custom parsing, followed by custom outbound parsing.
@@ -1797,7 +1787,7 @@ public static class ConfigHandler
         }
         if (lstProfiles.Count > 0)
         {
-            var count = await AddBatchCustomServers(config, lstProfiles, subid, isSub, subItem);
+            var count = await AddBatchCustomServers(config, lstProfiles, subid, isSub, subItem, batch);
             if (count > 0)
             {
                 return count;
@@ -1821,7 +1811,9 @@ public static class ConfigHandler
         profileItem.IsSub = isSub;
         profileItem.PreSocksPort = subItem?.PreSocksPort;
 
-        return await AddCustomServer(config, profileItem, true) == 0 ? 1 : -1;
+        if (await AddCustomServer(config, profileItem, true, false) != 0) return -1;
+        batch.Add(profileItem);
+        return 1;
     }
 
     private static async Task<int> AddBatchServersSpecificCustom(
@@ -1829,7 +1821,7 @@ public static class ConfigHandler
         string strData,
         string subid,
         bool isSub,
-        SubItem subItem)
+        SubItem subItem, List<ProfileItem> batch)
     {
         var subRemarks = subItem.Remarks;
         var customCoreType = subItem.CustomCoreType!.Value;
@@ -1843,14 +1835,14 @@ public static class ConfigHandler
 
         if (lstProfiles?.Count > 0)
         {
-            var count = await AddBatchCustomServers(config, lstProfiles, subid, isSub, subItem);
+            var count = await AddBatchCustomServers(config, lstProfiles, subid, isSub, subItem, batch);
             if (count > 0)
             {
                 return count;
             }
         }
 
-        return await SaveCustomRawFileServer(config, strData, subid, isSub, subItem, customCoreType);
+        return await SaveCustomRawFileServer(config, strData, subid, isSub, subItem, customCoreType, batch);
     }
 
     private static async Task<int> AddBatchCustomServers(
@@ -1858,7 +1850,7 @@ public static class ConfigHandler
         List<ProfileItem> lstProfiles,
         string subid,
         bool isSub,
-        SubItem? subItem)
+        SubItem? subItem, List<ProfileItem> batch)
     {
         var count = 0;
         foreach (var it in lstProfiles)
@@ -1869,15 +1861,17 @@ public static class ConfigHandler
             if (it.ConfigType == EConfigType.Custom)
             {
                 it.PreSocksPort = subItem?.PreSocksPort;
-                if (await AddCustomServer(config, it, true) == 0)
+                if (await AddCustomServer(config, it, true, false) == 0)
                 {
+                    batch.Add(it);
                     count++;
                 }
             }
             else
             {
-                if (await AddCustomOutboundServer(config, it, true) == 0)
+                if (await AddCustomOutboundServer(config, it, true, false) == 0)
                 {
+                    batch.Add(it);
                     count++;
                 }
             }
@@ -1891,7 +1885,7 @@ public static class ConfigHandler
         string subid,
         bool isSub,
         SubItem subItem,
-        ECoreType customCoreType)
+        ECoreType customCoreType, List<ProfileItem> batch)
     {
         var ext = DetectFileExtension(strData);
         var fileName = Utils.GetTempPath($"{Utils.GetGuid(false)}{ext}");
@@ -1908,7 +1902,9 @@ public static class ConfigHandler
             PreSocksPort = subItem.PreSocksPort,
         };
 
-        return await AddCustomServer(config, profileItem, true) == 0 ? 1 : -1;
+        if (await AddCustomServer(config, profileItem, true, false) != 0) return -1;
+        batch.Add(profileItem);
+        return 1;
 
         static string DetectFileExtension(string data)
         {
@@ -1963,7 +1959,7 @@ public static class ConfigHandler
     /// <param name="subid">Subscription ID to associate with the servers</param>
     /// <param name="isSub">Whether this is from a subscription</param>
     /// <returns>Number of successfully imported servers or -1 if failed</returns>
-    private static async Task<int> AddBatchServers4SsSIP008(Config config, string strData, string subid, bool isSub)
+    private static async Task<int> AddBatchServers4SsSIP008(Config config, string strData, string subid, bool isSub, List<ProfileItem> batch)
     {
         if (strData.IsNullOrEmpty())
         {
@@ -1978,19 +1974,19 @@ public static class ConfigHandler
             {
                 ssItem.Subid = subid;
                 ssItem.IsSub = isSub;
-                if (await AddShadowsocksServer(config, ssItem) == 0)
+                if (await AddShadowsocksServer(config, ssItem, false) == 0)
                 {
+                    batch.Add(ssItem);
                     counter++;
                 }
             }
-            await SaveConfig(config);
             return counter;
         }
 
         return -1;
     }
 
-    private static async Task<int> AddBatchServers4Wireguard(Config config, string strData, string subid, bool isSub)
+    private static async Task<int> AddBatchServers4Wireguard(Config config, string strData, string subid, bool isSub, List<ProfileItem> batch)
     {
         if (strData.IsNullOrEmpty())
         {
@@ -2009,18 +2005,18 @@ public static class ConfigHandler
             {
                 item.Subid = subid;
                 item.IsSub = isSub;
-                if (await AddWireguardServer(config, item) == 0)
+                if (await AddWireguardServer(config, item, false) == 0)
                 {
+                    batch.Add(item);
                     counter++;
                 }
             }
-            await SaveConfig(config);
             return counter;
         }
         return -1;
     }
 
-    private static async Task<int> AddBatchServers4InnerUri(Config config, string strData, string subid, bool isSub)
+    private static async Task<int> AddBatchServers4InnerUri(Config config, string strData, string subid, bool isSub, List<ProfileItem> batch)
     {
         if (strData.IsNullOrEmpty())
         {
@@ -2031,7 +2027,6 @@ public static class ConfigHandler
         if (lstServer?.Count > 0)
         {
             var counter = 0;
-            List<ProfileItem> lstAdd = [];
             foreach (var profileItem in lstServer)
             {
                 profileItem.Subid = subid;
@@ -2058,14 +2053,9 @@ public static class ConfigHandler
                 if (addStatus == 0)
                 {
                     counter++;
-                    lstAdd.Add(profileItem);
+                    batch.Add(profileItem);
                 }
             }
-            if (lstAdd.Count > 0)
-            {
-                await SQLiteHelper.Instance.InsertAllAsync(lstAdd);
-            }
-            await SaveConfig(config);
             return counter;
         }
 
@@ -2081,59 +2071,110 @@ public static class ConfigHandler
     /// <param name="subid">Subscription ID to associate with the servers</param>
     /// <param name="isSub">Whether this is from a subscription</param>
     /// <returns>Number of successfully imported servers or -1 if failed</returns>
-    public static async Task<int> AddBatchServers(Config config, string strData, string subid, bool isSub)
+    public static async Task<int> AddBatchServers(Config config, string strData, string subid, bool isSub, CancellationToken token = default)
     {
         if (strData.IsNullOrEmpty())
         {
             return -1;
         }
-        List<ProfileItem>? lstOriSub = null;
-        ProfileItem? activeProfile = null;
-        if (isSub && subid.IsNotEmpty())
+        var batch = new List<ProfileItem>();
+        var committed = false;
+        var count = -1;
+        try
         {
-            lstOriSub = await AppManager.Instance.ProfileItems(subid);
-            activeProfile = lstOriSub?.FirstOrDefault(t => t.IndexId == config.IndexId);
-            await RemoveServersViaSubid(config, subid, true);
+            token.ThrowIfCancellationRequested();
+            var emptySnapshot = isSub && IsEmptySubscription(strData);
+            count = emptySnapshot ? 0 : await ParseBatchAsync(config, strData, subid, isSub, batch);
+            token.ThrowIfCancellationRequested();
+            if (count < 0) return -1;
+            if (isSub && subid.IsNotEmpty())
+            {
+                var previous = await SQLiteHelper.Instance.ReplaceSubscriptionAsync(subid, batch, token);
+                committed = true;
+                DeleteImportedFiles(previous);
+                var active = previous.FirstOrDefault(p => p.IndexId == config.IndexId);
+                if (active != null && batch.All(p => p.IndexId != active.IndexId)
+                    && FindMatchedProfileItem(batch, active) is { } successor)
+                    await SetDefaultServerIndex(config, successor.IndexId);
+                var existingIds = previous.Select(p => p.IndexId).ToHashSet();
+                foreach (var newProfile in batch.Where(p => !existingIds.Contains(p.IndexId)))
+                    if (FindMatchedProfileItem(previous, newProfile) is { } oldProfile)
+                        await StatisticsManager.Instance.CloneServerStatItem(oldProfile.IndexId, newProfile.IndexId);
+            }
+            else
+            {
+                if (batch.Count > 0) await SQLiteHelper.Instance.InsertAllAsync(batch);
+                committed = true;
+            }
+            var maxSort = ProfileExManager.Instance.GetMaxSort();
+            if (maxSort > 0)
+                foreach (var profile in batch.Where(p => ProfileExManager.Instance.GetSort(p.IndexId) == 0))
+                    ProfileExManager.Instance.SetSort(profile.IndexId, ++maxSort);
+            await SaveConfig(config);
+            return count;
         }
+        catch (Exception ex) when (committed)
+        {
+            // The published snapshot must still reach the reload coordinator if UI metadata fails.
+            Logging.SaveLog("Post-import profile metadata", ex);
+            return count;
+        }
+        finally
+        {
+            if (!committed) DeleteImportedFiles(batch);
+        }
+    }
 
-        var counter = 0;
-        if (Utils.IsBase64String(strData))
-        {
-            counter = await AddBatchServersCommon(config, Utils.Base64Decode(strData), subid, isSub);
-        }
-        if (counter < 1)
-        {
-            counter = await AddBatchServersCommon(config, strData, subid, isSub);
-        }
-        if (counter < 1)
-        {
-            counter = await AddBatchServersCommon(config, Utils.Base64Decode(strData), subid, isSub);
-        }
+    private static bool IsEmptySubscription(string content)
+    {
+        var json = Utils.IsBase64String(content) ? Utils.Base64Decode(content) : content;
+        if (string.IsNullOrWhiteSpace(json) || json.TrimStart()[0] is not ('[' or '{')) return false;
+        var document = JsonUtils.ParseJson(json);
+        return document is JsonArray { Count: 0 } || document is JsonObject obj
+            && obj["version"]?.ToString() == "1" && obj["servers"] is JsonArray { Count: 0 };
+    }
 
+    private static void DeleteImportedFiles(IEnumerable<ProfileItem> profiles)
+    {
+        foreach (var profile in profiles.Where(p => p.ConfigType is EConfigType.Custom or EConfigType.Outbound))
+        {
+            // Imported files are copied to unique names before the database transaction.
+            if (Path.GetFileName(profile.Address) != profile.Address) continue;
+            try { File.Delete(Utils.GetConfigPath(profile.Address)); }
+            catch (IOException ex) { Logging.SaveLog("Subscription file cleanup", ex); }
+            catch (UnauthorizedAccessException ex) { Logging.SaveLog("Subscription file cleanup", ex); }
+        }
+    }
+
+    private static async Task<int> ParseBatchAsync(Config config, string strData, string subid, bool isSub, List<ProfileItem> batch)
+    {
+        var decoded = Utils.Base64Decode(strData);
+        var inputs = (Utils.IsBase64String(strData) ? new[] { decoded, strData } : new[] { strData, decoded })
+            .Where(input => !string.IsNullOrEmpty(input)).Distinct().ToArray();
+        var counter = -1;
+        foreach (var input in inputs)
+        {
+            counter = await AddBatchServersCommon(config, input, subid, isSub, batch);
+            if (counter >= 0) break;
+        }
+        var filteredSnapshot = counter == 0;
         if (counter < 1)
         {
-            counter = await AddBatchServers4SsSIP008(config, strData, subid, isSub);
+            counter = await AddBatchServers4SsSIP008(config, strData, subid, isSub, batch);
         }
 
         //maybe wireguard config
         if (counter < 1)
         {
-            counter = await AddBatchServers4Wireguard(config, strData, subid, isSub);
+            counter = await AddBatchServers4Wireguard(config, strData, subid, isSub, batch);
         }
 
         //May be standard uri mixed with internal uri
         var innerUriCount = 0;
-        if (Utils.IsBase64String(strData))
+        foreach (var input in inputs)
         {
-            innerUriCount = await AddBatchServers4InnerUri(config, Utils.Base64Decode(strData), subid, isSub);
-        }
-        if (innerUriCount < 1)
-        {
-            innerUriCount = await AddBatchServers4InnerUri(config, strData, subid, isSub);
-        }
-        if (innerUriCount < 1)
-        {
-            innerUriCount = await AddBatchServers4InnerUri(config, Utils.Base64Decode(strData), subid, isSub);
+            innerUriCount = await AddBatchServers4InnerUri(config, input, subid, isSub, batch);
+            if (innerUriCount > 0) break;
         }
         if (innerUriCount > 0)
         {
@@ -2150,35 +2191,10 @@ public static class ConfigHandler
         //maybe other sub
         if (counter < 1)
         {
-            counter = await AddBatchServers4Custom(config, strData, subid, isSub);
+            counter = await AddBatchServers4Custom(config, strData, subid, isSub, batch);
         }
 
-        //Select active node
-        if (activeProfile != null)
-        {
-            var lstSub = await AppManager.Instance.ProfileItems(subid);
-            var existItem = FindMatchedProfileItem(lstSub, activeProfile);
-            if (existItem != null)
-            {
-                await ConfigHandler.SetDefaultServerIndex(config, existItem.IndexId);
-            }
-        }
-
-        //Keep the last traffic statistics
-        if (lstOriSub != null)
-        {
-            var lstSub = await AppManager.Instance.ProfileItems(subid);
-            foreach (var item in lstSub)
-            {
-                var existItem = FindMatchedProfileItem(lstOriSub, item);
-                if (existItem != null)
-                {
-                    await StatisticsManager.Instance.CloneServerStatItem(existItem.IndexId, item.IndexId);
-                }
-            }
-        }
-
-        return counter;
+        return counter > 0 ? counter : filteredSnapshot ? 0 : -1;
     }
 
     #endregion Batch add servers

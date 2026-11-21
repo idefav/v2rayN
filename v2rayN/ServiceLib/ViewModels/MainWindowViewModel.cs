@@ -286,6 +286,7 @@ public partial class MainWindowViewModel : MyReactiveObject
             CheckUpdateViewModel.ReloadRequested.AsObservable(),
         };
 
+        ProfilesViewModel.RefreshRouteTargetsAsync = RefreshRouteTargetsAsync;
         CheckUpdateViewModel.PrepareCoreRestartAsync = PrepareUpdateRestartAsync;
 
         foreach (var reloadRequested in vmReloadRequestedList)
@@ -501,10 +502,8 @@ public partial class MainWindowViewModel : MyReactiveObject
         if (ret == true)
         {
             await RefreshServersDispatcherAsync();
-            if (item.IndexId == _config.IndexId)
-            {
-                await ReloadSelectedConfigurationAsync();
-            }
+            if (item.IndexId == _config.IndexId) await ReloadSelectedConfigurationAsync();
+            else await RefreshRouteTargetsAsync();
         }
     }
 
@@ -526,6 +525,7 @@ public partial class MainWindowViewModel : MyReactiveObject
         {
             await RefreshSubscriptions();
             await RefreshServersDispatcherAsync();
+            await RefreshRouteTargetsAsync();
             NoticeManager.Instance.Enqueue(string.Format(ResUI.SuccessfullyImportedServerViaClipboard, ret));
         }
         else
@@ -576,6 +576,7 @@ public partial class MainWindowViewModel : MyReactiveObject
             {
                 await RefreshSubscriptions();
                 await RefreshServersDispatcherAsync();
+                await RefreshRouteTargetsAsync();
                 NoticeManager.Instance.Enqueue(ResUI.SuccessfullyImportedServerViaScan);
             }
             else
@@ -681,12 +682,20 @@ public partial class MainWindowViewModel : MyReactiveObject
         await QueueReloadAsync(reason, onlyIfChanged, backgroundUpdate, expectedRevision);
     }
 
+    private async Task RefreshRouteTargetsAsync()
+    {
+        var routing = await ConfigHandler.GetDefaultRouting(_config);
+        if (routing != null && JsonUtils.Deserialize<List<RulesItem>>(routing.RuleSet)?.Any(r => r?.Enabled == true && r.OutboundTarget != null) == true)
+            await ReloadSelectedConfigurationAsync("路由候选节点已更新", onlyIfChanged: true);
+    }
+
     public async Task ApplySettingsChangesAsync(string section, bool applyConnection = true)
     {
         if (DesignMode) return;
         if (section == "Subscriptions")
         {
             await RefreshSubscriptions();
+            if (applyConnection) await RefreshRouteTargetsAsync();
             return;
         }
         if (section == "Options")

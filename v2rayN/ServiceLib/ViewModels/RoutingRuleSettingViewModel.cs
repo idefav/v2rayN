@@ -10,6 +10,7 @@ public partial class RoutingRuleSettingViewModel : MyReactiveObject, ICloseable
     public Interaction<RxVoid, string?> BrowseRulesFileInteraction { get; } = new();
 
     private List<RulesItem> _rules;
+    private readonly IReadOnlyDictionary<string, string>? _subscriptionNames;
 
     [Reactive]
     public partial RoutingItem SelectedRouting { get; set; }
@@ -34,8 +35,9 @@ public partial class RoutingRuleSettingViewModel : MyReactiveObject, ICloseable
 
     public ReactiveCommand<RxVoid, RxVoid> SaveCmd { get; }
 
-    public RoutingRuleSettingViewModel(RoutingItem routingItem)
+    public RoutingRuleSettingViewModel(RoutingItem routingItem, IReadOnlyDictionary<string, string>? subscriptionNames = null)
     {
+        _subscriptionNames = subscriptionNames;
         _config = AppManager.Instance.Config;
 
         var canEditRemove = this.WhenAnyValue(
@@ -107,7 +109,9 @@ public partial class RoutingRuleSettingViewModel : MyReactiveObject, ICloseable
             {
                 Id = item.Id,
                 RuleTypeName = item.RuleType?.ToString(),
-                OutboundTag = item.OutboundTag,
+                OutboundTag = item.OutboundTarget is { } target ? RouteTargetPolicy.Summary(target,
+                    target.SubscriptionId is { } id ? _subscriptionNames?.GetValueOrDefault(id) : null) : item.OutboundTag,
+                OutboundTarget = item.OutboundTarget,
                 Port = item.Port,
                 Network = item.Network,
                 Protocols = Utils.List2String(item.Protocol),
@@ -138,7 +142,8 @@ public partial class RoutingRuleSettingViewModel : MyReactiveObject, ICloseable
         }
         var profile = await AppManager.Instance.GetProfileItem(_config.IndexId);
         var coreType = AppManager.Instance.GetCoreType(profile, profile?.ConfigType ?? EConfigType.VMess);
-        var routingRuleDetailsViewModel = new RoutingRuleDetailsViewModel(item, coreType);
+        var name = item.OutboundTarget?.SubscriptionId is { } subId ? _subscriptionNames?.GetValueOrDefault(subId) : null;
+        var routingRuleDetailsViewModel = new RoutingRuleDetailsViewModel(item, coreType, name);
         if (await AppManager.Instance.WindowDialog.ShowDialogAsync(routingRuleDetailsViewModel) == true)
         {
             if (blNew)
@@ -235,6 +240,7 @@ public partial class RoutingRuleSettingViewModel : MyReactiveObject, ICloseable
         foreach (var it in _rules)
         {
             it.Id = Utils.GetGuid(false);
+            if (it.OutboundTarget != null) it.OutboundTag = Global.BlockTag;
         }
         item.RuleNum = _rules.Count;
         item.RuleSet = JsonUtils.Serialize(_rules, false);
@@ -331,6 +337,7 @@ public partial class RoutingRuleSettingViewModel : MyReactiveObject, ICloseable
         foreach (var rule in lstRules)
         {
             rule.Id = Utils.GetGuid(false);
+            if (rule.OutboundTarget != null) rule.OutboundTag = Global.BlockTag;
         }
 
         if (blReplace)

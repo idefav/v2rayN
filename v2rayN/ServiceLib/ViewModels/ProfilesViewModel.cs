@@ -11,6 +11,7 @@ public partial class ProfilesViewModel : MyReactiveObject
     public Interaction<RxVoid, RxVoid> AdjustMainLvColWidthInteraction { get; } = new();
 
     public EventChannel<RxVoid> ReloadRequested { get; } = new();
+    public Func<Task> RefreshRouteTargetsAsync { get; set; } = () => Task.CompletedTask;
     public EventChannel<RxVoid> RefreshServersRequested { get; } = new();
 
     #region private prop
@@ -511,10 +512,8 @@ public partial class ProfilesViewModel : MyReactiveObject
         if (ret == true)
         {
             await RefreshServers();
-            if (item.IndexId == _config.IndexId)
-            {
-                Reload();
-            }
+            if (item.IndexId == _config.IndexId) Reload();
+            else await RefreshRouteTargetsAsync();
         }
     }
 
@@ -538,10 +537,8 @@ public partial class ProfilesViewModel : MyReactiveObject
             ProfileItems.Clear();
         }
         await RefreshServers();
-        if (exists)
-        {
-            Reload();
-        }
+        if (exists) Reload();
+        else await RefreshRouteTargetsAsync();
     }
 
     private async Task RemoveDuplicateServer()
@@ -570,6 +567,7 @@ public partial class ProfilesViewModel : MyReactiveObject
         if (await ConfigHandler.CopyServer(_config, lstSelected) == 0)
         {
             await RefreshServers();
+            await RefreshRouteTargetsAsync();
             NoticeManager.Instance.Enqueue(ResUI.OperationSuccess);
         }
     }
@@ -912,6 +910,7 @@ public partial class ProfilesViewModel : MyReactiveObject
             return;
         }
         await ConfigHandler.DeleteSubItem(_config, item.Id);
+        await RefreshRouteTargetsAsync();
 
         await RefreshSubscriptions();
         await SubSelectedChangedAsync();

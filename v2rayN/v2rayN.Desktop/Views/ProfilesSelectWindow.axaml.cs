@@ -9,6 +9,8 @@ public partial class ProfilesSelectWindow : WindowBase<ProfilesSelectViewModel>
     {
         InitializeComponent();
         Common.TablePresentation.AddSelectionColumn(lstProfiles);
+        var standardColumn = lstProfiles.Columns[0];
+        var routeColumn = lstProfiles.Columns.Single(c => ReferenceEquals(c.Header, routeAll));
         lstProfiles.HeadersVisibility = DataGridHeadersVisibility.Column;
         foreach (var column in lstProfiles.Columns)
         {
@@ -39,6 +41,9 @@ public partial class ProfilesSelectWindow : WindowBase<ProfilesSelectViewModel>
             new Flyout { Content = choices }.ShowAt(btnAutofitColumnWidth);
         };
 
+        routeMode.SelectionChanged += (_, _) => { if (ViewModel?.IsRoutePicker == true) ViewModel.FollowSubscription = routeMode.SelectedIndex == 1; };
+        clearRoute.Click += (_, _) => ViewModel?.ClearRouteChoices();
+        routeAll.Click += (_, _) => ViewModel?.SelectVisible(routeAll.IsChecked == true);
         btnCancel.Click += (_, _) => Close();
         txtServerFilter.KeyDown += TxtServerFilter_KeyDown;
         lstProfiles.KeyDown += LstProfiles_KeyDown;
@@ -49,10 +54,24 @@ public partial class ProfilesSelectWindow : WindowBase<ProfilesSelectViewModel>
 
         this.WhenActivated(disposables =>
         {
+            if (ViewModel.IsRoutePicker)
+            {
+                count.IsVisible = false;
+                standardColumn.IsVisible = false;
+                routeControls.IsVisible = true;
+                routeMode.ItemsSource = new[] { ViewModel.ManualLabel, ViewModel.FollowLabel };
+                routeMode.SelectedIndex = ViewModel.FollowSubscription ? 1 : 0;
+                routeColumn.DisplayIndex = 0;
+                this.WhenAnyValue(v => v.ViewModel.FollowSubscription).Subscribe(follow =>
+                {
+                    routeColumn.IsVisible = !follow;
+                    clearRoute.IsVisible = !follow;
+                }).DisposeWith(disposables);
+                this.OneWayBind(ViewModel, vm => vm.AllVisibleChecked, v => v.routeAll.IsChecked).DisposeWith(disposables);
+            }
             this.OneWayBind(ViewModel, vm => vm.ProfileItems, v => v.lstProfiles.ItemsSource).DisposeWith(disposables);
             this.Bind(ViewModel, vm => vm.SelectedProfile, v => v.lstProfiles.SelectedItem).DisposeWith(disposables);
 
-            this.Bind(ViewModel, vm => vm.SelectedSub, v => v.lstGroup.SelectedItem).DisposeWith(disposables);
             this.Bind(ViewModel, vm => vm.ServerFilter, v => v.txtServerFilter.Text).DisposeWith(disposables);
 
             this.BindCommand(ViewModel, vm => vm.SaveCmd, v => v.btnSave).DisposeWith(disposables);
@@ -97,6 +116,7 @@ public partial class ProfilesSelectWindow : WindowBase<ProfilesSelectViewModel>
 
     private void LstProfiles_DoubleTapped(object? sender, TappedEventArgs e)
     {
+        if (ViewModel?.IsRoutePicker == true) return;
         // Ignore double-taps on the column header area
         if (e.Source is Control src)
         {
@@ -131,7 +151,8 @@ public partial class ProfilesSelectWindow : WindowBase<ProfilesSelectViewModel>
         {
             if (e.Key == Key.A)
             {
-                if (ViewModel?.MultiSelect == true)
+                if (ViewModel is { IsRoutePicker: true, FollowSubscription: false }) ViewModel.SelectVisible(true);
+                else if (ViewModel?.MultiSelect == true)
                 {
                     lstProfiles.SelectAll();
                 }
@@ -171,7 +192,8 @@ public partial class ProfilesSelectWindow : WindowBase<ProfilesSelectViewModel>
     {
         if (e.Key is Key.Enter or Key.Return)
         {
-            ViewModel?.RefreshServers();
+            _ = ViewModel?.RefreshServers();
+            e.Handled = true;
         }
     }
 }

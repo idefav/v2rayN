@@ -62,7 +62,7 @@ public static class SubscriptionHandler
                 token.ThrowIfCancellationRequested();
 
                 // Process download result
-                var imported = await ProcessDownloadResult(config, item.Id, result, hashCode, updateFunc);
+                var imported = await ProcessDownloadResult(config, item.Id, result, hashCode, updateFunc, token);
                 attempts.Add(new(item.Id, imported ? SubscriptionAttemptStatus.Succeeded : SubscriptionAttemptStatus.Failed));
 
                 await updateFunc?.Invoke(false, "-------------------------------------------------------");
@@ -145,6 +145,7 @@ public static class SubscriptionHandler
     {
         // Download main subscription content
         var result = await DownloadMainSubscription(config, item, blProxy, downloadHandle, token);
+        if (string.IsNullOrWhiteSpace(result)) return string.Empty;
 
         // Process additional subscription links (if any)
         if (item.ConvertTarget.IsNullOrEmpty() && item.MoreUrl.TrimEx().IsNotEmpty())
@@ -207,24 +208,14 @@ public static class SubscriptionHandler
             token.ThrowIfCancellationRequested();
             var additionalResult = await DownloadSubscriptionContent(downloadHandle, url2, blProxy, item.UserAgent, token);
 
-            if (additionalResult.IsNotEmpty())
-            {
-                // Process additional subscription results, add to main result
-                if (Utils.IsBase64String(additionalResult))
-                {
-                    result += Environment.NewLine + Utils.Base64Decode(additionalResult);
-                }
-                else
-                {
-                    result += Environment.NewLine + additionalResult;
-                }
-            }
+            if (string.IsNullOrWhiteSpace(additionalResult)) return string.Empty;
+            result += Environment.NewLine + (Utils.IsBase64String(additionalResult) ? Utils.Base64Decode(additionalResult) : additionalResult);
         }
 
         return result;
     }
 
-    private static async Task<bool> ProcessDownloadResult(Config config, string id, string result, string hashCode, Func<bool, string, Task> updateFunc)
+    private static async Task<bool> ProcessDownloadResult(Config config, string id, string result, string hashCode, Func<bool, string, Task> updateFunc, CancellationToken token)
     {
         if (result.IsNullOrEmpty())
         {
@@ -243,18 +234,18 @@ public static class SubscriptionHandler
         await updateFunc?.Invoke(false, $"{hashCode}{ResUI.MsgStartParsingSubscription}");
 
         // Add servers to configuration
-        var ret = await ConfigHandler.AddBatchServers(config, result, id, true);
-        if (ret <= 0)
+        var ret = await ConfigHandler.AddBatchServers(config, result, id, true, token);
+        if (ret < 0)
         {
             Logging.SaveLog("FailedImportSubscription");
             Logging.SaveLog(result);
         }
 
         // Update completion message
-        await updateFunc?.Invoke(false, ret > 0
+        await updateFunc?.Invoke(false, ret >= 0
                 ? $"{hashCode}{ResUI.MsgUpdateSubscriptionEnd}"
                 : $"{hashCode}{ResUI.MsgFailedImportSubscription}");
 
-        return ret > 0;
+        return ret >= 0;
     }
 }

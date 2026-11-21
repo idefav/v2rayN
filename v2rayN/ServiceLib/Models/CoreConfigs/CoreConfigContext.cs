@@ -12,6 +12,9 @@ public record CoreConfigContext
     public DNSItem? RawDnsItem { get; init; }
     public SimpleDNSItem SimpleDnsItem { get; init; } = new();
     public Dictionary<string, ProfileItem> AllProxiesMap { get; init; } = new();
+    // The TUN front end sends already-matched requests to the main core's balancer.
+    public int? RouteTargetBridgePort { get; init; }
+    public Dictionary<string, List<ProfileItem>> RouteTargets { get; init; } = new();
     public Config AppConfig { get; init; } = new();
     public int? StatisticsPort { get; init; }
     public FullConfigTemplateItem? FullConfigTemplate { get; init; } = new();

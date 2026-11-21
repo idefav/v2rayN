@@ -58,8 +58,10 @@ public partial class CoreConfigV2rayService(CoreConfigContext context)
             GenInbounds();
 
             GenOutbounds();
+            RouteTargetPolicy.Materialize(_routingRules, context, BuildRouteTarget);
 
             GenRouting();
+            ShareRouteTargetObservations();
 
             GenDns();
 

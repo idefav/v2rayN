@@ -5,6 +5,8 @@ public partial class ProfileItemModel : ReactiveObject
 {
     [Reactive]
     public partial bool IsActive { get; set; }
+    [Ignore, JsonIgnore]
+    public RoutePickerChoice? RouteChoice { get; set; }
     public string IndexId { get; set; }
     public EConfigType ConfigType { get; set; }
     public string Remarks { get; set; }

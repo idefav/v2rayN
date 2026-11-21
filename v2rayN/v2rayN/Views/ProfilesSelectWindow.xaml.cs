@@ -11,6 +11,9 @@ public partial class ProfilesSelectWindow
         InitializeComponent();
         lstGroup.MaxHeight = Math.Floor(SystemParameters.WorkArea.Height * 0.20 / 40) * 40;
 
+        routeMode.SelectionChanged += (_, _) => { if (ViewModel?.IsRoutePicker == true) ViewModel.FollowSubscription = routeMode.SelectedIndex == 1; };
+        clearRoute.Click += (_, _) => ViewModel?.ClearRouteChoices();
+        routeAll.Click += (_, _) => ViewModel?.SelectVisible(routeAll.IsChecked == true);
         btnAutofitColumnWidth.Click += BtnAutofitColumnWidth_Click;
         txtServerFilter.PreviewKeyDown += TxtServerFilter_PreviewKeyDown;
         lstProfiles.PreviewKeyDown += LstProfiles_PreviewKeyDown;
@@ -19,11 +22,21 @@ public partial class ProfilesSelectWindow
 
         this.WhenActivated(disposables =>
         {
+            if (ViewModel.IsRoutePicker)
+            {
+                routeControls.Visibility = Visibility.Visible;
+                routeMode.ItemsSource = new[] { ViewModel.ManualLabel, ViewModel.FollowLabel };
+                routeMode.SelectedIndex = ViewModel.FollowSubscription ? 1 : 0;
+                routeColumn.DisplayIndex = 0;
+                this.WhenAnyValue(v => v.ViewModel.FollowSubscription).Subscribe(follow =>
+                {
+                    routeColumn.Visibility = clearRoute.Visibility = follow ? Visibility.Collapsed : Visibility.Visible;
+                }).DisposeWith(disposables);
+                this.OneWayBind(ViewModel, vm => vm.AllVisibleChecked, v => v.routeAll.IsChecked).DisposeWith(disposables);
+            }
             this.OneWayBind(ViewModel, vm => vm.ProfileItems, v => v.lstProfiles.ItemsSource).DisposeWith(disposables);
             this.Bind(ViewModel, vm => vm.SelectedProfile, v => v.lstProfiles.SelectedItem).DisposeWith(disposables);
 
-            this.OneWayBind(ViewModel, vm => vm.SubItems, v => v.lstGroup.ItemsSource).DisposeWith(disposables);
-            this.Bind(ViewModel, vm => vm.SelectedSub, v => v.lstGroup.SelectedItem).DisposeWith(disposables);
             this.Bind(ViewModel, vm => vm.ServerFilter, v => v.txtServerFilter.Text).DisposeWith(disposables);
 
             this.BindCommand(ViewModel, vm => vm.SaveCmd, v => v.btnSave).DisposeWith(disposables);
@@ -76,7 +89,7 @@ public partial class ProfilesSelectWindow
 
     private void LstProfiles_MouseDoubleClick(object sender, MouseButtonEventArgs e)
     {
-        ViewModel?.SelectFinish();
+        if (ViewModel?.IsRoutePicker != true) ViewModel?.SelectFinish();
     }
 
     private void LstProfiles_ColumnHeader_Click(object sender, RoutedEventArgs e)
@@ -86,12 +99,12 @@ public partial class ProfilesSelectWindow
             return;
         }
 
-        var colName = ((MyDGTextColumn)colHeader.Column).ExName;
-        ViewModel?.SortServer(colName);
+        if (colHeader.Column is MyDGTextColumn textColumn) ViewModel?.SortServer(textColumn.ExName);
     }
 
     private void menuSelectAll_Click(object sender, RoutedEventArgs e)
     {
+        if (ViewModel is { IsRoutePicker: true, FollowSubscription: false }) ViewModel.SelectVisible(true);
         if (ViewModel?.MultiSelect != true)
         {
             return;

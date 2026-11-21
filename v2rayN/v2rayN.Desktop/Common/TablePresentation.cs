@@ -91,11 +91,16 @@ public static class TablePresentation
     {
         var selectAll = new CheckBox { HorizontalAlignment = HorizontalAlignment.Center };
         Avalonia.Automation.AutomationProperties.SetName(selectAll, ResUI.menuSelectAll);
+        selectAll.IsVisible = table.SelectionMode == DataGridSelectionMode.Extended;
+        table.PropertyChanged += (_, e) =>
+        {
+            if (e.Property == DataGrid.SelectionModeProperty) selectAll.IsVisible = table.SelectionMode == DataGridSelectionMode.Extended;
+        };
         selectAll.Click += (_, _) =>
         {
-            if (selectAll.IsChecked != true) table.SelectedItems.Clear();
-            else if (table.SelectionMode == DataGridSelectionMode.Extended) table.SelectAll();
-            else table.SelectedItem = table.ItemsSource?.Cast<object>().FirstOrDefault();
+            if (table.SelectionMode != DataGridSelectionMode.Extended) return;
+            if (selectAll.IsChecked == true) table.SelectAll();
+            else table.SelectedItems.Clear();
         };
         table.Columns.Insert(0, new DataGridTemplateColumn
         {
@@ -115,12 +120,13 @@ public static class TablePresentation
                 {
                     var current = check.DataContext ?? item;
                     if (current == null) return;
-                    var selected = table.SelectedItems.Contains(current);
-                    if (check.IsChecked == true && !selected)
+                    if (table.SelectionMode == DataGridSelectionMode.Single)
                     {
-                        if (table.SelectionMode != DataGridSelectionMode.Extended) table.SelectedItems.Clear();
-                        table.SelectedItems.Add(current);
+                        table.SelectedItem = check.IsChecked == true ? current : null;
+                        return;
                     }
+                    var selected = table.SelectedItems.Contains(current);
+                    if (check.IsChecked == true && !selected) table.SelectedItems.Add(current);
                     else if (check.IsChecked != true && selected) table.SelectedItems.Remove(current);
                 };
                 return check;
